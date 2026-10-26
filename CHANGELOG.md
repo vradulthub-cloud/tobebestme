@@ -1,0 +1,44 @@
+# Changelog
+
+## 1.4.0
+
+- **Your model choice wins.** A model you switch to with `/model` is no longer overridden by Always mode, a budget or a dashboard choice made earlier: the session stays on it and says so. Before, Always silently sent every request, the main conversation too, to the cheaper model, so a switch seemed to do nothing. While Always is sending this conversation to the cheaper model, the dashboard now says so, with a one-press **Turn Always off**.
+- **Workflows end on time.** A run is now seen to finish with the pane closed, so the line above the prompt stops saying "running" and the "workflow finished" notification goes out.
+- **Notifications go out once per computer.** Each alert has a stable key and a record every session shares, with at most four notifications in any ten minutes. They are sent in the background, so a sound never holds up the pane.
+- **Suggested workflows.** A request that looks like a job for a workflow is suggested as one, with the kind, its stages and the model for each.
+- **Run spending limits and the weekly-limit share.** A workflow can pause new agents past a spending limit. Costs are also shown as a share of your weekly limit, for plans that bill that way.
+- **Ways to spend less** come from your own finished runs, as ranges, with a follow-up once you adopt one.
+- **Narrow panes.** Tables drop the columns that don't fit, the usage forecast keeps 11px labels on a phone-width pane, and table cells keep a gutter.
+- **Clearer actions.** Buttons say what they do ("Review workflow", "Refresh runs", "Copy run ID"), and the desktop tab bar is a segmented control, so the one primary button per view stands out.
+- **Runways instead of rings.** The three concentric usage rings, which looked like Apple Watch, are replaced by a runway per item: the fill is what is used, a strand under it is how much of the window has passed, and a limit that would run out early shows its run-out and the dry stretch to the reset. It is on the This session tiles, the Home limit tile and the line above the prompt, and in block characters on the terminal. A design panel of four directions was judged on distinctiveness, clarity and pace; this one won.
+- **Animated chart tooltips** on the usage forecast. They fade in over 150 ms, and appear at once with reduced motion set.
+- **Tamper evidence.** Releases ship SHA-256 checksums and build provenance. ToBeBestMe checks its own files against its release once a day.
+- **Security.** Untrusted text is cleaned before display, keys from other sessions are checked, session ids are quoted, the handoff note is treated as data, and the store is capped by size.
+- **A calmer, structured layout.** Sections are a heading above a faint grouped fill instead of bordered cards with icon tiles; the tabs sit in one segmented track; Home leads with the tightest limit as a full-width runway and one strip of figures; the most pressing waiting chat is drawn whole and the rest in one line each; on a wide pane Home, This session, Usage, Workflows, Context and Settings are two columns, with figures and controls beside the work. One primary button per view is enforced.
+- **Fewer tabs, one meaning per colour.** Context is part of This session now (six tabs, and `/tobebestme context` still opens it). Blue, purple and cyan name models and nothing else: limits, budgets and charts are neutral grey, and red, amber and green mean status only. Each control lives in one place (budgets on Usage, the workflow check on Workflows). A section's explaining line shows under Show details, so the page stays quiet; the lines that carry a fact (how old a plan reading is, what notifications can show) stay. Usage draws a limit as the same runway as Home and the line above the prompt, with the history chart under Show details. The line above the prompt is two lines: the headline and its cost, then the figures.
+- **Get more from Claude.** Home suggests up to three things at a time, each one press away, and puts one off for a month with Not now. They come from your own settings and records, never a fixed list: what the records show costing you (MCP servers re-sent with every request, skills that never run) comes first, then habits you could start (notifications, a skill for a prompt you repeat, a memory file, a first workflow, a spending guard). The card says how many habits are in place and goes away when there is nothing left to suggest.
+- **A welcome tour.** The first time, four steps show the real thing and not a picture of it: the line above the prompt as it is now, what waits for you, your tightest limit laid out on its calendar, and the habits. It waits while a chat needs an answer, and `/tobebestme tour` brings it back. What it remembers (the tour is done, which suggestions were put off) is one small record in the shared store, `habits:v1`.
+- **The week on a calendar.** The limit that matters most is drawn large on Home and Usage: the window's days (or hours) along the bottom, Now over the playhead, and where it runs out and when it resets in words over their posts. The smaller runways keep their short form.
+- **Ask me first is a real gate.** It asks in the chat's own question dialog, which a hook can wait on for as long as you take, and a workflow agent held by a pause waits in short process naps. Before, both gave way after ten seconds and the run started anyway.
+- **Notifications.** One store record per event, a claim at a time, `--` before the words of a system notification, an encoded phone header for non-ASCII titles, and budget notices that name their amount.
+- **Costs as a share of your weekly limit.** On a Claude plan what runs out is the limit, not dollars, so by default every cost (Home, Usage, Workflows, the line above the prompt, the status line and the line under each answer) shows as a share of the weekly limit, estimated from this week's work at list prices against how far the limit has moved. Usage › Show costs as switches between Automatic, Share of limit and Dollars. Budgets stay in dollars.
+- **Fixes from the pre-launch review.**
+  - Routing to the cheaper model is paused only when it fails while the usual model answers (not when the connection is down), and the pause lasts half an hour, not the rest of the session.
+  - Only a model switch you make (/model, the /config row, a picker) wins over Always; an automatic fallback or a resume doesn't.
+  - A reply to a chat that ran in a terminal or an editor can no longer reach a Claude app session with the same folder and title.
+  - The model adviser knows Fable and Mythos: with limits tight it suggests Opus, with one press to switch.
+  - "Suggest more with Sonnet" now asks Sonnet when the account has no cheaper model.
+  - A button that puts a command in the prompt box leaves words you were typing there, and says how to go on.
+  - The pane closes with Esc however it was opened, from the line above the prompt too.
+  - A handoff note written mid-conversation isn't pointed out to Claude at the next prompt; only one written before a compaction or a fresh start is.
+  - Wins this session are counted as they happen, so clearing the activity list keeps them. Saved reports use this computer's time.
+  - Set-aside chats, set-aside savings and put-off suggestions are merged with what other sessions stored, not written over. After a /clear the session follows its new id, and its record of which copy ran it goes when it ends. Spending is read sixteen records at a time, and only today's are read again. Transcripts dropped for room are not read again on every pass.
+  - Skill names such as `toString` or `valueOf` are skills like any other, and `__proto__` or `constructor` from a record are left out.
+  - The self-check reports a module added beside the released ones, and a manifest missing from a copy that had one. `SHA256SUMS` now covers README.md and SECURITY.md too.
+  - SECURITY.md lists everything ToBeBestMe reads (settings files for two skill settings, a workflow's script, the environment variables it uses) and every prompt it sends.
+  - The e2e sessions load a copy of the mod as it ships, the live test runs under a name of its own each time, the desktop checks measure against the pane's own edges, and the terminal checks confirm Show details draws the hover cards in place.
+- **Tests.** 75 kit tests and an end-to-end suite. The suite draws every view at three widths and checks it, drives real terminal sessions, and runs one live workflow.
+
+## 1.3.0
+
+- The Workflows tab: preview each run, follow its agents live, pause, limit how many run at once, choose the model for new agents, and stop. It also reads ways to cut workflow costs from your past runs.

@@ -1,0 +1,15 @@
+{
+  "name": "tobebestme-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end checks for ToBeBestMe: every tab drawn in Chromium, and real Claude Code sessions driven in a terminal.",
+  "scripts": {
+    "test": "playwright test",
+    "test:live": "E2E_LIVE=1 playwright test tests/live-workflow.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.0",
+    "@xterm/addon-serialize": "0.14.0",
+    "@xterm/headless": "6.0.0"
+  }
+}

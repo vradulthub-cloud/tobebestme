@@ -1,0 +1,40 @@
+# Builds a ToBeBestMe release from a version tag: checks the committed manifest matches the files,
+# publishes the zip with SHA256SUMS (every file in it but the two lists of hashes), and signs build
+# provenance for both.
+# Each action is pinned to a full commit SHA (its release tag in the comment), so a moved tag can't
+# change what runs here.
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: The manifest matches the files and the tag matches the version
+        run: |
+          node tools/release-manifest.mjs
+          git diff --exit-code .claude-plugin/integrity.json SHA256SUMS
+          test "v$(node -p "require('./.claude-plugin/plugin.json').version")" = "$GITHUB_REF_NAME"
+      - name: Package
+        run: zip -r "tobebestme-${GITHUB_REF_NAME}.zip" .claude-plugin/plugin.json .claude-plugin/marketplace.json .claude-plugin/integrity.json hooks types LICENSE TRADEMARKS.md README.md SECURITY.md SHA256SUMS -x '*/._*'
+      # GitHub signs provenance for public repositories (and private ones on Enterprise Cloud only), so
+      # a private repository's release ships SHA256SUMS without it
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        if: github.event.repository.visibility == 'public'
+        with:
+          subject-path: |
+            tobebestme-*.zip
+            SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "ToBeBestMe ${GITHUB_REF_NAME#v}" --notes "See CHANGELOG.md. Verify with SHA256SUMS and gh attestation verify (SECURITY.md)." "tobebestme-${GITHUB_REF_NAME}.zip" SHA256SUMS
