@@ -22,6 +22,7 @@
 - **Ask me first is a real gate.** It asks in the chat's own question dialog, which a hook can wait on for as long as you take, and a workflow agent held by a pause waits in short process naps. Before, both gave way after ten seconds and the run started anyway.
 - **Notifications.** One store record per event, a claim at a time, `--` before the words of a system notification, an encoded phone header for non-ASCII titles, and budget notices that name their amount.
 - **Costs as a share of your weekly limit.** On a Claude plan what runs out is the limit, not dollars, so by default every cost (Home, Usage, Workflows, the line above the prompt, the status line and the line under each answer) shows as a share of the weekly limit, estimated from this week's work at list prices against how far the limit has moved. Usage › Show costs as switches between Automatic, Share of limit and Dollars. Budgets stay in dollars.
+- **Every move lands where it says.** A new tab opens at its top instead of keeping the last tab's place on the page. A button for one thing scrolls it into view: Make the conversation smaller goes to Save and shrink, Open model adviser to the adviser, a budget link to the budgets. A question a button asks (Start fresh, Compact now, a reply) comes into view, and Start fresh or Compact now pressed outside This session opens This session, where the question is.
 - **Fixes from the pre-launch review.**
   - Routing to the cheaper model is paused only when it fails while the usual model answers (not when the connection is down), and the pause lasts half an hour, not the rest of the session.
   - Only a model switch you make (/model, the /config row, a picker) wins over Always; an automatic fallback or a resume doesn't.
@@ -37,7 +38,7 @@
   - The self-check reports a module added beside the released ones, and a manifest missing from a copy that had one. `SHA256SUMS` now covers README.md and SECURITY.md too.
   - SECURITY.md lists everything ToBeBestMe reads (settings files for two skill settings, a workflow's script, the environment variables it uses) and every prompt it sends.
   - The e2e sessions load a copy of the mod as it ships, the live test runs under a name of its own each time, the desktop checks measure against the pane's own edges, and the terminal checks confirm Show details draws the hover cards in place.
-- **Tests.** 75 kit tests and an end-to-end suite. The suite draws every view at three widths and checks it, drives real terminal sessions, and runs one live workflow.
+- **Tests.** 76 kit tests and an end-to-end suite. The suite draws every view at three widths and checks it, drives real terminal sessions, and runs one live workflow.
 
 ## 1.3.0
 

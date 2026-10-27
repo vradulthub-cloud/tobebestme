@@ -184,7 +184,7 @@ For the desktop app too, name the folder in `CLAUDE_CODE_PLUGIN_DIRS` in the `en
 
 ```bash
 claude plugin validate ./tobebestme   # static analysis: events hooked, API calls made, state used
-claude plugin test ./tobebestme       # 75 tests on the terminal and desktop surfaces, no sign-in or network needed
+claude plugin test ./tobebestme       # 76 tests on the terminal and desktop surfaces, no sign-in or network needed
 ```
 
 The end-to-end suite in `e2e/` uses Playwright. It draws every view in an empty session, a busy day and with a workflow waiting for an answer, at 375, 768 and 1280 pixels wide. Each view is checked in Chromium for:

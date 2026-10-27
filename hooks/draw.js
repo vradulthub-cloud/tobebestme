@@ -487,6 +487,7 @@ function legendItems(d) {
     level: spent >= cap ? 'error' : spent >= cap * 0.8 ? 'warning' : 'success',
     hex,
     tab: 'usage',
+    focus: 'opt-sessionBudget-0',
     ring: true,
     runway: { used: Math.min(100, (spent / cap) * 100), elapsed: null, runOut: null, ticks: [80] },
     tip: { title: label + ' of ' + fmtUsd(cap), lines: [spent >= cap ? 'Reached.' : fmtUsd(cap - spent) + ' left.', 'Opens Usage, where budgets are set.'] },
@@ -546,7 +547,7 @@ function overviewTab(k, d, act) {
           paddingY: k.isTerminal ? undefined : 'xs',
         }),
         [
-          k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [it.tab === 'overview' ? k.text(it.label, { dimColor: true }) : k.Button({ key: 'ring-' + i, plain: true, onPress: () => act.setView({ tab: it.tab, confirm: '', editing: '' }), children: [it.label + ' ›'] })] }),
+          k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [it.tab === 'overview' ? k.text(it.label, { dimColor: true }) : k.Button({ key: 'ring-' + i, plain: true, onPress: () => act.setView({ tab: it.tab, confirm: '', editing: '', ...(it.focus ? { focus: it.focus } : {}) }), children: [it.label + ' ›'] })] }),
           k.text(it.valueText, { size: 'title', weight: 'semibold', tabular: true, color: quiet(it.level) }),
           ...(it.ring && it.runway ? [runwayBar(k, it, 'tile')] : []),
           k.footnote(it.sub),

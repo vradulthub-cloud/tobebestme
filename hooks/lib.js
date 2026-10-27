@@ -1125,7 +1125,7 @@ export function habitIdeas(d, { max = 3, snooze = 30 * 86_400_000 } = {}) {
     title: 'Set a spending guard',
     detail: (week >= 25 ? 'You used about ' + (costShare(d) ? fmtShare(week * costShare(d).pctPerUsd) + ' of your weekly limit' : fmtUsd(week)) + ' this week with no budget set. ' : '') + 'At a budget, requests switch to ' + titleCase(o.cheapModel || 'haiku') + ' or wait, as you choose, so a long run cannot keep spending.',
     button: 'Set a budget',
-    todo: { kind: 'tab', tab: 'usage' },
+    todo: { kind: 'run', key: 'budgets' },
   })
   habits.push({
     key: 'workflow',
@@ -1217,7 +1217,7 @@ export function usageInsights(s, o) {
       key: 'model',
       title: modelName(top[0]) + ' did ' + share(top[1]) + '% of this week’s work',
       detail: isFable ? 'Opus costs less than half as much per token and suits most coding; keep ' + modelName(top[0]) + ' for the hardest problems.' : 'Sonnet costs half as much per token and handles most coding; keep Opus for planning and review.',
-      action: { key: 'overview', label: 'Open model adviser' },
+      action: { key: 'adviser', label: 'Open model adviser' },
     })
   }
   const busiest = s.projects[0]

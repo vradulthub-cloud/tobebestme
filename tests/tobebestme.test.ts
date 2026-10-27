@@ -1334,6 +1334,16 @@ test('the pane opens the same way from everywhere: from the line above the promp
   await band.unmount()
 })
 
+test('Start fresh asks on This session wherever it is pressed, and the question shows', async ($, on) => {
+  stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN } })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-overview' })
+  await ui.press({ key: 'hero-action' }) // Start fresh…, the headline's answer
+  expect(await shown(ui)).toContain('Start a fresh conversation?')
+  expect(await ui.find({ type: 'Button', key: 'confirm-go' })).toBeTruthy()
+  await ui.unmount()
+})
+
 test('the first time, Home walks through four steps with the real thing, remembers it is done, and /tobebestme tour brings it back', async ($, on) => {
   const { store } = stubs(on)
   await $.command.run({ command: 'tobebestme', args: 'home' })

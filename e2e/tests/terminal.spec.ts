@@ -67,13 +67,9 @@ test.describe('a wide terminal', () => {
     // This session's Context tile says what context is only in its hover card, which a terminal
     // draws in place under Show details
     const WHAT = 'Everything Claude re-reads on' // the card's first words; a narrow column wraps the rest
-    // opened afresh on This session, so the pane starts at its top, where the tile is
-    s.send('\x1b')
-    await expect.poll(() => s.screen().includes('[ Settings ]'), { timeout: 3000 }).toBe(false)
-    s.send('/tobebestme session')
-    await new Promise((go) => setTimeout(go, 300))
-    s.send('\r')
-    await s.waitFor('[ Settings ]', { timeout: 10_000, what: 'the pane' })
+    // after the tabs before it, This session opens at its top, where the tile is: a new tab never
+    // keeps the last one's place on the page
+    s.send('3')
     await expect.poll(() => s.highlighted(TABS.map((t) => '[ ' + t + ' ]')), { timeout: 3000 }).toEqual(['[ This session ]'])
     await s.settle(400)
     expect(s.screen()).not.toContain(WHAT)

@@ -969,6 +969,16 @@ async function refreshLive($, force = false, gap = 20_000) {
   }
 }
 
+// The pane moves once it has drawn what it moves to: a moment after the change that drew it.
+function scrollPane($, to, block) {
+  const go = () => Promise.resolve($.ui.scroll({ in: PANE, to, ...(block ? { block } : {}) })).catch(() => {})
+  try {
+    $.clock.after(60, go)
+  } catch {
+    void go()
+  }
+}
+
 async function loadHabits($) {
   try {
     const v = await $.store.get(HABITS_KEY)
@@ -2365,7 +2375,16 @@ async function gather($) {
 
 // What the dashboard's buttons do.
 function actions($, d) {
-  const setView = (patch) => update($, view, (cur) => ({ ...cur, ...patch }))
+  // Moving to another tab starts at its top; a move to one thing on a tab (`focus`, a key drawn there)
+  // brings that thing into view, so a button never leaves you somewhere else on the page.
+  const setView = async (patch) => {
+    const { focus, ...rest } = patch
+    const before = (await read($, view)).tab
+    await update($, view, (cur) => ({ ...cur, ...rest }))
+    if (focus) scrollPane($, { key: focus }, 'center')
+    else if (rest.confirm) scrollPane($, { key: String(rest.confirm).startsWith('reply:') ? 'reply-go' : 'confirm-go' }, 'nearest') // the question asked, in view
+    else if (rest.tab && rest.tab !== before) scrollPane($, 'start')
+  }
   const writeNote = async () => {
     const note = await writeHandoff($, 'from the dashboard')
     $.ui.toast(note ? 'Handoff note written to ' + HANDOFF_PATH + '.' : "Couldn't write the handoff note: the model didn't answer. Try again after Claude's next answer.")
@@ -2589,7 +2608,7 @@ function actions($, d) {
       await $.ui.open({ ...PANE_OPEN, focus: true })
     },
     run: async (key) => {
-      if (key === 'compact' || key === 'fresh') return setView({ confirm: key })
+      if (key === 'compact' || key === 'fresh') return setView({ tab: 'overview', confirm: key }) // the question shows on This session
       if (key === 'note') return writeNote()
       if (key === 'use-sonnet') return chooseModel($, { main: 'sonnet' }, 'Sonnet is on for this session.')
       if (key === 'use-opus') return chooseModel($, { main: 'opus' }, 'Opus is on for this session.')
@@ -2601,7 +2620,9 @@ function actions($, d) {
       if (key === 'plugins') return fillPrompt($, '/plugin', 'your plugins')
       if (key === 'skills-screen') return fillPrompt($, '/skills', 'your skills')
       if (key === 'spending' || key === 'limits') return setView({ tab: 'usage', confirm: '', editing: '' })
-      if (key === 'context') return setView({ tab: 'overview', confirm: '', editing: '' })
+      if (key === 'context') return setView({ tab: 'overview', confirm: '', editing: '', focus: 'handoff' }) // to Save and shrink
+      if (key === 'adviser') return setView({ tab: 'overview', confirm: '', editing: '', focus: 'model-advice' })
+      if (key === 'budgets') return setView({ tab: 'usage', confirm: '', editing: '', focus: 'opt-sessionBudget-0' })
       if (TABS.some((t) => t.id === key)) return setView({ tab: key, confirm: '', editing: '' })
       if (key === 'mode-always') return setOption($, 'mode', 'always')
       if (key === 'mode-automatic') return setOption($, 'mode', 'automatic')
@@ -2726,6 +2747,7 @@ export function register(on, options) {
       const stamp = await $.clock.now()
       await update($, view, (cur) => ({ ...cur, tab: 'all', tourStep: 0, confirm: '', editing: '', habitsAt: stamp }))
     } else if (tab) await update($, view, (cur) => ({ ...cur, tab, confirm: '', editing: '' }))
+    if (tab) scrollPane($, 'start')
     await scanBriefly($, 1_500)
     await refreshBreakdown($)
     await syncToday($)
