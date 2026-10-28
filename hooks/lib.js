@@ -1001,6 +1001,7 @@ export function usageSummary(store, now, cheap = 'haiku') {
   const projects = {}
   const models = {}
   const kinds = { main: 0, helpers: 0, workflows: 0 }
+  const helperModels = {}
   let helpersCheap = 0
   const sessionsToday = new Set()
   const sessionsWeek = new Set()
@@ -1037,6 +1038,7 @@ export function usageSummary(store, now, cheap = 'haiku') {
           kinds[kind] += usd
           if (kind !== 'main') {
             p[kind] += usd
+            helperModels[model] = (helperModels[model] || 0) + usd
             if (isCheapModel(model, cheap)) helpersCheap += usd
           }
           for (let j = 0; j < 4; j++) p.tokens[j] += Number(t[j]) || 0
@@ -1078,6 +1080,7 @@ export function usageSummary(store, now, cheap = 'haiku') {
     models: Object.entries(models).sort((a, z) => z[1] - a[1]),
     kinds,
     helpersCheap,
+    helperModels,
     files,
     isEmpty: list.length === 0,
   }
@@ -1191,11 +1194,23 @@ export function habitIdeas(d, { max = 3, snooze = 30 * 86_400_000 } = {}) {
 }
 
 // `o.fmt` writes a cost as the page does (a dollar figure, or a share of the weekly limit).
+// How much of a model's cost the same tokens would cost on another: the mean of the input and
+// output price ratios, so a reading-heavy and a writing-heavy helper come out about right.
+function priceRatio(from, to) {
+  const a = priceFor(from)
+  const b = priceFor(to)
+  if (!a || !b) return 1
+  return Math.min(1, (b.input / a.input + b.output / a.output) / 2)
+}
+
+// An idea's `whatIf` says what it would do to this week's pace: `factor` is the share of the week's
+// work it would take off, from list prices, so the page can show where the pace would land instead.
 export function usageInsights(s, o) {
   if (!s || s.week.usd <= 0) return []
   const money = (o && o.fmt) || fmtUsd
   const out = []
   const share = (x) => Math.round((x / s.week.usd) * 100)
+  const whatIfOf = (title, saving) => (saving > 0 && saving < s.week.usd ? { title, saving, factor: saving / s.week.usd } : undefined)
   const before = s.days.slice(-7, -1)
   const usual = before.length ? sum(before) / before.length : 0
   if (usual > 0 && s.today.usd >= Math.max(1, usual * 2)) {
@@ -1205,21 +1220,26 @@ export function usageInsights(s, o) {
   if (share(helped) >= 25) {
     const isCheap = s.helpersCheap >= helped * 0.5
     const who = s.kinds.workflows > s.kinds.helpers ? 'Workflow agents and helpers' : 'Helpers and workflow agents'
+    let saving = 0
+    for (const [m, usd] of Object.entries(s.helperModels || {})) if (!isCheapModel(m, o.cheapModel)) saving += usd * (1 - priceRatio(m, o.cheapModel))
     out.push({
       key: 'helpers',
       title: who + ' did ' + share(helped) + '% of this week’s work',
       detail: isCheap ? 'Most of it on ' + titleCase(o.cheapModel) + ' already, so it goes a long way.' : 'Searching and reading work about as well on ' + titleCase(o.cheapModel) + ', for a small share of the limits.',
       action: !isCheap && !o.helpersAlwaysCheap ? { key: 'helpers', label: 'Use ' + titleCase(o.cheapModel) + ' for helpers' } : undefined,
+      whatIf: !isCheap && !o.helpersAlwaysCheap ? whatIfOf('If helpers ran on ' + titleCase(o.cheapModel), saving) : undefined,
     })
   }
   const top = s.models[0]
   if (top && share(top[1]) >= 75 && /opus|fable|mythos/.test(top[0])) {
     const isFable = /fable|mythos/.test(top[0])
+    const to = isFable ? 'opus' : 'sonnet'
     out.push({
       key: 'model',
       title: modelName(top[0]) + ' did ' + share(top[1]) + '% of this week’s work',
       detail: isFable ? 'Opus costs less than half as much per token and suits most coding; keep ' + modelName(top[0]) + ' for the hardest problems.' : 'Sonnet costs half as much per token and handles most coding; keep Opus for planning and review.',
       action: { key: 'adviser', label: 'Open model adviser' },
+      whatIf: whatIfOf('If half of that ran on ' + titleCase(to), 0.5 * top[1] * (1 - priceRatio(top[0], to))),
     })
   }
   const busiest = s.projects[0]
@@ -2904,6 +2924,9 @@ export function svgRunway(g, { width = 600, height = 14, isFluid = false } = {})
   const parts = ['<rect x="0" y="0" width="' + W + '" height="6" fill="#8E8E93" fill-opacity="0.24"/>']
   if (u > 0) parts.push('<rect x="0" y="0" width="' + u.toFixed(1) + '" height="6" fill="' + g.hex + '"/>')
   if (early && u > e) parts.push('<rect x="' + e.toFixed(1) + '" y="0" width="' + (u - e).toFixed(1) + '" height="6" fill="' + HEX.warning + '"/>')
+  // where the pace lands by the reset: a faint ghost of the fill ahead of it
+  const pr = hasClock && g.projected !== null && g.projected !== undefined ? x(g.projected) : null
+  if (pr !== null && pr > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="0" width="' + (pr - u).toFixed(1) + '" height="6" fill="' + (early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>')
   if (hasClock) {
     const ro = early ? x(g.runOut) : null
     if (e > 0) parts.push('<rect x="0" y="9" width="' + e.toFixed(1) + '" height="3" fill="#AEAEB2"/>')
@@ -2954,6 +2977,8 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
   const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="10" fill="#8E8E93" fill-opacity="0.24"/>']
   if (u > 0) parts.push('<rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/>')
   if (early && u > e) parts.push('<rect x="' + e.toFixed(1) + '" y="' + T + '" width="' + (u - e).toFixed(1) + '" height="10" fill="' + HEX.warning + '"/>')
+  const pr = hasClock && g.projected !== null && g.projected !== undefined ? x(g.projected) : null
+  if (pr !== null && pr > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (pr - u).toFixed(1) + '" height="10" fill="' + (early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>')
   // the days, or hours, of the window: a hairline between them and the name of each under it
   const marks = []
   const side = []
@@ -3079,34 +3104,56 @@ export function svgLive(hex) {
   )
 }
 
+// `projected` is where the window's own average pace lands by the reset (capped at 100), so a
+// runway shows not only where you are but where you are heading; null until a quarter hour is in.
 export function runwayOf(kind, pct, resetAt, now) {
   const span = WINDOW_MS[kind] || WINDOW_MS.five_hour
-  if (!resetAt || Number.isNaN(resetAt)) return { used: pct, elapsed: null, runOut: null }
+  if (!resetAt || Number.isNaN(resetAt)) return { used: pct, elapsed: null, runOut: null, projected: null }
   const start = resetAt - span
   const elapsedMs = Math.max(0, Math.min(span, now - start))
   let runOut = null
-  if (elapsedMs >= 15 * 60_000 && pct > 0 && pct < 100) {
-    const fullAt = now + ((100 - pct) / pct) * elapsedMs
-    if (fullAt < resetAt && resetAt - fullAt >= Math.max(20 * 60_000, span * 0.08)) runOut = ((fullAt - start) / span) * 100
+  let projected = null
+  if (elapsedMs >= 15 * 60_000 && pct > 0) {
+    projected = Math.min(100, (pct / elapsedMs) * span)
+    if (pct < 100) {
+      const fullAt = now + ((100 - pct) / pct) * elapsedMs
+      if (fullAt < resetAt && resetAt - fullAt >= Math.max(20 * 60_000, span * 0.08)) runOut = ((fullAt - start) / span) * 100
+    }
   }
-  return { used: pct, elapsed: (elapsedMs / span) * 100, runOut }
+  return { used: pct, elapsed: (elapsedMs / span) * 100, runOut, projected }
 }
 
-// The runway in a terminal, `cells` wide: █ used, ░ room, ┃ now, ╌ the dry stretch after a run-out
-// (in warning colour, as is use past "now" when the pace runs out early). Returns [text, color]
-// runs for Text children.
+// Words for where a runway's pace lands: running out early, or ending the window at about so much.
+export function paceWords(kind, r, resetAt, now) {
+  if (r.elapsed === null || r.elapsed === undefined) return ''
+  const what = kind === 'five_hour' ? 'window' : 'week'
+  if (r.used >= 100) return 'Used up until it resets.'
+  if (r.runOut !== null && r.runOut !== undefined) {
+    const span = WINDOW_MS[kind] || WINDOW_MS.five_hour
+    const fullAt = resetAt - span + (r.runOut / 100) * span
+    return 'At this pace it runs out ' + fmtClock(fullAt, now) + ', ' + fmtSpan(resetAt - fullAt) + ' before it resets.'
+  }
+  if (r.projected !== null && r.projected !== undefined) return 'On pace to end the ' + what + ' at about ' + Math.round(r.projected) + '%.'
+  return ''
+}
+
+// The runway in a terminal, `cells` wide: █ used, ▒ where the pace lands by the reset, ░ room,
+// ┃ now, ╌ the dry stretch after a run-out (in warning colour, as is use past "now" when the pace
+// runs out early). Returns [text, color] runs for Text children.
 export function textRunway(g, cells = 20) {
   const at = (v) => Math.round((Math.max(0, Math.min(100, v || 0)) / 100) * cells)
   const u = at(g.used)
   const hasClock = g.elapsed !== null && g.elapsed !== undefined
   const e = hasClock ? Math.min(cells - 1, at(g.elapsed)) : -1
   const ro = hasClock && g.runOut !== null && g.runOut !== undefined ? at(g.runOut) : -1
+  const pr = hasClock && g.projected !== null && g.projected !== undefined ? at(g.projected) : -1
   const runs = []
   const push = (ch, color) => (runs.length && runs[runs.length - 1][1] === color ? (runs[runs.length - 1][0] += ch) : runs.push([ch, color]))
   for (let i = 0; i < cells; i++) {
     if (i === e) push('┃', undefined)
     else if (ro >= 0 && i >= ro && i >= u) push('╌', 'warning')
     else if (i < u) push('█', ro >= 0 && e >= 0 && i > e ? 'warning' : 'suggestion')
+    else if (pr >= 0 && i < pr) push('▒', ro >= 0 ? 'warning' : 'suggestion')
     else push('░', 'subtle')
   }
   return runs

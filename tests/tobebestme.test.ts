@@ -497,8 +497,9 @@ test('each limit is a runway, not a ring: the weekly one says in words and in ma
   expect(String(weekly?.props.source)).toContain('class="now"') // the playhead
   expect(String(weekly?.props.source)).toContain('class="post"') // the reset
   const fiveHour = svgs.find((x: any) => String(x.props.alt).startsWith('5-hour limit'))
-  expect(String(fiveHour?.props.alt)).toContain('% of the window gone')
+  expect(String(fiveHour?.props.alt)).toMatch(/on pace for about \d+% by the reset/)
   expect(String(fiveHour?.props.source)).not.toContain('class="ro"') // on pace: no stop
+  expect(String(fiveHour?.props.source)).toContain('class="ahead"') // where the pace lands, ahead of the fill
   await desktop.unmount()
 
   // the terminal draws the same thing in block characters: fill, now (┃) and the dry stretch (╌)
@@ -1012,6 +1013,29 @@ const WEEK: Transcript[] = [
   { path: '-Users-me-Projects-ledger-api/s3.jsonl', ageMs: 86_400_000, cwd: '/Users/me/Projects/ledger-api', answers: [['2026-10-22T12:00:00Z', 'claude-opus-5-5', 0, 50_000, 0, 0]] },
   { path: '-Users-me-Projects-ledger-api/old.jsonl', ageMs: 30 * 86_400_000, cwd: '/Users/me/Projects/ledger-api', answers: [['2026-09-23T12:00:00Z', 'claude-opus-5-5', 0, 900_000, 0, 0]] },
 ]
+
+test('Home leads with one big figure and says where the pace lands, and each saving shows what it would do to the week', async ($, on) => {
+  // 30% of the week used with 66% of it gone: on pace for about 45% by the reset
+  stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-10-25T21:00:00Z' }] })
+  transcripts(on, WEEK)
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'usage-refresh' })
+    const text = await shown(ui)
+    expect(text).toContain('30%\nof your weekly limit')
+    expect(text).toMatch(/On pace to end the week at about 4\d%\./)
+    // helpers did 55% of the week on Opus and Haiku: moving them to Haiku lands the week lower
+    expect(text).toMatch(/If helpers ran on Haiku: on pace to end the week at about \d+%\./)
+    if (surface === 'terminal') expect(text).toContain('▒') // the stretch the pace will take, in blocks
+    await ui.press({ key: 'details' })
+    const detail = await shown(ui)
+    expect(detail).toMatch(/This week’s pace would drop about \d+%, at list prices\./)
+    expect(detail).toMatch(/Now: on pace to end the week at about 4\d%\./)
+    await ui.press({ key: 'details' })
+    await ui.unmount()
+  }
+})
 
 test('the week on Home is something to press: a day picks itself out and Projects follows it, a project in the legend stands out, and each comes back in one press', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-10-25T21:00:00Z' }] })

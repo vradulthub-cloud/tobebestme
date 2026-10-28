@@ -68,6 +68,7 @@ import {
   projectHues,
   OTHER_HEX,
   svgLive,
+  paceWords,
 } from './lib.js'
 
 // Costs as dollars, or as a share of the weekly limit when that is what runs out (costShare): set
@@ -143,6 +144,7 @@ export function kit(el, e, primary = { isTaken: false }) {
       ...(t.title ? [Text({ color: TIP.text, weight: 'semibold', wrap: 'wrap', children: [t.title] })] : []),
       ...(t.lines || []).filter(Boolean).map((l) => Text({ color: TIP.dim, size: 'footnote', wrap: 'wrap', children: [l] })),
       ...(t.good ? [Text({ color: TIP.good, size: 'footnote', wrap: 'wrap', children: ['↓ ' + t.good] })] : []),
+      ...(t.el ? [Box({ paddingY: 'xs', children: [t.el] })] : []),
     ]
     return Box(clean({
       position: 'absolute',
@@ -165,7 +167,7 @@ export function kit(el, e, primary = { isTaken: false }) {
   // keyboard, a screen reader, a touch screen, or anyone who'd rather read it all at once.
   const inlineDetails = (t) => {
     const lines = t ? [...(t.lines || []).filter(Boolean), ...(t.good ? ['↓ ' + t.good] : [])] : []
-    return lines.length ? [Box({ flexDirection: 'column', paddingLeft: isTerminal ? 2 : 'md', children: lines.map((l) => footnote(l)) })] : []
+    return lines.length || (t && t.el) ? [Box({ flexDirection: 'column', rowGap: 'xs', paddingLeft: isTerminal ? 2 : 'md', children: [...lines.map((l) => footnote(l)), ...(t.el ? [t.el] : [])] })] : []
   }
 
   const k = {
@@ -177,8 +179,14 @@ export function kit(el, e, primary = { isTaken: false }) {
     hotkey: (key) => (isTerminal ? key : undefined),
     // A Box that explains itself on hover: a faint tint under the pointer and a card above it.
     showDetails: false,
-    hoverBox: (key, props, children, t) =>
-      Box(clean({ key, ...props, hover: isTerminal ? undefined : { backgroundColor: ROW_HOVER }, children: [...children, ...(k.showDetails ? inlineDetails(t) : tipLayer(t))] })),
+    hoverBox: (key, props, children, t) => {
+      // with Show details on, a row's words go under the row, never beside it in a sliver
+      if (k.showDetails && t && props.flexDirection !== 'column') {
+        const details = inlineDetails(t)
+        if (details.length) return Box({ key, flexDirection: 'column', width: props.width, children: [Box(clean({ ...props, width: '100%', children })), ...details] })
+      }
+      return Box(clean({ key, ...props, hover: isTerminal ? undefined : { backgroundColor: ROW_HOVER }, children: [...children, ...(k.showDetails ? inlineDetails(t) : tipLayer(t))] }))
+    },
     // A tile at the top of a tab, and its hover card. A card drawn above a tile there would run
     // past the pane's top, where it is cut off, and one drawn inside the tile would sit under the
     // tiles after it. So the card joins the tile's hover group and k.tileRow draws it after the
@@ -389,7 +397,7 @@ export function drawDashboard(k, d, act) {
 // same thing, so it never rests on colour alone.
 function runwayBar(k, it, where, widthPx) {
   const r = it.runway
-  const words = it.label + ' ' + it.valueText + (r.runOut !== null && r.runOut !== undefined ? ', runs out before it resets' : r.elapsed !== null && r.elapsed !== undefined ? ', ' + Math.round(r.elapsed) + '% of the window gone' : '')
+  const words = it.label + ' ' + it.valueText + (r.runOut !== null && r.runOut !== undefined ? ', runs out before it resets' : r.projected !== null && r.projected !== undefined ? ', on pace for about ' + Math.round(r.projected) + '% by the reset' : r.elapsed !== null && r.elapsed !== undefined ? ', ' + Math.round(r.elapsed) + '% of the window gone' : '')
   // the calendar is drawn at the column's reckoned width, at exactly the size it was made
   if (k.hasSvg && it.window && widthPx && widthPx >= 280) return k.Box({ width: '100%', children: [k.drawing(svgWindow({ ...r, hex: it.hex, ...it.window, days: it.days }, { width: Math.round(widthPx) }), words + (it.daysAlt || ''), { isInteractive: it.days ? true : undefined })] })
   // a runway has no words in it, so it is made wide and drawn at whatever width its slot has
@@ -1778,14 +1786,39 @@ function homeHero(k, d, h, act) {
       ],
     })
   const level = tightest ? (tightest.pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : tightest.pct >= d.opts.limitAlertAt ? 'warning' : 'success') : 'success'
+  const kind = tightest ? (/5|hour/i.test(tightest.label) ? 'five_hour' : 'seven_day') : 'seven_day'
+  const pace = item ? paceWords(kind, item.runway, tightest.resetsAt, d.now) : ''
+  const isWide = k.columns >= 90
+  // what needs you, and beside it (under it, on a narrow pane) where you stand: one big figure
+  const words = k.Box({
+    flexDirection: 'column',
+    rowGap: 'xs',
+    flexGrow: 1,
+    flexShrink: 1,
+    children: [
+      k.footnote(date, { wrap: 'truncate-end' }),
+      k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.text(chats ? '● ' : '✓ ', chats ? { color: 'warning' } : { color: 'success' }), k.text(headline, { size: 'title', weight: 'semibold', wrap: 'wrap' })] }),
+      ...(facts.length ? [factsTip ? k.hoverBox('all-facts', { flexDirection: 'column' }, [k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })], { ...factsTip, align: 'left' }) : k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
+    ],
+  })
+  const figure = item
+    ? k.Box({
+        flexDirection: 'column',
+        alignItems: isWide ? 'flex-end' : 'flex-start',
+        flexShrink: 0,
+        ...(isWide ? { paddingLeft: 'lg' } : { paddingTop: 'xs' }),
+        children: [
+          k.text(Math.round(tightest.pct) + '%', { size: 'title', weight: 'semibold', tabular: true, color: quiet(level) }),
+          k.footnote('of your ' + tightest.label.toLowerCase() + (level === 'error' ? ' · nearly out' : level === 'warning' ? ' · past your alert' : ''), { wrap: 'truncate-end', ...(level === 'success' ? {} : { color: level, dimColor: undefined }) }),
+        ],
+      })
+    : null
   return k.Box({
     flexDirection: 'column',
     rowGap: 'xs',
     paddingX: k.isTerminal ? 1 : 'xs',
     children: [
-      k.footnote(date, { wrap: 'truncate-end' }),
-      k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.text(chats ? '● ' : '✓ ', chats ? { color: 'warning' } : { color: 'success' }), k.text(headline, { size: 'title', weight: 'semibold', wrap: 'wrap' })] }),
-      ...(facts.length ? [factsTip ? k.hoverBox('all-facts', { flexDirection: 'column' }, [k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })], { ...factsTip, align: 'left' }) : k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
+      isWide ? k.Box({ flexDirection: 'row', alignItems: 'flex-end', width: '100%', children: [words, ...(figure ? [figure] : [])] }) : k.Box({ flexDirection: 'column', children: [words, ...(figure ? [figure] : [])] }),
       ...(item
         ? [
             k.Box({
@@ -1801,9 +1834,9 @@ function homeHero(k, d, h, act) {
                   { flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', rowGap: 'xs', alignItems: 'center' },
                   [
                     k.Button({ key: 'all-limits', plain: true, onPress: () => act.setView({ tab: 'usage', confirm: '' }), children: [tightest.label + ' ›'] }),
-                    k.text(Math.round(tightest.pct) + '% used', { weight: 'semibold', tabular: true, color: quiet(level) }),
+                    ...(pace ? [k.Box({ flexShrink: 1, children: [k.text(pace, { size: 'footnote', wrap: 'wrap', ...(early ? { color: 'warning' } : { dimColor: true }) })] })] : []),
                     k.Box({ flexGrow: 1 }),
-                    ...(k.hasSvg && item.window ? [] : [k.footnote((early ? 'runs out before it resets · ' : '') + (tightest.resetsAt ? 'resets in ' + fmtSpan(tightest.resetsAt - d.now) : ''), { tabular: true, wrap: 'truncate-end' })]),
+                    ...(k.hasSvg && item.window ? [] : [k.footnote(tightest.resetsAt ? 'resets in ' + fmtSpan(tightest.resetsAt - d.now) : '', { tabular: true, wrap: 'truncate-end' })]),
                     ...(legend.length ? [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'xs', flexShrink: 1, children: legend.map(legendItem) })] : []),
                   ],
                   { title: tightest.label, lines: [tightest.resetsAt ? 'Resets ' + fmtClock(tightest.resetsAt, d.now) + '.' : '', (h.plan.source === 'app' ? (h.plan.plan ? h.plan.plan + ' plan. ' : '') : h.plan.source === 'session' ? 'From this session’s latest reading. ' : 'As read ' + ago(d.now - h.plan.at) + ' by another session. ') + 'Every project draws on the same limits.', legend.length ? 'The bars under it are each day’s work, by project.' : '', 'Press its name for every limit on Usage.'], align: 'left' },
@@ -2685,23 +2718,46 @@ function homeStatus(k, d, act, h) {
   return out
 }
 
+// What a saving would do to the week: the tightest limit's runway with the pace it would have
+// from now on, and the words for before and after. Only for a window of days with a quarter hour in.
+function whatIfItem(k, d, h, w) {
+  const it = h.item
+  if (!it || !it.window || it.window.unit !== 'day' || !w) return null
+  const r = it.runway
+  if (r.elapsed === null || r.elapsed === undefined || !(r.elapsed > 0) || !(r.used > 0) || r.used >= 100) return null
+  const resetsAt = h.tightest.resetsAt
+  const pace = (r.used / r.elapsed) * (1 - w.factor)
+  const landing = r.used + pace * (100 - r.elapsed)
+  // a run-out counts only when it is early enough to matter, as runwayOf decides it (8% of the week)
+  const at = landing > 100 ? r.elapsed + (100 - r.used) / pace : null
+  const runway = { used: r.used, elapsed: r.elapsed, runOut: at !== null && 100 - at >= 8 ? at : null, projected: Math.min(100, landing) }
+  const before = paceWords('seven_day', r, resetsAt, d.now)
+  const after = paceWords('seven_day', runway, resetsAt, d.now)
+  const item = { runway, hex: tint(it.hex, runway.runOut !== null ? 'warning' : 'success'), label: it.label, valueText: Math.round(r.used) + '%' }
+  const drop = Math.round(w.factor * 100)
+  return {
+    line: w.title + ': ' + after.replace(/^At this pace it/, 'it').replace(/^On pace/, 'on pace').replace(/^Used up/, 'used up'),
+    tip: { title: w.title, lines: ['This week’s pace would drop about ' + drop + '%, at list prices.', before ? 'Now: ' + before.charAt(0).toLowerCase() + before.slice(1) : '', after ? 'Then: ' + after.charAt(0).toLowerCase() + after.slice(1) : ''], el: runwayBar(k, item, 'tile'), align: 'left' },
+  }
+}
+
 function homeInsights(k, d, act, h) {
   const { u, has } = h
   const out = []
   const ideas = has ? usageInsights(u, { ...d.opts, fmt: cost }) : []
   if (ideas.length) {
     out.push(
-      k.card('What stands out', null, ideas.map((x, i) =>
-        k.Box({
-          flexDirection: 'column',
-          rowGap: 'xs',
-          children: [
-            k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
-            k.footnote(x.detail),
-            ...(x.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('insight-' + i, x.action.label, () => act.run(x.action.key))])] })] : []),
-          ],
-        }),
-      ), { gap: 'md' }),
+      k.card('What stands out', null, ideas.map((x, i) => {
+        const w = whatIfItem(k, d, h, x.whatIf)
+        const body = [
+          k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
+          k.footnote(x.detail),
+          // what the saving would do to the week, in a line; point at it for the runway it would have
+          ...(w ? [k.text(w.line, { size: 'footnote', weight: 'medium', wrap: 'wrap' })] : []),
+          ...(x.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('insight-' + i, x.action.label, () => act.run(x.action.key))])] })] : []),
+        ]
+        return w ? k.hoverBox('insight-' + i + '-row', { flexDirection: 'column', rowGap: 'xs' }, body, w.tip) : k.Box({ flexDirection: 'column', rowGap: 'xs', children: body })
+      }), { gap: 'md' }),
     )
   }
 

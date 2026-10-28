@@ -50,6 +50,7 @@ The tab it opens on. It reads Claude Code's own records for every project on thi
 
 - **Running now.** Workflows running in this session or another, with their agents done so far and what they have cost; **Open Workflows** goes to the controls. A workflow waiting for your go-ahead shows here too.
 - **The day's answer.** The date, how many chats are waiting for you (or *Nothing is waiting for you*), and today's work across projects and sessions.
+- **Where you stand, in one figure.** The tightest limit's percentage, large, beside the headline, and under its name a sentence of forecast: *On pace to end the week at about 45%*, or *At this pace it runs out Sat 5:21 AM, 32 h 38 min before it resets*. Every runway, here and on every tab, shows a faint ghost ahead of its fill: where the window's own pace lands by the reset.
 - **Your week on one calendar.** The tightest limit drawn across its window, with Now, where it runs out and when it resets. Under it, a bar for each day stacked by project, each project in its own colour, so you can see which work filled the week; point at a day for its share and its busiest projects. Press a day under the calendar to pick it out: the other days step back, a line says what it held, project by project, and Projects shows that day. Press a project in the legend and it sits on the baseline in its colour every day while the rest go grey. **Show the whole week** and **Show every project** bring it back. The other limits sit under it as runways with their percentage and reset. Each limit keeps one colour, and amber or red take over when it runs low. Anything working right now (a workflow, a session) has a softly pulsing dot, still with reduced motion set.
 - **Needs you.** Every chat that stopped for you in the last week, the most pressing first:
   - *Needs your permission*: a session running right now that is stopped on a permission prompt.
@@ -60,7 +61,7 @@ The tab it opens on. It reads Claude Code's own records for every project on thi
 
   In the desktop app a suggested reply shows the whole message and asks before it sends; **Reply…** opens a field where Return sends your own words. Either way the answer goes straight to that session. Everywhere, **Copy resume command** copies `cd '<folder>' && claude --resume <id>` to carry it on in a terminal, and **Set aside** hides it until that session asks again. A chat archived in the app, run again under the same title since (daily runs), or answered here drops off by itself.
 - **Pick up where you left off.** The latest session in each project you worked on this week (not a schedule's run): its title, the last thing it told you (or what you asked), its branch and pull request, where it ran, and loose ends in its folder, such as *3 files changed, not committed · 2 commits not pushed*. A session working right now says so. In the app, **Tell it what's next…** sends it your next step.
-- **What stands out.** Up to three plain observations, each with a button where one helps: a day well above your usual, helpers and workflow agents doing a large share (with **Use Haiku for helpers**), one model doing nearly all the work, or one project taking most of the week.
+- **What stands out.** Up to three plain observations, each with a button where one helps: a day well above your usual, helpers and workflow agents doing a large share (with **Use Haiku for helpers**), one model doing nearly all the work, or one project taking most of the week. A saving says what it would do to the week before you press it (*If helpers ran on Haiku: on pace to end the week at about 61%*), from list prices; point at it for the runway the week would have.
 - **Projects.** Most used first, for the past 7 days or today, each in its own colour, with the period's total beside the heading and worktrees counted in their repository. Point at one for its folder, sessions, models, helper share and cache reuse.
 - **Last 14 days**, where Home has no week to draw (a 5-hour window, or no plan): a bar per day, stacked by project, with the average.
 - **Open sessions** and **Ready to archive**, in the desktop app. Each open session with its folder, branch and pull request, whether it's working, and its context; idle sessions whose pull request merged or closed, each with **Archive session…**, which asks first.
@@ -183,7 +184,7 @@ For the desktop app too, name the folder in `CLAUDE_CODE_PLUGIN_DIRS` in the `en
 
 ```bash
 claude plugin validate ./tobebestme   # static analysis: events hooked, API calls made, state used
-claude plugin test ./tobebestme       # 78 tests on the terminal and desktop surfaces, no sign-in or network needed
+claude plugin test ./tobebestme       # 79 tests on the terminal and desktop surfaces, no sign-in or network needed
 ```
 
 The end-to-end suite in `e2e/` uses Playwright. It draws every view in an empty session, a busy day (with long session titles and branch names) and with a workflow waiting for an answer, at 375, 768, 1280 and 1920 pixels wide. Boxes are sized as the app sizes them, so a long line that would push a column off the pane fails the check. Each view is checked in Chromium for:
