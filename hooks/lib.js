@@ -2929,14 +2929,17 @@ export function svgRunway(g, { width = 600, height = 14, isFluid = false } = {})
 // of the tiles made large enough to read at a glance, for the one limit that matters most.
 // g: { used, elapsed, runOut (% of the window, or null), hex, startMs, endMs, unit: 'day' | 'hour',
 //      nowLabel, runLabel, endLabel, days }.
-// `days`, for a window of days: [{ startMs, endMs, parts: [{ value, hex }], tip }], each day's use
-// drawn as a bar under the runway, in that day's column, stacked by project in each project's colour.
-// So the week's fill and the work that made it sit on one calendar; a day says what it held on hover.
-export function svgWindow(g, { width = 600 } = {}) {
+// `days`, for a window of days: [{ startMs, endMs, parts: [{ value, hex, isDim }], tip }], each
+// day's use drawn as a bar under the runway, in that day's column, stacked by project in each
+// project's colour. So the week's fill and the work that made it sit on one calendar; a day says what
+// it held on hover. `picked` is the index of a day picked below the drawing: the others step back.
+// `isFluid` draws it at whatever width its slot has, with no day names of its own, so a row of
+// buttons laid out by the same fractions can name the days exactly under their columns.
+export function svgWindow(g, { width = 600, isFluid = false } = {}) {
   const W = Math.max(240, Math.round(width))
   const days = g.unit === 'day' && Array.isArray(g.days) && g.days.some((x) => x.parts.some((p) => p.value > 0)) ? g.days : null
   const BY = 96 // the bars' baseline, under the runway's strand
-  const H = days ? BY + 20 : 64
+  const H = days ? (isFluid ? BY + 4 : BY + 20) : 64
   const span = Math.max(1, g.endMs - g.startMs)
   const clamp = (v) => Math.max(0, Math.min(100, v || 0))
   const x = (pct) => (clamp(pct) / 100) * W
@@ -3022,7 +3025,7 @@ export function svgWindow(g, { width = 600 } = {}) {
     parts.push(label(anchor === 'start' ? from : anchor === 'end' ? from + f.wide : from + f.wide / 2, flagY, f.text, anchor, f.fill, f.weight))
   }
   const today = days ? days.findIndex((x) => x.isToday) : -1
-  for (const [at, text, anchor, i] of side) parts.push(label(at, H - 4, text, anchor, i === today ? '#F2F2F7' : undefined, i === today ? 600 : undefined))
+  if (!(days && isFluid)) for (const [at, text, anchor, i] of side) parts.push(label(at, H - 4, text, anchor, i === today ? '#F2F2F7' : undefined, i === today ? 600 : undefined))
   let css = ''
   if (days) {
     // each day a column: its bar, stacked from the baseline, and an invisible target the height of
@@ -3045,19 +3048,35 @@ export function svgWindow(g, { width = 600 } = {}) {
         const h = j === shown.length - 1 ? y - (BY - height) : (p.value / total) * height
         y -= h
         const isTop = j === shown.length - 1
+        const fill = ' fill="' + p.hex + '"' + (p.isDim ? ' fill-opacity="0.3"' : '')
         // the top of each bar is rounded and the rest square, so a stack reads as one bar
         return isTop && h > 3
-          ? '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2.5" fill="' + p.hex + '"/><rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (y + h / 2).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (h / 2).toFixed(1) + '" fill="' + p.hex + '"/>'
-          : '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" fill="' + p.hex + '"/>'
+          ? '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2.5"' + fill + '/><rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (y + h / 2).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (h / 2).toFixed(1) + '"' + fill + '/>'
+          : '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '"' + fill + '/>'
       })
-      parts.push('<g class="p d' + i + '">' + rects.join('') + '<rect x="' + a.toFixed(1) + '" y="' + (top - 6) + '" width="' + (b - a).toFixed(1) + '" height="' + (BY - top + 6) + '" fill="transparent"/></g>')
+      // a picked day stands out: the others step back, and it keeps a mark under its bar
+      const isBack = g.picked !== undefined && g.picked !== null && g.picked >= 0 && g.picked !== i
+      if (g.picked === i) parts.push('<rect class="pick" x="' + (cx - bw / 2 - 3).toFixed(1) + '" y="' + (BY + 1) + '" width="' + (bw + 6).toFixed(1) + '" height="2" rx="1" fill="#AEAEB2"/>')
+      parts.push('<g class="p d' + i + '"' + (isBack ? ' opacity="0.35"' : '') + '>' + rects.join('') + '<rect x="' + a.toFixed(1) + '" y="' + (top - 6) + '" width="' + (b - a).toFixed(1) + '" height="' + (BY - top + 6) + '" fill="transparent"/></g>')
       if (day.tip) tips.push(tipLabel(cx, BY - height, day.tip, W, H, 'tip t' + i))
       if (day.tip) css += '.d' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
     })
     parts.push(...tips)
   }
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + (days ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>'
+  // fluid, it stretches to its slot's width; its strokes keep their weight as it does
+  const size = isFluid ? ' preserveAspectRatio="none"' : ' width="' + W + '" height="' + H + '"'
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '"' + size + '>' + (days ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>'
   return withLight(svg)
+}
+
+// Something working right now: a dot with a soft ring that widens and fades every 1.6 s, the way the
+// system marks a live activity. With reduced motion set it is a still dot.
+export function svgLive(hex) {
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14">' +
+    '<style>.ring{transform-origin:8px 8px;animation:live 1.6s ease-out infinite}@keyframes live{from{transform:scale(1);opacity:.6}to{transform:scale(1.8);opacity:0}}@media (prefers-reduced-motion:reduce){.ring{animation:none;opacity:0}}</style>' +
+    '<circle class="ring" cx="8" cy="8" r="4.4" fill="' + hex + '"/><circle cx="8" cy="8" r="4.6" fill="' + hex + '"/></svg>'
+  )
 }
 
 export function runwayOf(kind, pct, resetAt, now) {

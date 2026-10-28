@@ -50,7 +50,7 @@ The tab it opens on. It reads Claude Code's own records for every project on thi
 
 - **Running now.** Workflows running in this session or another, with their agents done so far and what they have cost; **Open Workflows** goes to the controls. A workflow waiting for your go-ahead shows here too.
 - **The day's answer.** The date, how many chats are waiting for you (or *Nothing is waiting for you*), and today's work across projects and sessions.
-- **Your week on one calendar.** The tightest limit drawn across its window, with Now, where it runs out and when it resets. Under it, a bar for each day stacked by project, each project in its own colour, so you can see which work filled the week; point at a day for its share and its busiest projects. The other limits sit under it as runways with their percentage and reset. Each limit keeps one colour, and amber or red take over when it runs low.
+- **Your week on one calendar.** The tightest limit drawn across its window, with Now, where it runs out and when it resets. Under it, a bar for each day stacked by project, each project in its own colour, so you can see which work filled the week; point at a day for its share and its busiest projects. Press a day under the calendar to pick it out: the other days step back, a line says what it held, project by project, and Projects shows that day. Press a project in the legend and it sits on the baseline in its colour every day while the rest go grey. **Show the whole week** and **Show every project** bring it back. The other limits sit under it as runways with their percentage and reset. Each limit keeps one colour, and amber or red take over when it runs low. Anything working right now (a workflow, a session) has a softly pulsing dot, still with reduced motion set.
 - **Needs you.** Every chat that stopped for you in the last week, the most pressing first:
   - *Needs your permission*: a session running right now that is stopped on a permission prompt.
   - *Waiting for your answer*: a session that finished by asking you something, with the reply buttons it offered.
@@ -183,7 +183,7 @@ For the desktop app too, name the folder in `CLAUDE_CODE_PLUGIN_DIRS` in the `en
 
 ```bash
 claude plugin validate ./tobebestme   # static analysis: events hooked, API calls made, state used
-claude plugin test ./tobebestme       # 76 tests on the terminal and desktop surfaces, no sign-in or network needed
+claude plugin test ./tobebestme       # 78 tests on the terminal and desktop surfaces, no sign-in or network needed
 ```
 
 The end-to-end suite in `e2e/` uses Playwright. It draws every view in an empty session, a busy day (with long session titles and branch names) and with a workflow waiting for an answer, at 375, 768, 1280 and 1920 pixels wide. Boxes are sized as the app sizes them, so a long line that would push a column off the pane fails the check. Each view is checked in Chromium for:

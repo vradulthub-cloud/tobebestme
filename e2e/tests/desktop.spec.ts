@@ -254,7 +254,9 @@ test('Home lays the tightest limit out on its calendar: the days, Now, where it 
     expect(await week.locator('rect[height]').count(), cols + ' columns: no day bars').toBeGreaterThan(5)
     const words = await week.locator('text').allTextContents()
     expect(words.some((w) => /^Runs out /.test(w)), cols + ' columns: where it runs out is not said').toBe(true)
-    expect(words.some((w) => /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat)$/.test(w)), cols + ' columns: no day names').toBe(true)
+    // the days are named by buttons under their columns, and pressing one picks it
+    const days = await page.locator('button[data-key^="day-"]').allTextContents()
+    expect(days.some((w) => /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat|Today)$/.test(w)), cols + ' columns: no day to press').toBe(true)
     // every label sits wholly inside the drawing
     const outside = await week.evaluate((svg) => {
       const b = svg.getBoundingClientRect()

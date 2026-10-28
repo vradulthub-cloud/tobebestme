@@ -89,6 +89,19 @@ kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true 
   await warm.press({ key: 'usage-refresh' })
   await warm.unmount()
   await e2eDump($, 'busy')
+  // the calendar with a day and a project picked: the others step back, and Projects follows
+  for (const cols of [148, 40]) {
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: cols } } as any)
+    await ui.press({ key: 'tab-all' })
+    await ui.press({ key: 'day-2026-10-21' })
+    e2ePrint({ state: 'picked', view: 'all', cols, details: false }, await ui.drawn())
+    const legend = (await ui.findAll({ type: 'Button' })).find((b: any) => String(b.props.key || '').startsWith('legend-'))
+    if (legend) await ui.press({ key: legend.props.key })
+    e2ePrint({ state: 'focused', view: 'all', cols, details: false }, await ui.drawn())
+    await ui.press({ key: 'pick-week' })
+    await ui.press({ key: 'pick-all' })
+    await ui.unmount()
+  }
 })
 
 kitTest('e2e: a workflow waiting for an answer', { timeoutMs: 120_000, options: { workflowCheck: 'ask' } }, async ($: any, on: any) => {

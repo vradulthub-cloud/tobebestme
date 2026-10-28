@@ -94,6 +94,8 @@ export type BudgetView = {
   openNeed?: string
   tourStep?: number
   habitsAt?: number
+  day?: string // a day of the week picked on Home's calendar ('YYYY-MM-DD'), or '' for the week
+  project?: string // a project picked from the calendar's legend, by key, or '' for every project
 }
 
 // A workflow run in this session: what it is for, its controls, and each agent by its place.

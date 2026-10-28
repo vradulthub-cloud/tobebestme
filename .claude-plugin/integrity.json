@@ -4,14 +4,14 @@
   "files": {
     ".claude-plugin/plugin.json": "3547be3c99d7f7c50782d5640e9201dd5a6c65e6fc79584ae6f729cab4cc2862",
     ".claude-plugin/marketplace.json": "af83638c8b775380bae7f23bc4fc7f15fca9052ed848f8613dec6a36c308ef7e",
-    "hooks/draw.js": "bdb82f1cb9ec3ae233fdfbe986f76049f34c31c53434a47901391d1a7250f7f8",
+    "hooks/draw.js": "05ab2359b956034590d0b559bdb189a1bbca632378c7af4843d49d0f85e3e11c",
     "hooks/hooks.json": "7b6d139080a2cb5eabcb77f885e74e13d24e48b1f8ab72778b51f7457f227563",
-    "hooks/lib.js": "5bf7de3d2b255ff7d5503615b863a4df97c384104932b3dd9d8a89f886d72b7c",
-    "hooks/register.js": "425631d1a6d5d29a3b49c9bb4b2572fab002c2efec14fa34ba83cf7b5bd6b767",
-    "types/index.d.ts": "0c68c662f8e8f8f0eb3df1f4c0e549f00ce18330df8dc238e36f02a2a9d27b66",
+    "hooks/lib.js": "6c7a8c2a6e1f07620a88b4ff6a0219eebcbdf3c883fb56f96f1355a99d693fd4",
+    "hooks/register.js": "f73e4fe3e7090db3c8b4505935a697d1dc1acba2b88e8153dfc8f311eb8ce3ac",
+    "types/index.d.ts": "c458621187b0a7c6e5d1638806066feca8a85cfa724eac9e8cb7a4dada52941a",
     "LICENSE": "878f7bbdf2d84730ee9d3585a80571671820f17c6e7347ac3683eb23ba00b424",
     "TRADEMARKS.md": "372e5a42e814013d5f1b9355dae135b7f669c8c1398b288966018f792a4c1363",
-    "README.md": "effac25e639abdccf4c3698397d211b4704982165a3e323167b3045d97985fc8",
-    "SECURITY.md": "b610e57f9277e56da52a377395fda2355346e2b654bac882a1dfd6e9eaa83837"
+    "README.md": "d4d7a0ed5a8b67cb098d90c1de241e2ce4012aee7c53cd537884fa72ab897008",
+    "SECURITY.md": "082a9f26008961a1c66454a4edd1fbf8616c2d593bf78c39404c857ed012b131"
   }
 }

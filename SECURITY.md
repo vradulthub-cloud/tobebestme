@@ -39,7 +39,7 @@ ToBeBestMe also checks itself once a day against `.claude-plugin/integrity.json`
 
 ## Tests
 
-`claude plugin test .` runs 76 tests in Claude Code's own mod test kit. Among them:
+`claude plugin test .` runs 78 tests in Claude Code's own mod test kit. Among them:
 
 - one presses every button on every tab, on both surfaces;
 - others try the security guards: names from records that could reach an object's prototype (`__proto__`, `constructor`, `toString`), web addresses that aren't `https://`, notification words passed as arguments where they can't run, and the release self-check (a changed file, an added module, a missing manifest).

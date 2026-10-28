@@ -1013,6 +1013,49 @@ const WEEK: Transcript[] = [
   { path: '-Users-me-Projects-ledger-api/old.jsonl', ageMs: 30 * 86_400_000, cwd: '/Users/me/Projects/ledger-api', answers: [['2026-09-23T12:00:00Z', 'claude-opus-5-5', 0, 900_000, 0, 0]] },
 ]
 
+test('the week on Home is something to press: a day picks itself out and Projects follows it, a project in the legend stands out, and each comes back in one press', async ($, on) => {
+  stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-10-25T21:00:00Z' }] })
+  transcripts(on, WEEK)
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'usage-refresh' })
+  const labels = async () => (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.label)
+  // yesterday held ledger-api's work alone
+  await ui.press({ key: 'day-2026-10-22' })
+  expect(await shown(ui)).toContain('$1.00 on Thursday') // Projects shows that day too
+  expect(await labels()).toEqual(expect.arrayContaining(['✓ Thursday', 'Show the whole week']))
+  await ui.press({ key: 'pick-week' })
+  expect(await labels()).not.toContain('Show the whole week')
+  // a project from the legend: its words, and the way back
+  const legend = (await ui.findAll({ type: 'Button' })).find((b: any) => String(b.props.key || '').startsWith('legend-'))
+  expect(legend).toBeTruthy()
+  await ui.press({ key: legend.props.key })
+  expect(await shown(ui)).toMatch(/this week/)
+  expect(await labels()).toEqual(expect.arrayContaining(['✓ ' + String(legend.props.label), 'Show every project']))
+  await ui.press({ key: 'pick-all' })
+  expect(await labels()).not.toContain('Show every project')
+  await ui.unmount()
+})
+
+test('context is measured against the window compaction works to: 500k of a 700k autoCompactWindow on a 1M model is 71%, not 50%', async ($, on) => {
+  // the engine's percent is against the model's window; the breakdown measures against the smaller one
+  const { statuses } = stubs(on, { ...LOW(), context: { tokens: 500_000, window: 1_000_000, percent: 50, breakdown: { ...BREAKDOWN, totalTokens: 500_000, maxTokens: 700_000, rawMaxTokens: 700_000, percentage: 71, autoCompactThreshold: 667_000 } } })
+  on('session.measure', (_$: unknown, e: any) => ({ changed: e.changed }))
+  await $.session.measure({ context: { tokens: 500_000, window: 1_000_000, percent: 50 }, changed: ['context'] } as any)
+  await $.command.run({ command: 'tobebestme', args: 'session' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const text = await shown(ui)
+  expect(text).toContain('71%')
+  expect(text).toContain('500k of 700k tokens')
+  expect(text).toContain('Measured against the 700k window compaction works to, not the model’s 1M.')
+  expect(text).not.toContain('500k of 1M tokens')
+  await ui.unmount()
+  const band = await $.ui.mount({ plugin: 'tobebestme', component: 'AbovePrompt', surface: 'terminal', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
+  expect(await shown(band)).toContain('71%')
+  await band.unmount()
+  expect(statuses.filter(Boolean).pop()).not.toMatch(/\b50%/)
+})
+
 test('on a plan, costs show as a share of the weekly limit everywhere, and Usage switches them to dollars in one press', async ($, on) => {
   const { sets, usage } = stubs(on, { ...LOW(), rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-10-25T21:00:00Z' }] })
   // $30 of work this week at list prices has moved the weekly limit to 30%: a dollar is 1% of it

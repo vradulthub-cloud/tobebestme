@@ -146,7 +146,7 @@ const day = atom({ plugin: 'tobebestme', key: 'day' }, { date: '', startUsd: 0 }
 const wins = atom({ plugin: 'tobebestme', key: 'wins' }, { compactions: 0, tokensFreed: 0, notes: 0, skills: 0 })
 const skill = atom({ plugin: 'tobebestme', key: 'skill' }, { describe: '', draft: null, scope: 'project', ideas: [] })
 const skillUse = atom({ plugin: 'tobebestme', key: 'skillUse' }, {}) // skill -> times run this session
-const view = atom({ plugin: 'tobebestme', key: 'view' }, { tab: 'all', confirm: '', showNote: false, showAllActivity: false, showMore: false, advanced: false, editing: '', busy: '', skillFilter: '', skillShow: 'top', runGoal: '', projectsBy: 'week', showAllProjects: false, replying: '', showAllNeeds: false, showCheckup: false, showAllUsed: false, openRun: '', showSetAside: false, showDetails: false, openNeed: '', tourStep: 0, habitsAt: 0 })
+const view = atom({ plugin: 'tobebestme', key: 'view' }, { tab: 'all', confirm: '', showNote: false, showAllActivity: false, showMore: false, advanced: false, editing: '', busy: '', skillFilter: '', skillShow: 'top', runGoal: '', projectsBy: 'week', showAllProjects: false, replying: '', showAllNeeds: false, showCheckup: false, showAllUsed: false, openRun: '', showSetAside: false, showDetails: false, openNeed: '', tourStep: 0, habitsAt: 0, day: '', project: '' })
 const override = atom({ plugin: 'tobebestme', key: 'override' }, { main: '', helpers: '' }) // models chosen for this session from the dashboard
 // This session's workflow runs, by run id: what each is for, its controls (paused, how many
 // agents at once, a model for the rest), and each agent's state, model, tokens and cost.
@@ -291,7 +291,20 @@ async function refreshBreakdown($) {
   }
 }
 
+// The window that fills up: the model's, or the smaller one compaction works to when the person set
+// one (autoCompactWindow, say 700k on a 1M model). The breakdown measures against that one, and it is
+// read again whenever the context changes; before the first breakdown, the model's window.
+function ctxWindow() {
+  const model = (snap.context && snap.context.window) || 0
+  const own = breakdown && Number(breakdown.rawMaxTokens)
+  return own > 0 && (!model || own < model) ? own : model
+}
+
+// How full the context is, against that window: the engine's own percent is against the model's.
 function pct() {
+  const t = tokens()
+  const w = ctxWindow()
+  if (t > 0 && w > 0) return Math.min(100, Math.round((t / w) * 100))
   const p = snap.context && typeof snap.context.percent === 'number' ? snap.context.percent : 0
   return Math.round(p)
 }
@@ -2005,9 +2018,8 @@ async function checkAlerts($) {
 
 // The lines Claude reads after a prompt once things get tight.
 function budgetContext(reached, ov = { main: '', helpers: '' }) {
-  const ctx = snap.context || {}
   const lines = [
-    '[tobebestme] context ' + pct() + '% (' + fmtTokens(tokens()) + '/' + fmtTokens(ctx.window || 0) + ' tokens), ' + fmtUsd(usd()) + ' this session' +
+    '[tobebestme] context ' + pct() + '% (' + fmtTokens(tokens()) + '/' + fmtTokens(ctxWindow()) + ' tokens), ' + fmtUsd(usd()) + ' this session' +
       (snap.rateLimits || []).map((r) => ', ' + limitLabel(r.kind).toLowerCase() + ' ' + Math.round(r.percentUsed) + '%').join('') + '.',
   ]
   const isRouting = !(cheapMissing && isCheapModel(opts.cheapModel, cheapMissing)) && !(routePaused && isCheapModel(opts.cheapModel, routePaused))
@@ -2307,7 +2319,8 @@ async function gather($) {
     now,
     pct: pct(),
     tokens: tokens(),
-    window: (snap.context && snap.context.window) || 0,
+    window: ctxWindow(),
+    modelWindow: (snap.context && snap.context.window) || 0,
     usd: usd(),
     startedAt: snap.startedAt || 0,
     breakdown,
