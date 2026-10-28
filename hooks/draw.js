@@ -65,6 +65,8 @@ import {
   costShare,
   fmtShare,
   stopRequest,
+  projectHues,
+  OTHER_HEX,
 } from './lib.js'
 
 // Costs as dollars, or as a share of the weekly limit when that is what runs out (costShare): set
@@ -109,9 +111,19 @@ function quiet(level) {
   return level === 'success' || level === 'info' ? undefined : level
 }
 
+// The colour a limit, context or budget is drawn in: its own while all is well, amber once it is
+// past its alert, red when it is nearly out, so the colour that says trouble is the same everywhere.
+function tint(hex, level) {
+  return level === 'warning' || level === 'error' ? HEX[level] : hex
+}
+
 // The surface's elements and the shapes the dashboard is built from.
 export function kit(el, e, primary = { isTaken: false }) {
-  const { Box, Text, Button, Markdown, Input, Link } = el
+  const { Text, Button, Markdown, Input, Link } = el
+  // A box may shrink below its longest unbreakable line, as the terminal's do: in the app a long
+  // session title or branch name would otherwise hold its column open and push the next one past
+  // the pane's edge. Long text truncates or wraps inside the room it is given instead.
+  const Box = (p) => el.Box(p && p.minWidth === undefined ? { minWidth: 0, ...p } : p)
   const isTerminal = e.surface === 'terminal'
   const columns = e.props.bodyColumns || 60
   // about how many pixels the column is: the pane's own padding is taken off, and a sub-kit is given its own
@@ -271,6 +283,15 @@ export function kit(el, e, primary = { isTaken: false }) {
     // columns (a bar and its figure) is as wide as both and the gutter between them, so the columns a
     // narrow pane drops are the same in the headings as in the rows.
     heads: (cells) => k.row(cells, { size: 'footnote', dimColor: true }),
+    // A drawing made at a fixed size, laid out at that size. The app puts an interactive drawing in a
+    // frame of its own, and a frame given no width and height is the browser's default 300 by 150,
+    // with the drawing shrunk to fit inside it; so the size the markup was made at is passed on.
+    drawing: (source, alt, extra = {}) => {
+      const tag = /<svg[^>]*>/.exec(source)
+      const w = tag && /\swidth="([\d.]+)"/.exec(tag[0])
+      const h = tag && /\sheight="([\d.]+)"/.exec(tag[0])
+      return el.Svg(clean({ source, alt, width: w ? Number(w[1]) : undefined, height: h ? Number(h[1]) : undefined, ...extra }))
+    },
     // A meter: an SVG where the surface draws one, block characters on the terminal.
     meter: (parts, total, markers, alt, thin = false) => {
       if (hasSvg) return el.Svg({ source: svgMeter(parts, total, markers, thin), alt, height: thin ? 6 : 14, isInteractive: parts.some((p) => p.title) ? true : undefined })
@@ -365,8 +386,10 @@ export function drawDashboard(k, d, act) {
 function runwayBar(k, it, where, widthPx) {
   const r = it.runway
   const words = it.label + ' ' + it.valueText + (r.runOut !== null && r.runOut !== undefined ? ', runs out before it resets' : r.elapsed !== null && r.elapsed !== undefined ? ', ' + Math.round(r.elapsed) + '% of the window gone' : '')
-  if (k.hasSvg && it.window && widthPx && widthPx >= 280) return k.Box({ width: '100%', children: [k.Svg({ source: svgWindow({ ...r, hex: it.hex, ...it.window }, { width: widthPx }), alt: words, width: widthPx, height: 64 })] })
-  if (k.hasSvg) return k.Box({ width: '100%', children: [k.Svg({ source: svgRunway({ ...r, hex: it.hex }, { width: widthPx || 300, height: 14, isFluid: true }), alt: words, height: 14, ...(widthPx ? { width: widthPx } : {}) })] })
+  // the calendar is drawn at the column's reckoned width, at exactly the size it was made
+  if (k.hasSvg && it.window && widthPx && widthPx >= 280) return k.Box({ width: '100%', children: [k.drawing(svgWindow({ ...r, hex: it.hex, ...it.window, days: it.days }, { width: Math.round(widthPx) }), words + (it.daysAlt || ''), { isInteractive: it.days ? true : undefined })] })
+  // a runway has no words in it, so it is made wide and drawn at whatever width its slot has
+  if (k.hasSvg) return k.Box({ width: '100%', children: [k.Svg({ source: svgRunway({ ...r, hex: it.hex }, { width: widthPx || 4000, height: 14, isFluid: true }), alt: words, height: 14, ...(widthPx ? { width: widthPx } : {}) })] })
   return k.Text({ children: textRunway(r, where === 'band' ? 10 : 20).map(([t, c]) => k.text(t, c ? { color: c } : {})) })
 }
 
@@ -389,7 +412,7 @@ function tile(k, key, label, value, detail, extra = {}) {
       ...(extra.meter ? [k.meter([{ value: extra.meter.value, hex: extra.meter.level === 'success' ? HEX.bar : HEX[extra.meter.level], color: extra.meter.level === 'success' ? 'suggestion' : extra.meter.level }], 100, [], label + ' ' + Math.round(extra.meter.value) + '%', true)] : []),
       k.footnote(detail, { tabular: true }),
     ],
-    extra.tip ? { align: extra.align || 'left', ...extra.tip } : null,
+    extra.tip ? { align: extra.align || 'right', ...extra.tip } : null, // a left tile's card opens on the right
   )
 }
 
@@ -457,7 +480,7 @@ function legendItems(d) {
       valueText: d.pct + '%',
       sub: d.window ? fmtTokens(d.tokens) + ' of ' + fmtTokens(d.window) + ' tokens' : 'not measured yet',
       level: ctxLevel(d),
-      hex: RING_HEX.context,
+      hex: tint(RING_HEX.context, ctxLevel(d)),
       tab: 'overview',
       ring: true,
       runway: { used: d.pct, elapsed: null, runOut: null, ticks: [d.opts.contextWarnAt, cAt && d.window ? Math.round((cAt / d.window) * 100) : d.opts.cheaperModelAt] },
@@ -472,7 +495,7 @@ function legendItems(d) {
       valueText: p + '%',
       sub: isEarly(l.r, l.o) ? 'runs out ' + fmtClock(l.o.fullAt, d.now) : l.o.resetAt !== null ? 'resets ' + fmtClock(l.o.resetAt, d.now) : 'used',
       level: l.level,
-      hex: RING_HEX[l.r.kind] || RING_HEX.seven_day_opus,
+      hex: tint(RING_HEX[l.r.kind] || RING_HEX.seven_day_opus, l.level),
       tab: 'usage',
       ring: true,
       runway: runwayOf(l.r.kind, l.r.percentUsed, l.o.resetAt, d.now),
@@ -485,7 +508,7 @@ function legendItems(d) {
     valueText: fmtUsd(spent),
     sub: 'of ' + fmtUsd(cap),
     level: spent >= cap ? 'error' : spent >= cap * 0.8 ? 'warning' : 'success',
-    hex,
+    hex: tint(hex, spent >= cap ? 'error' : spent >= cap * 0.8 ? 'warning' : 'success'),
     tab: 'usage',
     focus: 'opt-sessionBudget-0',
     ring: true,
@@ -553,7 +576,7 @@ function overviewTab(k, d, act) {
           k.footnote(it.sub),
           ...(it.level === 'warning' || it.level === 'error' ? [k.text(it.level === 'error' ? 'Nearly out' : 'Needs attention', { size: 'footnote', weight: 'medium', color: it.level })] : []),
         ],
-        { ...it.tip, align: i < items.length / 2 ? 'left' : 'right' },
+        { ...it.tip, align: i < items.length / 2 ? 'right' : 'left' }, // the card opens on the far side, so this tile stays in view
       )
     }),
     { justifyContent: 'space-between', rowGap: 'md', ...k.groupProps },
@@ -654,7 +677,7 @@ function contextParts(d) {
     const buffer = b.categories.find((c) => c.kind === 'buffer')
     return { total: b.rawMaxTokens, rows: used.map((c, i) => ({ name: c.name, tokens: c.tokens, hex: CATEGORY_HEX[i % CATEGORY_HEX.length], color: c.color })), buffer: buffer ? buffer.tokens : 0, isMeasured: true }
   }
-  return { total: d.window || 0, rows: d.tokens > 0 ? [{ name: 'In use', tokens: d.tokens, hex: HEX.bar, color: 'suggestion' }] : [], buffer: 0, isMeasured: false }
+  return { total: d.window || 0, rows: d.tokens > 0 ? [{ name: 'In use', tokens: d.tokens, hex: RING_HEX.context, color: 'suggestion' }] : [], buffer: 0, isMeasured: false }
 }
 
 // More about one category than its row can hold: what it is, its share, what fills it, how to shrink it.
@@ -809,12 +832,12 @@ function spendingTab(k, d, act) {
   // Four tiles, never the same figure twice: on the first day, today and the week equal the session.
   const list = [tile(k, 'tile-session', 'This session', cost(d.usd), since > 0 ? 'since ' + fmtClock(d.startedAt, d.now) : plural(t.length, 'turn', 'turns') + ' recorded', { tip: { title: 'This session', lines: ["Claude Code's own count, as /cost shows it.", 'On a subscription it is the API-price equivalent, not a bill.', plural(t.length, 'turn', 'turns') + ' recorded since tobebestme started watching.'] } })]
   list.push(tile(k, 'tile-last', 'Last turn', last ? cost(last.usd || 0) : '–', last ? fmtTurnTime(last.ms) + ' · ' + shortModel(last.model) : 'none yet', { tip: last ? { title: 'Last turn', lines: ['Ended ' + fmtClock(last.at, d.now) + ' after ' + fmtTurnTime(last.ms) + '.', fmtTokens(last.output || 0) + ' tokens of output.'] } : null }))
-  if (since >= 2 * 60_000) list.push(tile(k, 'tile-rate', 'Spending rate', cost(d.usd / (since / 3_600_000)) + '/h', 'since the session started', { tip: { title: 'Spending rate', lines: ['This session’s cost over the time it has run.'] }, align: 'right' }))
-  const average = () => tile(k, 'tile-avg', 'Average turn', cost(avg(t.map((x) => x.usd || 0))), 'over ' + plural(t.length, 'turn', 'turns') + ' recorded', { tip: { title: 'Average turn', lines: ['What a turn has cost on average since tobebestme started watching.'] }, align: 'right' })
+  if (since >= 2 * 60_000) list.push(tile(k, 'tile-rate', 'Spending rate', cost(d.usd / (since / 3_600_000)) + '/h', 'since the session started', { tip: { title: 'Spending rate', lines: ['This session’s cost over the time it has run.'] }, align: 'left' }))
+  const average = () => tile(k, 'tile-avg', 'Average turn', cost(avg(t.map((x) => x.usd || 0))), 'over ' + plural(t.length, 'turn', 'turns') + ' recorded', { tip: { title: 'Average turn', lines: ['What a turn has cost on average since tobebestme started watching.'] }, align: 'left' })
   const hasAverage = since < 2 * 60_000 && t.length > 0
   if (hasAverage) list.push(average())
-  if (Math.abs(d.today - d.usd) >= 0.005 || o.dailyBudget > 0) list.push(tile(k, 'tile-today', 'Today', cost(d.today), o.dailyBudget > 0 ? 'of ' + fmtUsd(o.dailyBudget) + ' budget' : plural(Math.max(1, d.ledger.sessionsToday), 'session', 'sessions'), { tip: { title: 'Today', lines: ['Every session on this machine that runs tobebestme.'] }, align: 'right' }))
-  if (list.length < 4 && d.ledger.week - d.today >= 0.005) list.push(tile(k, 'tile-week', 'Past 7 days', cost(d.ledger.week), 'on this machine', { tip: { title: 'Past 7 days', lines: ['Every session on this machine that runs tobebestme.'] }, align: 'right' }))
+  if (Math.abs(d.today - d.usd) >= 0.005 || o.dailyBudget > 0) list.push(tile(k, 'tile-today', 'Today', cost(d.today), o.dailyBudget > 0 ? 'of ' + fmtUsd(o.dailyBudget) + ' budget' : plural(Math.max(1, d.ledger.sessionsToday), 'session', 'sessions'), { tip: { title: 'Today', lines: ['Every session on this machine that runs tobebestme.'] }, align: 'left' }))
+  if (list.length < 4 && d.ledger.week - d.today >= 0.005) list.push(tile(k, 'tile-week', 'Past 7 days', cost(d.ledger.week), 'on this machine', { tip: { title: 'Past 7 days', lines: ['Every session on this machine that runs tobebestme.'] }, align: 'left' }))
   if (list.length < 4 && t.length && !hasAverage) list.push(average())
 
   const out = {}
@@ -988,8 +1011,8 @@ function limitsTab(k, d, act) {
     }
     const chart =
       k.hasSvg && o.resetAt !== null && span
-        ? k.Svg({
-            source: svgForecast({
+        ? k.drawing(
+            svgForecast({
               // drawn at about the pane's width, so its labels keep their size on a narrow pane
               width: k.px - 24,
               start: o.resetAt - span,
@@ -1013,13 +1036,13 @@ function limitsTab(k, d, act) {
                 sample: (s) => fmtClock(s.at, d.now) + ': ' + Math.round(s.pct) + '%',
               },
             }),
-            alt: limitLabel(r.kind) + ': ' + p + '% used. ' + paceSentence(l, d.now),
-            isInteractive: true,
-          })
+            limitLabel(r.kind) + ': ' + p + '% used. ' + paceSentence(l, d.now),
+            { isInteractive: true },
+          )
         : k.meter([{ value: r.percentUsed, hex: l.level === 'success' ? hex : HEX[l.level], color: l.level === 'success' ? 'suggestion' : l.level }], 100, [d.opts.limitAlertAt], limitLabel(r.kind) + ' ' + p + '% used, alert at ' + d.opts.limitAlertAt + '%')
     // the same runway as Home and the line above the prompt; the history chart is for Show details
     const runway = runwayOf(r.kind, r.percentUsed, o.resetAt, d.now)
-    const shownChart = !k.showDetails && runway ? runwayBar(k, { label: limitLabel(r.kind), valueText: p + '% used', hex, runway, window: windowOf(r.kind, runway, o.resetAt, d.now) }, 'tile', k.hasSvg ? k.px - 24 : undefined) : chart
+    const shownChart = !k.showDetails && runway ? runwayBar(k, { label: limitLabel(r.kind), valueText: p + '% used', hex: tint(hex, l.level), runway, window: windowOf(r.kind, runway, o.resetAt, d.now) }, 'tile', k.hasSvg ? k.px - 24 : undefined) : chart
     const facts = []
     if (o.resetAt !== null) facts.push(['Resets', 'in ' + fmtSpan(o.resetAt - d.now)])
     if (o.recentPerHour !== null) facts.push(['Lately', 'about ' + (o.recentPerHour >= 10 ? Math.round(o.recentPerHour) : Math.round(o.recentPerHour * 10) / 10) + '% an hour while you work'])
@@ -1629,7 +1652,7 @@ function widgetTile(k, key, w, i, count) {
       k.footnote(w.sub),
       ...(w.note ? [k.text(w.note, { size: 'footnote', weight: 'medium', color: quiet(w.level) })] : []),
     ],
-    w.tip ? { ...w.tip, align: i < count / 2 ? 'left' : 'right' } : null,
+    w.tip ? { ...w.tip, align: i < count / 2 ? 'right' : 'left' } : null, // on the far side, so this tile stays in view
   )
 }
 
@@ -1644,7 +1667,7 @@ function projectTip(p, now) {
     title: p.name,
     lines: [
       p.path ? p.path.replace(/^\/Users\/[^/]+/, '~') : '',
-      'Today ' + cost(p.today) + ' · past 7 days ' + cost(p.week) + ' · 14 days ' + cost(p.total) + '.',
+      'Today ' + cost(p.today) + ' · past 7 days ' + cost(p.week) + (SHARE ? '' : ' · 14 days ' + cost(p.total)) + '.',
       plural(p.sessionsWeek, 'session', 'sessions') + ' this week' + (p.worktrees ? ', ' + plural(p.worktrees, 'worktree', 'worktrees') + ' included' : '') + '. Last answer ' + ago(now - p.lastAt) + '.',
       models ? 'Models this week: ' + models + '.' : '',
       p.helpers + p.workflows > 0 ? 'Helpers and workflow agents: ' + share(p.helpers + p.workflows, p.week) + '% of it.' : '',
@@ -1678,15 +1701,20 @@ function whereRan(entry) {
 }
 
 // The runway of the tightest limit, as the item the runway drawing takes.
-function tightestItem(d, tightest) {
+function tightestItem(d, tightest, h) {
   const kind = /5|hour/i.test(tightest.label) ? 'five_hour' : 'seven_day'
   const runway = runwayOf(kind, tightest.pct, tightest.resetsAt, d.now)
+  const window = windowOf(kind, runway, tightest.resetsAt, d.now)
+  const days = h ? weekDays(h, window) : null
   return {
     runway,
-    hex: planHex(tightest.label),
+    hex: tint(planHex(tightest.label), h ? h.levelOf(tightest.pct) : 'success'),
     label: tightest.label,
     valueText: Math.round(tightest.pct) + '%',
-    window: windowOf(kind, runway, tightest.resetsAt, d.now),
+    window,
+    days,
+    // what the bars say, for a reader that cannot see them
+    daysAlt: days ? '. Use by day: ' + days.filter((x) => x.total > 0).map((x) => x.name + ' ' + cost(x.total)).join(', ') + '.' : '',
   }
 }
 
@@ -1708,7 +1736,8 @@ function windowOf(kind, runway, resetsAt, now) {
 
 // The day's answer: the date, how many chats wait for you, and how much room is left, with the
 // tightest limit drawn full width beneath, so where you stand reads at a glance.
-function homeHero(k, d, w, tightest, act) {
+function homeHero(k, d, h, act) {
+  const { w, tightest } = h
   const chats = w.needs.filter((x) => x.kind !== 'pr').length
   const prs = w.needs.length - chats
   let date = ''
@@ -1720,10 +1749,15 @@ function homeHero(k, d, w, tightest, act) {
   const headline = chats ? (chats === 1 ? 'One chat is waiting for you' : chats + ' chats are waiting for you') : prs ? (prs === 1 ? 'One pull request is waiting for review' : prs + ' pull requests are waiting for review') : 'Nothing is waiting for you'
   const u = d.usage
   const facts = []
-  if (u && !u.isEmpty) facts.push((SHARE ? cost(u.today.usd) + ' of your weekly limit' : fmtUsd(u.today.usd) + ' of work') + ' today across ' + plural(u.today.projects, 'project', 'projects'))
+  if (u && !u.isEmpty) facts.push((SHARE ? cost(u.today.usd) + ' of your weekly limit' : fmtUsd(u.today.usd) + ' of work') + ' today across ' + plural(u.today.projects, 'project', 'projects') + ' and ' + plural(u.today.sessions, 'session', 'sessions'))
   if (!chats && w.pickup.length) facts.push('Pick up where you left off below')
-  const item = tightest ? tightestItem(d, tightest) : null
+  const factsTip = u && !u.isEmpty ? { title: 'Today, in every project', lines: ['What today’s answers would cost at list prices, helpers and workflow agents included.', 'On a plan the limits are what you spend; this shows how heavy the work was.'] } : null
+  const item = h.item
   const early = !!item && item.runway.runOut !== null && item.runway.runOut !== undefined
+  // the projects the bars are made of, most used first, each in its colour
+  const made = {}
+  for (const day of (k.hasSvg && item && item.days) || []) for (const p of day.parts) made[p.name] = { hex: p.hex, value: ((made[p.name] && made[p.name].value) || 0) + p.value }
+  const legend = Object.entries(made).sort((a, z) => (a[1].hex === OTHER_HEX) - (z[1].hex === OTHER_HEX) || z[1].value - a[1].value)
   const level = tightest ? (tightest.pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : tightest.pct >= d.opts.limitAlertAt ? 'warning' : 'success') : 'success'
   return k.Box({
     flexDirection: 'column',
@@ -1732,7 +1766,7 @@ function homeHero(k, d, w, tightest, act) {
     children: [
       k.footnote(date, { wrap: 'truncate-end' }),
       k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.text(chats ? '● ' : '✓ ', chats ? { color: 'warning' } : { color: 'success' }), k.text(headline, { size: 'title', weight: 'semibold', wrap: 'wrap' })] }),
-      ...(facts.length ? [k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
+      ...(facts.length ? [factsTip ? k.hoverBox('all-facts', { flexDirection: 'column' }, [k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })], { ...factsTip, align: 'left' }) : k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
       ...(item
         ? [
             k.Box({
@@ -1741,23 +1775,48 @@ function homeHero(k, d, w, tightest, act) {
               marginTop: 'sm',
               children: [
                 runwayBar(k, item, 'hero', k.px - 8),
-                k.Box({
-                  flexDirection: 'row',
-                  columnGap: 'md',
-                  alignItems: 'center',
-                  children: [
+                // the limit's name, how much is used and the projects in the bars: one row, whose card
+                // rises above it, so the legend, wrapped on a narrow pane, never covers it
+                k.hoverBox(
+                  'all-limit-name',
+                  { flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', rowGap: 'xs', alignItems: 'center' },
+                  [
                     k.Button({ key: 'all-limits', plain: true, onPress: () => act.setView({ tab: 'usage', confirm: '' }), children: [tightest.label + ' ›'] }),
                     k.text(Math.round(tightest.pct) + '% used', { weight: 'semibold', tabular: true, color: quiet(level) }),
                     k.Box({ flexGrow: 1 }),
                     ...(k.hasSvg && item.window ? [] : [k.footnote((early ? 'runs out before it resets · ' : '') + (tightest.resetsAt ? 'resets in ' + fmtSpan(tightest.resetsAt - d.now) : ''), { tabular: true, wrap: 'truncate-end' })]),
+                    ...(legend.length
+                      ? [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', rowGap: 'xs', flexShrink: 1, children: legend.map(([name, x]) => k.Text({ wrap: 'truncate-end', children: [k.text('● ', { color: x.hex }), k.text(name, { size: 'footnote', dimColor: true })] })) })]
+                      : []),
                   ],
-                }),
+                  { title: tightest.label, lines: [tightest.resetsAt ? 'Resets ' + fmtClock(tightest.resetsAt, d.now) + '.' : '', (h.plan.source === 'app' ? (h.plan.plan ? h.plan.plan + ' plan. ' : '') : h.plan.source === 'session' ? 'From this session’s latest reading. ' : 'As read ' + ago(d.now - h.plan.at) + ' by another session. ') + 'Every project draws on the same limits.', legend.length ? 'The bars under it are each day’s work, by project.' : '', 'Press its name for every limit on Usage.'], align: 'left' },
+                ),
+                ...h.windows.filter((x) => x !== tightest).map((x, i) => limitRow(k, d, h, x, i)),
+                ...(h.plan.source === 'app' && h.f.plan && h.f.plan.extraUsage ? [k.footnote('Extra usage is ' + (h.f.plan.extraUsage.enabled ? 'on, so work carries on past a limit and is billed.' : 'off, so work pauses at a limit until it resets.'))] : []),
               ],
             }),
           ]
         : []),
     ],
   })
+}
+
+// Another limit under the hero's calendar: its name, its runway, how much is used and when it resets.
+// Each limit keeps its own colour; amber or red take over when it runs low.
+function limitRow(k, d, h, x, i) {
+  const { now, plan, levelOf } = h
+  const level = levelOf(x.pct)
+  const kind = /5|hour/i.test(x.label) ? 'five_hour' : 'seven_day'
+  const runway = runwayOf(kind, x.pct, x.resetsAt, now)
+  const hex = level === 'success' ? planHex(x.label) : HEX[level]
+  const where = plan.source === 'app' ? (plan.plan ? plan.plan + ' plan. ' : '') : plan.source === 'session' ? 'From this session’s latest reading. ' : 'As read ' + ago(now - plan.at) + ' by another session. '
+  const isRoomy = k.columns >= 64
+  return k.hoverBox('plan-' + i, { flexDirection: 'row', columnGap: 'md', alignItems: 'center', width: '100%' }, [
+    k.Box({ width: isRoomy ? 24 : 16, flexShrink: 0, children: [k.Text({ wrap: 'truncate-end', children: [k.text('● ', { color: k.isTerminal ? (level === 'success' ? 'suggestion' : level) : hex }), k.text(x.label)] })] }),
+    k.Box({ flexGrow: 1, flexShrink: 1, children: [runwayBar(k, { runway, hex, label: x.label, valueText: Math.round(x.pct) + '%' }, 'tile')] }),
+    k.Box({ width: 5, flexShrink: 0, justifyContent: 'flex-end', children: [k.text(Math.round(x.pct) + '%', { tabular: true, weight: 'semibold', color: quiet(level) })] }),
+    ...(isRoomy ? [k.Box({ width: 22, flexShrink: 0, justifyContent: 'flex-end', children: [k.footnote(x.resetsAt ? 'resets in ' + fmtSpan(x.resetsAt - now) : '', { tabular: true, wrap: 'truncate-end' })] })] : []),
+  ], { title: x.label + ', ' + Math.round(x.pct) + '% used', lines: [x.resetsAt ? 'Resets ' + fmtClock(x.resetsAt, now) + '.' : '', where + 'Every project draws on the same limits.'] })
 }
 
 function canAnswer(w, x) {
@@ -1861,9 +1920,21 @@ function needsCard(k, d, act, w) {
   )
 }
 
+// What a session last said, short enough to take in at a glance: code and pasted scripts are left
+// out, since a prompt that pastes a script reads as noise here, and the rest is cut at a word.
+function brief(said, max = 180) {
+  let t = String(said || '').replace(/```[\s\S]*?(```|$)/g, ' ').replace(/\s+/g, ' ').trim()
+  const code = t.search(/(\bexport |\bconst |\bimport |\bfunction |=>|\{\s*["'\w]+\s*:|<\/?[a-z][\w-]*>)/)
+  if (code > 24) t = t.slice(0, code).replace(/[\s:;,.-]+$/, '') + '…'
+  if (t.length > max) t = t.slice(0, max - 1).replace(/\s+\S*$/, '') + '…'
+  return t
+}
+
 // Where each recent project got to: its last session's title, what it last said, and how to carry on.
-function pickupCard(k, d, act, w) {
+function pickupCard(k, d, act, w, h) {
   if (!w.pickup.length) return null
+  const byName = Object.create(null)
+  for (const p of (h && h.has && h.u.projects) || []) byName[p.name] = p.key
   const rows = w.pickup.map((x, i) => {
     const isTyping = d.view.replying === 'pick:' + x.key
     const canSend = w.canReply && !!x.deskId
@@ -1885,12 +1956,12 @@ function pickupCard(k, d, act, w) {
           columnGap: 'sm',
           alignItems: 'center',
           children: [
-            k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(x.project, { weight: 'semibold', wrap: 'truncate-end' })] }),
+            k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Text({ wrap: 'truncate-end', children: [...(k.isTerminal || !h ? [] : [k.text('● ', { color: hueOf(h, byName[x.project]) })]), k.text(x.project, { weight: 'semibold' })] })] }),
             k.footnote(x.isRunning ? 'working now' : ago(d.now - x.at), { wrap: 'truncate-end', ...(x.isRunning ? { color: 'success', dimColor: undefined } : {}) }),
           ],
         }),
         ...(x.title ? [k.text(x.title, { weight: 'medium', wrap: 'truncate-end' })] : []),
-        ...(said ? [k.footnote(said.length > 260 ? said.slice(0, 257).replace(/\s+\S*$/, '') + '…' : said)] : []),
+        ...(said ? [k.footnote(brief(said))] : []),
         ...(meta ? [k.footnote(meta, { wrap: 'truncate-end' })] : []),
         ...(loose ? [k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.text('● ', { color: 'warning' }), k.text(loose, { size: 'footnote', weight: 'medium', wrap: 'wrap' })] })] : []),
         ...(isTyping && k.Input
@@ -2388,12 +2459,13 @@ function runningNowCard(k, d, act) {
 // What Home is drawn from: this tab's figures and the plan's windows, worked out once.
 function homeContext(d) {
   const f = d.fleet || { status: 'unavailable', sessions: [], plan: null, ctx: {} }
+  let h = null
   const u = d.usage
   const now = d.now
   const plan = d.plan || { source: 'none', windows: [] }
   // a remembered reading whose window has reset since says nothing about now
   const windows = plan.windows.filter((w) => plan.source !== 'remembered' || !w.resetsAt || w.resetsAt > now)
-  return {
+  h = {
     u,
     sc: d.scan || {},
     f,
@@ -2405,25 +2477,70 @@ function homeContext(d) {
     levelOf: (pct) => (pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : pct >= d.opts.limitAlertAt ? 'warning' : 'success'),
     tightest: [...windows].sort((a, z) => z.pct - a.pct)[0],
     w: d.waiting || { needs: [], pickup: [], canReply: false },
+    hues: u && !u.isEmpty ? projectHues(u.projects) : Object.create(null),
   }
+  h.item = h.tightest ? tightestItem(d, h.tightest, h) : null
+  return h
 }
 
-// The figures that matter, as one group: today, the past week, the busiest project, helpers' share.
-function homeStrip(k, d, act, h) {
-  const { u, has, now } = h
-  const out = []
-  const tiles = []
-  if (has) {
-    const top = u.projects[0]
-    tiles.push({ label: 'Today', value: cost(u.today.usd), sub: plural(u.today.projects, 'project', 'projects') + ' · ' + plural(u.today.sessions, 'session', 'sessions'), tip: { title: 'Today, in every project', lines: ['What today’s answers would cost at list prices, helpers and workflow agents included.', 'On a plan the limits are what you spend; this shows how heavy the work was.'] } })
-    tiles.push({ label: 'Past 7 days', value: cost(u.week.usd), sub: 'about ' + cost(u.week.perDay) + ' a day', tip: { title: 'The past 7 days', lines: u.keys.slice(-7).map((key, i) => dayWords(key, now) + ': ' + cost(u.days[u.days.length - 7 + i])) } })
-    tiles.push({ label: 'Busiest project', value: top.name, sub: share(top.week, u.week.usd) + '% of the week', tip: projectTip(top, now) })
-    const helped = u.kinds.helpers + u.kinds.workflows
-    tiles.push({ label: 'Helpers and workflows', value: share(helped, u.week.usd) + '%', sub: 'of the week’s work', tip: { title: 'Helpers and workflow agents', lines: ['Subagents and workflow agents, which run beside a session.', cost(helped) + ' of ' + cost(u.week.usd) + ' over the past 7 days.'] } })
-  }
-  if (tiles.length) out.push(k.tileRow(tiles.map((w, i) => widgetTile(k, 'all-tile-' + i, w, i, tiles.length)), { justifyContent: 'space-between', rowGap: 'md', ...k.groupProps }))
-  return out
+// A project's colour where it is drawn: its own, or grey with the rest.
+function hueOf(h, key) {
+  return (h.hues && h.hues[key]) || OTHER_HEX
 }
+
+// The week's work, a day at a time, in the limit window's own columns: each day split by project,
+// the most used at the bottom in every day, so the week's fill and the work that made it share one
+// calendar. Days still to come are empty. A day is the whole calendar day, so the window's first
+// day counts its morning too: the records hold days, not hours.
+function weekDays(h, win) {
+  const { u, now } = h
+  if (!h.has || !win || win.unit !== 'day') return null
+  const bounds = [win.startMs]
+  try {
+    const d0 = new Date(win.startMs)
+    d0.setHours(24, 0, 0, 0)
+    for (let t = d0.getTime(); t < win.endMs; ) {
+      bounds.push(t)
+      const n = new Date(t)
+      n.setDate(n.getDate() + 1)
+      n.setHours(0, 0, 0, 0)
+      t = n.getTime()
+    }
+  } catch {
+    return null
+  }
+  bounds.push(win.endMs)
+  const index = Object.create(null)
+  u.keys.forEach((key, i) => (index[key] = i))
+  const today = dayKey(now)
+  const out = []
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const a = bounds[i]
+    const b = bounds[i + 1]
+    const key = dayKey((a + b) / 2)
+    const j = a <= now ? index[key] : undefined
+    const parts = []
+    let other = 0
+    if (j !== undefined) {
+      for (const p of u.projects) {
+        const v = p.days[j] || 0
+        if (!(v > 0)) continue
+        if (h.hues[p.key]) parts.push({ value: v, hex: h.hues[p.key], name: p.name })
+        else other += v
+      }
+    }
+    if (other > 0) parts.push({ value: other, hex: OTHER_HEX, name: 'other projects' })
+    const total = parts.reduce((n, x) => n + x.value, 0)
+    let name = key === today ? 'Today' : key
+    try {
+      if (key !== today) name = new Date((a + b) / 2).toLocaleDateString([], { weekday: 'long' })
+    } catch {}
+    const most = [...parts].sort((x, z) => z.value - x.value).slice(0, 2).map((x) => x.name)
+    out.push({ startMs: a, endMs: b, parts, isToday: key === today, total, name, tip: total > 0 ? name + ' · ' + cost(total) + ' · ' + most.join(', ') : '' })
+  }
+  return out.some((x) => x.total > 0) ? out : null
+}
+
 
 // Until the figures are in: turned off, the first read, a folder it can't read, or nothing yet.
 function homeStatus(k, d, act, h) {
@@ -2463,7 +2580,7 @@ function homeStatus(k, d, act, h) {
 function homeInsights(k, d, act, h) {
   const { u, has } = h
   const out = []
-  const ideas = has ? usageInsights(u, d.opts) : []
+  const ideas = has ? usageInsights(u, { ...d.opts, fmt: cost }) : []
   if (ideas.length) {
     out.push(
       k.card('What stands out', null, ideas.map((x, i) =>
@@ -2483,34 +2600,6 @@ function homeInsights(k, d, act, h) {
   return out
 }
 
-function homePlan(k, d, act, h) {
-  const { f, now, plan, windows, levelOf } = h
-  const out = []
-  if (windows.length) {
-    const barW = k.columns >= 72 ? 18 : 10
-    const where = plan.source === 'app' ? (plan.plan ? plan.plan + ' plan. ' : '') : plan.source === 'session' ? 'From this session’s latest reading. ' : 'As read ' + ago(now - plan.at) + ' by another session. '
-    out.push(
-      k.card('Your plan', where + 'Every project draws on the same limits.', [
-        ...windows.map((w, i) => {
-          const level = levelOf(w.pct)
-          return k.row(
-            [
-              { parts: [k.text('● ', { color: k.isTerminal ? (level === 'success' ? 'suggestion' : level) : planHex(w.label) }), w.label] },
-              { el: k.bar(w.pct, 100, level === 'success' ? planHex(w.label) : HEX[level], w.label + ' ' + Math.round(w.pct) + '%'), width: barW },
-              { text: Math.round(w.pct) + '%', width: 6, color: quiet(level) },
-              { text: w.resetsAt ? 'resets in ' + fmtSpan(w.resetsAt - now) : '', width: 22, props: { dimColor: true } }, // the longest is “resets in 47 h 59 min”
-            ],
-            {},
-            { key: 'plan-' + i, tip: { title: w.label + ', ' + Math.round(w.pct) + '% used', lines: [w.resetsAt ? 'Resets ' + fmtClock(w.resetsAt, now) + '.' : '', 'Every project on your account uses it, whichever one is working.'] } },
-          )
-        }),
-        ...(plan.source === 'app' && f.plan && f.plan.extraUsage ? [k.footnote('Extra usage is ' + (f.plan.extraUsage.enabled ? 'on, so work carries on past a limit and is billed.' : 'off, so work pauses at a limit until it resets.'))] : []),
-      ], { gap: 'xs', keepCaption: true }),
-    )
-  }
-
-  return out
-}
 
 function homeProjects(k, d, act, h) {
   const { u, now, has } = h
@@ -2531,8 +2620,8 @@ function homeProjects(k, d, act, h) {
               ...rows.map((p, i) =>
                 k.row(
                   [
-                    { parts: [k.text(p.name, { weight: 'medium' }), ...(p.worktrees ? [k.text('  ' + plural(p.worktrees, 'worktree', 'worktrees'), { dimColor: true })] : [])] },
-                    { el: k.bar(p[by], max, HEX.bar, p.name + ': ' + cost(p[by]) + ', ' + share(p[by], total) + '%'), width: barW },
+                    { parts: [...(k.isTerminal ? [] : [k.text('● ', { color: hueOf(h, p.key) })]), k.text(p.name, { weight: 'medium' }), ...(p.worktrees && k.columns >= 60 ? [k.text('  ' + plural(p.worktrees, 'worktree', 'worktrees'), { dimColor: true })] : [])] },
+                    { el: k.bar(p[by], max, k.isTerminal ? HEX.bar : hueOf(h, p.key), p.name + ': ' + cost(p[by]) + ', ' + share(p[by], total) + '%'), width: barW },
                     { text: cost(p[by]), width: 10 },
                     { text: String(by === 'today' ? p.sessionsToday : p.sessionsWeek), width: 10, props: { dimColor: true } },
                     { text: ago(now - p.lastAt), width: 14, props: { dimColor: true } },
@@ -2544,7 +2633,7 @@ function homeProjects(k, d, act, h) {
             ]
           : [k.footnote('Nothing yet today. Past 7 days shows the week.')]),
         ...(list.length > 8 ? [k.buttons([k.button('proj-more', d.view.showAllProjects ? 'Show fewer' : 'Show all ' + list.length + ' projects', act.toggleProjects, { dimColor: true })])] : []),
-      ], { gap: 'sm' }),
+      ], { gap: 'sm', accessory: SHARE ? null : k.footnote(cost(total) + (by === 'today' ? ' today' : ' in the past 7 days'), { tabular: true }) }),
     )
 
   }
@@ -2554,15 +2643,27 @@ function homeProjects(k, d, act, h) {
 function homeChart(k, d, act, h) {
   const { u, now, has } = h
   const out = []
-  if (has) {
+  // the hero's calendar already draws the week by project; this is for a 5-hour window or no plan
+  if (has && !(k.hasSvg && h.item && h.item.days)) {
+    const stacks = u.days.map((_, i) => {
+      let other = 0
+      const parts = []
+      for (const p of u.projects) {
+        const v = p.days[i] || 0
+        if (!(v > 0)) continue
+        if (h.hues[p.key]) parts.push({ value: v, hex: h.hues[p.key] })
+        else other += v
+      }
+      return other > 0 ? [...parts, { value: other, hex: OTHER_HEX }] : parts
+    })
     const mean = avg(u.days)
     let peak = 0
     u.days.forEach((v, i) => {
       if (v > u.days[peak]) peak = i
     })
     out.push(
-      k.card('Last ' + SCAN_DAYS + ' days', 'Every project, each day. Today is the brightest bar; the dashed line is the average.', [
-        k.bars(u.days, SCAN_DAYS, 'Use each day over the last ' + SCAN_DAYS + ' days: today ' + cost(u.today.usd) + ', on average ' + cost(mean) + ' a day', 64, { titles: u.keys.map((key, i) => dayWords(key, now) + ': ' + cost(u.days[i])), average: true, averageTitle: 'Average: ' + cost(mean) + ' a day' }),
+      k.card('Last ' + SCAN_DAYS + ' days', 'Every project, each day, in its own colour. The dashed line is the average.', [
+        k.bars(u.days, SCAN_DAYS, 'Use each day over the last ' + SCAN_DAYS + ' days: today ' + cost(u.today.usd) + ', on average ' + cost(mean) + ' a day', 64, { stacks, titles: u.keys.map((key, i) => dayWords(key, now) + ': ' + cost(u.days[i])), average: true, averageTitle: 'Average: ' + cost(mean) + ' a day' }),
         k.row([{ text: dayWords(u.keys[0], now) }, { text: 'Today', width: 8 }], { size: 'footnote', dimColor: true }),
         k.footnote('On average ' + cost(mean) + ' a day. Busiest: ' + dayWords(u.keys[peak], now) + ', ' + cost(u.days[peak]) + '.'),
       ]),
@@ -2584,10 +2685,10 @@ function homeSessions(k, d, act, h) {
     const done = others.filter((x) => !x.isRunning && !x.pinned && /merged|closed/i.test(String(x.prState || '')))
     // This session first, then the others by recent activity.
     const rows = [{ sessionId: me.desk || 'self', title: me.title || me.project || 'This session', cwd: me.cwd, isRunning: false, lastActivityAt: null, isSelf: true }, ...others]
-    const ctxW = k.columns >= 72 ? 12 : 8
+    const ctxW = k.columns >= 90 ? 12 : 0
     const sessionRow = (x, i) => {
       const ctx = x.isSelf ? { percentUsed: d.pct, tokensUsed: d.tokens } : f.ctx && f.ctx[x.sessionId]
-      const pct = ctx ? Math.round(ctx.percentUsed) : null
+      const pct = ctx && Number.isFinite(Number(ctx.percentUsed)) ? Math.round(ctx.percentUsed) : null
       const usd = x.isSelf ? (me.desk && spent[me.desk] !== undefined ? spent[me.desk] : d.usd) : spent[x.sessionId]
       const hasUsd = usd !== undefined && usd !== null
       const folder = String(x.cwd || '').split('/').filter(Boolean).pop() || ''
@@ -2598,8 +2699,8 @@ function homeSessions(k, d, act, h) {
       return k.hoverBox('sess-' + i, { flexDirection: 'column', width: '100%' }, [
         k.row([
           { el: k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', minWidth: 0, flexShrink: 1, children: [k.text('●', x.isRunning ? { color: 'success' } : { dimColor: true }), k.Box({ flexShrink: 1, minWidth: 0, children: [k.text(x.title || 'Untitled session', { wrap: 'truncate-end', ...(x.isSelf ? { weight: 'semibold' } : {}) })] })] }) },
-          { el: pct !== null ? k.bar(pct, 100, ctxHex, 'Context ' + pct + '%') : k.text(' ', {}), width: ctxW },
-          { text: pct !== null ? pct + '%' : '–', width: 5, props: pct === null ? { dimColor: true } : {} },
+          ...(ctxW ? [{ el: pct !== null ? k.bar(pct, 100, ctxHex, 'Context ' + pct + '%') : k.text(' ', {}), width: ctxW }] : []),
+          { text: pct !== null ? pct + '%' : '–', width: ctxW ? 5 : 7, props: pct === null ? { dimColor: true } : ctxHex !== RING_HEX.context && ctxW === 0 ? { color: pct >= d.opts.cheaperModelAt ? 'error' : 'warning' } : {} },
           { text: hasUsd ? cost(usd) : '–', width: 9, props: hasUsd ? {} : { dimColor: true } },
           { text: when, width: 14, props: x.isRunning ? { color: 'success' } : { dimColor: true } },
         ]),
@@ -2617,7 +2718,7 @@ function homeSessions(k, d, act, h) {
     }
     out.push(
       k.card('Open sessions', 'In the desktop app, newest activity first. Point at one for its folder, context and spending.', [
-        k.heads([{ text: 'Session' }, { text: 'Context', width: ctxW + 6 }, { text: 'Today', width: 9 }, { text: 'Active', width: 14 }]),
+        k.heads([{ text: 'Session' }, { text: 'Context', width: ctxW ? ctxW + 6 : 7 }, { text: 'Today', width: 9 }, { text: 'Active', width: 14 }]),
         ...rows.map(sessionRow),
       ], { gap: 'sm' }),
     )
@@ -2725,7 +2826,7 @@ function homeTour(k, d, act, h) {
   } else if (step === 2) {
     title = 'Your limits, on a calendar'
     words = 'The bar is your plan’s window. The fill is what you have used, the thin line under it is how much of the window has passed, and the white mark is now. When the fill is ahead of the mark, you will run out early: it turns amber and says when.'
-    if (h.tightest) preview = k.Box({ flexDirection: 'column', paddingY: 'sm', children: [runwayBar(k, tightestItem(d, h.tightest), 'hero', Math.max(280, k.px - 56))] })
+    if (h.tightest) preview = k.Box({ flexDirection: 'column', paddingY: 'sm', children: [runwayBar(k, h.item, 'hero', Math.max(280, k.px - 56))] })
   } else {
     const { have, total } = habitIdeas(d)
     title = 'Habits that help most'
@@ -2748,16 +2849,20 @@ function homeTour(k, d, act, h) {
 function allTab(k, d, act) {
   const h = homeContext(d)
   const { w, tightest } = h
-  const hero = [homeHero(k, d, w, tightest, act), ...homeTour(k, d, act, h), approvalCard(k, d, act, true)]
+  const hero = [homeHero(k, d, h, act), ...homeTour(k, d, act, h), approvalCard(k, d, act, true)]
   if (k.isTerminal || k.columns < SPLIT_AT) {
-    return [...hero, ...homeStrip(k, d, act, h), needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w), ...homeStatus(k, d, act, h), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homePlan(k, d, act, h), ...homeProjects(k, d, act, h), ...homeChart(k, d, act, h), ...homeSessions(k, d, act, h), ...homeFooter(k, d, act, h)]
+    return [...hero, needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w, h), ...homeStatus(k, d, act, h), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homeProjects(k, d, act, h), ...homeChart(k, d, act, h), ...homeSessions(k, d, act, h), ...homeFooter(k, d, act, h)]
   }
+  // the hero holds the limits and the week; the left column is what to do, the right where things
+  // are. With nothing for the right (no records read, no desktop sessions) the left takes the width.
   const [km, ka] = k.split()
+  const aside = [...homeProjects(ka, d, act, h), ...homeChart(ka, d, act, h), ...homeSessions(ka, d, act, h)]
+  if (!aside.length) return [...hero, needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w, h), ...homeStatus(k, d, act, h), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homeFooter(k, d, act, h)]
   return [
     ...hero,
     km.layout(
-      [needsCard(km, d, act, w), runningNowCard(km, d, act), pickupCard(km, d, act, w), ...homeStatus(km, d, act, h), ...homeInsights(km, d, act, h), ...homeNext(km, d, act), ...homeProjects(km, d, act, h)],
-      [...homeStrip(ka, d, act, h), ...homePlan(ka, d, act, h), ...homeChart(ka, d, act, h), ...homeSessions(ka, d, act, h)],
+      [needsCard(km, d, act, w), runningNowCard(km, d, act), pickupCard(km, d, act, w, h), ...homeStatus(km, d, act, h), ...homeInsights(km, d, act, h), ...homeNext(km, d, act)],
+      aside,
     ),
     ...homeFooter(k, d, act, h),
   ]
@@ -2810,7 +2915,7 @@ export function drawBand(k, d, act) {
   const gauge = (g) => {
     const shown = Math.round(g.pct) + '%'
     const meter = k.hasSvg
-      ? k.Box({ width: 5, flexShrink: 0, children: [k.Svg({ source: svgRunway(g.runway ? { ...g.runway, hex: g.hex } : { used: g.pct, elapsed: null, runOut: null, ticks: g.key === 'context' ? [d.opts.contextWarnAt] : [], hex: g.hex }, { width: 40, height: 14 }), alt: g.label + ' ' + shown, width: 40, height: 14 })] })
+      ? k.Box({ width: 5, flexShrink: 0, children: [k.Svg({ source: svgRunway(g.runway ? { ...g.runway, hex: tint(g.hex, g.level) } : { used: g.pct, elapsed: null, runOut: null, ticks: g.key === 'context' ? [d.opts.contextWarnAt] : [], hex: tint(g.hex, g.level) }, { width: 40, height: 14 }), alt: g.label + ' ' + shown, width: 40, height: 14 })] })
       : k.text(textMeter(g.pct, 5), g.level === 'success' ? { color: 'suggestion' } : { color: g.level })
     return k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', flexShrink: 0, children: [meter, k.text(g.label + ' ', { dimColor: true }), k.text(shown, { tabular: true, weight: g.level === 'success' ? undefined : 'semibold', color: g.level === 'success' ? undefined : g.level })] })
   }

@@ -17,8 +17,8 @@ export const OUT = join(E2E, '.out')
 export const PAGES = join(OUT, 'pages')
 const COPY = join(OUT, 'mod')
 
-// Pane widths in cells: a phone, a tablet or a narrow dock, and a wide desktop pane.
-export const COLS = [40, 88, 148]
+// Pane widths in cells: a phone, a tablet or a narrow dock, a wide desktop pane, and one made full screen.
+export const COLS = [40, 88, 148, 220]
 export const CELL_X = 8.4
 export const VIEWS = ['all', 'workflows', 'overview', 'usage', 'skills', 'settings', 'band']
 
@@ -58,8 +58,21 @@ kitTest('e2e: an empty session', { timeoutMs: 120_000 }, async ($: any, on: any)
 kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true } }, async ($: any, on: any) => {
   const { store } = stubs(on, { ...HIGH(), rateLimits: [...HIGH().rateLimits, { kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
   effects(on)
-  waitingDesk(on, [])
-  transcripts(on, [...WAITING, ...WEEK], true, [{ pid: 9, sessionId: 'perm', cwd: '/Users/me/Projects/api', kind: 'interactive', name: 'Release', status: 'waiting', waitingFor: 'permission to run npm publish' }])
+  // real sessions carry long titles and long branch names; neither may push a column off the pane
+  waitingDesk(on, [], [
+    { sessionId: 'local_long', title: 'Price tracker · nightly sync run (scraper tasks + scoreboard) and the follow-up review', cwd: '/Users/me/Projects/price-tracker-app', branch: 'claude/live-deployment-review-3f9a2c-remaining-cleanup-work-7b41e0', prNumber: 874, prState: 'MERGED', isRunning: false, isArchived: false, lastActivityAt: '2026-10-23T09:00:00Z' },
+    { sessionId: 'local_long2', title: 'Remaining work audit', cwd: '/Users/me/Projects/a-very-long-project-folder-name-for-the-company-marketing-website', isRunning: true, isArchived: false, lastActivityAt: '2026-10-23T11:59:00Z' },
+  ])
+  // a week of work spread over its days, as a real week is, so the calendar has something to show
+  const spread = (name: string, file: string, days: [string, number][]) => ({ path: '-Users-me-Projects-' + name + '/' + file + '.jsonl', ageMs: 86_400_000, cwd: '/Users/me/Projects/' + name, answers: days.map(([at, tokens]) => [at + 'T15:00:00Z', 'claude-opus-5-5', 0, tokens, 0, 0]) })
+  const SPREAD = [
+    spread('storefront', 'w1', [['2026-10-19', 260_000], ['2026-10-20', 380_000], ['2026-10-21', 520_000], ['2026-10-22', 300_000]]),
+    spread('ledger-api', 'w2', [['2026-10-19', 180_000], ['2026-10-21', 240_000], ['2026-10-22', 120_000]]),
+    spread('reports', 'w3', [['2026-10-20', 160_000], ['2026-10-22', 220_000]]),
+    spread('docs-site', 'w4', [['2026-10-18', 90_000], ['2026-10-21', 140_000]]),
+    spread('notes', 'w5', [['2026-10-20', 60_000], ['2026-10-22', 90_000]]),
+  ]
+  transcripts(on, [...WAITING, ...WEEK, ...SPREAD] as any, true, [{ pid: 9, sessionId: 'perm', cwd: '/Users/me/Projects/api', kind: 'interactive', name: 'Release', status: 'waiting', waitingFor: 'permission to run npm publish' }])
   store['runs:v1'] = { wf_1: digest(), wf_2: digest({ runId: 'wf_2', name: 'docs-check', startedAt: NOW - 86_400_000, status: 'killed' }) }
   on('tool.call', (_$: unknown, e: any) => {
     if (e.tool === 'TaskStop') return { result: {}, text: 'stopped' }

@@ -60,7 +60,9 @@ function node(n) {
         bottom: p.bottom === undefined ? undefined : p.bottom * CELL_Y,
         left: p.left === undefined ? undefined : p.left * CELL_X,
         right: p.right === undefined ? undefined : p.right * CELL_X,
-        'min-width': 0,
+        // as in the app, a box is as wide as its widest unbreakable line unless it says otherwise:
+        // a long name holds its column open and pushes the next one aside
+        'min-width': p.minWidth === undefined ? undefined : typeof p.minWidth === 'number' ? p.minWidth * CELL_X : p.minWidth,
         'box-sizing': 'border-box',
       }
       const attrs = (p.key ? ' data-key="' + esc(p.key) + '"' : '') + (h.scope ? ' data-scope="' + esc(h.scope) + '"' : '') + (h.backgroundColor ? ' data-hover-bg="' + esc(h.backgroundColor) + '"' : '')
@@ -76,8 +78,8 @@ function node(n) {
         'white-space': isTruncated ? 'nowrap' : 'pre-wrap',
         overflow: isTruncated ? 'hidden' : undefined,
         'text-overflow': isTruncated ? 'ellipsis' : undefined,
-        'min-width': 0,
-        'overflow-wrap': isTruncated ? undefined : 'anywhere',
+        // a long word wraps when it must but still counts at its full width, as in the app
+        'overflow-wrap': isTruncated ? undefined : 'break-word',
       }
       return '<span class="t" style="' + style(st) + '">' + kids + '</span>'
     }
@@ -94,6 +96,12 @@ function node(n) {
       let src = String(p.source || '')
       const own = /<svg[^>]*?\swidth="([\d.]+)"/.exec(src)
       src = src.replace(/<svg ([^>]*?)\swidth="[^"]*"/, '<svg $1').replace(/<svg ([^>]*?)\sheight="[^"]*"/, '<svg $1')
+      // the app draws an interactive drawing in a frame of its own; a frame given neither a width nor
+      // a height is the browser's default 300 by 150, with the drawing shrunk to fit inside it
+      if (p.isInteractive && p.width === undefined && p.height === undefined) {
+        src = src.replace('<svg ', '<svg style="display:block;width:100%;height:100%" ')
+        return '<div role="img" aria-label="' + esc(p.alt || '') + '" data-svg="1" data-frame="default" style="' + style({ width: 300, height: 150, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'
+      }
       const width = p.width ?? (own ? Number(own[1]) : undefined)
       src = src.replace('<svg ', '<svg style="display:block;width:100%;height:' + (p.height ? p.height + 'px' : 'auto') + '" ')
       return '<div role="img" aria-label="' + esc(p.alt || '') + '" data-svg="1" style="' + style({ width: width ?? '100%', 'max-width': '100%', height: p.height, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'

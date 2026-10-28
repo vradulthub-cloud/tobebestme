@@ -1049,8 +1049,8 @@ test('All projects adds up every project from Claude Code’s own records, workt
     await ui.press({ key: 'usage-refresh' })
     let text = await shown(ui)
     expect(text).toContain('$8.30') // today, every project
-    expect(text).toContain('1 project · 2 sessions')
-    expect(text).toContain('$9.30') // the past 7 days; the month-old transcript is left out
+    expect(text).toContain('today across 1 project and 2 sessions')
+    expect(text).toContain('$9.30 in the past 7 days') // the month-old transcript is left out
     expect(text).toContain('storefront')
     expect(text).toContain('1 worktree')
     expect(text).toContain('ledger-api')

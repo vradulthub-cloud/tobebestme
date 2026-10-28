@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const OUT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '.out')
 type View = { state: string; view: string; cols: number; details: boolean; page: string }
 const manifest: View[] = JSON.parse(readFileSync(join(OUT, 'manifest.json'), 'utf8'))
-const VIEWPORT: Record<number, number> = { 40: 375, 88: 768, 148: 1280 }
+const VIEWPORT: Record<number, number> = { 40: 375, 88: 768, 148: 1280, 220: 1920 }
 
 async function open(page: Page, v: View) {
   await page.setViewportSize({ width: VIEWPORT[v.cols] ?? 1280, height: 900 })
@@ -48,6 +48,9 @@ for (const v of manifest) {
       return out.slice(0, 5)
     })
     expect.soft(spill, 'something runs past the pane').toEqual([])
+    // an interactive drawing given no size sits in the app's default 300 by 150 frame, shrunk to fit
+    const framed = await page.evaluate(() => [...document.querySelectorAll('[data-frame=default]')].map((el) => el.getAttribute('aria-label')!.slice(0, 40)))
+    expect.soft(framed, 'a drawing with no size of its own').toEqual([])
 
     const report = await page.evaluate(() => {
       const visible = (el: Element) => {
@@ -134,7 +137,9 @@ for (const v of manifest) {
         const b = lum(behind(el))
         const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
         const px = parseFloat(getComputedStyle(el).fontSize)
-        if (ratio < (px >= 18 ? 3 : 4.5)) faint.push(`${ratio.toFixed(2)}:1 “${text.slice(0, 40)}”`)
+        // a lone dot or mark is a graphic, not words: WCAG asks 3:1 of it, as of large text
+        const isMark = /^[●■◆○◐✓✕‖▬█░]+$/.test(text)
+        if (ratio < (px >= 18 || isMark ? 3 : 4.5)) faint.push(`${ratio.toFixed(2)}:1 “${text.slice(0, 40)}”`)
       }
       return { small, overlaps, unnamed, shouting, faint, buttons: document.querySelectorAll('button').length }
     })
@@ -238,11 +243,15 @@ test('chart tooltips fade in on hover, stay inside the chart, and skip the motio
 })
 
 test('Home lays the tightest limit out on its calendar: the days, Now, where it runs out and when it resets, all inside the drawing', async ({ page }) => {
-  for (const cols of [40, 88, 148]) {
+  for (const cols of [40, 88, 148, 220]) {
     const v = manifest.find((m) => m.state === 'busy' && m.view === 'all' && m.cols === cols && !m.details)!
     await open(page, v)
     const week = page.locator('[role=img]:has(line.ro):has(text)').first()
     expect(await week.count(), cols + ' columns: no calendar view').toBe(1)
+    // drawn across the column, not shrunk into a corner of it
+    const across = await week.evaluate((el) => el.getBoundingClientRect().width / el.parentElement!.getBoundingClientRect().width)
+    expect(across, cols + ' columns: the calendar is not drawn across its column').toBeGreaterThan(0.95)
+    expect(await week.locator('rect[height]').count(), cols + ' columns: no day bars').toBeGreaterThan(5)
     const words = await week.locator('text').allTextContents()
     expect(words.some((w) => /^Runs out /.test(w)), cols + ' columns: where it runs out is not said').toBe(true)
     expect(words.some((w) => /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat)$/.test(w)), cols + ' columns: no day names').toBe(true)

@@ -1190,14 +1190,16 @@ export function habitIdeas(d, { max = 3, snooze = 30 * 86_400_000 } = {}) {
   return { ideas: open.slice(0, max), have: habits.filter((x) => x.isDone).length, total: habits.length, isDone: open.length === 0 }
 }
 
+// `o.fmt` writes a cost as the page does (a dollar figure, or a share of the weekly limit).
 export function usageInsights(s, o) {
   if (!s || s.week.usd <= 0) return []
+  const money = (o && o.fmt) || fmtUsd
   const out = []
   const share = (x) => Math.round((x / s.week.usd) * 100)
   const before = s.days.slice(-7, -1)
   const usual = before.length ? sum(before) / before.length : 0
   if (usual > 0 && s.today.usd >= Math.max(1, usual * 2)) {
-    out.push({ key: 'spike', title: 'Today is ' + times(s.today.usd / usual) + ' your usual day', detail: fmtUsd(s.today.usd) + ' so far, against about ' + fmtUsd(usual) + ' a day over the past week.' })
+    out.push({ key: 'spike', title: 'Today is ' + times(s.today.usd / usual) + ' your usual day', detail: money(s.today.usd) + ' so far, against about ' + money(usual) + ' a day over the past week.' })
   }
   const helped = s.kinds.helpers + s.kinds.workflows
   if (share(helped) >= 25) {
@@ -1222,7 +1224,7 @@ export function usageInsights(s, o) {
   }
   const busiest = s.projects[0]
   if (busiest && s.projects.length >= 2 && share(busiest.week) >= 50) {
-    out.push({ key: 'busiest', title: busiest.name + ' used ' + share(busiest.week) + '% of this week', detail: fmtUsd(busiest.week) + ' over ' + plural(busiest.sessionsWeek, 'session', 'sessions') + (busiest.worktrees ? ', in ' + plural(busiest.worktrees, 'worktree', 'worktrees') + ' and the main folder' : '') + '.' })
+    out.push({ key: 'busiest', title: busiest.name + ' did ' + share(busiest.week) + '% of this week’s work', detail: money(busiest.week) + ' over ' + plural(busiest.sessionsWeek, 'session', 'sessions') + (busiest.worktrees ? ', in ' + plural(busiest.worktrees, 'worktree', 'worktrees') + ' and the main folder' : '') + '.' })
   }
   return out.slice(0, 3)
 }
@@ -2673,7 +2675,7 @@ export function reportMarkdown(d) {
 // with `isInteractive` say what each part is on hover (<title>), and the part under the
 // pointer stays bright while the rest dims.
 
-export const HEX = { track: '#8E8E9338', marker: '#8E8E93', bar: '#D1D1D6', barPast: '#D1D1D666', buffer: '#8E8E9366', success: '#30D158', warning: '#FF9F0A', error: '#FF453A' }
+export const HEX = { track: '#8E8E9338', marker: '#8E8E93', bar: '#0A84FF', barPast: '#0A84FF66', buffer: '#8E8E9366', success: '#30D158', warning: '#FF9F0A', error: '#FF453A' }
 export const CATEGORY_HEX = ['#0A84FF', '#5E5CE6', '#BF5AF2', '#FF9F0A', '#30D158', '#64D2FF', '#FF375F', '#AC8E68']
 const BLOCKS = '▁▂▃▄▅▆▇█'
 const FONT = ' font-family="-apple-system, BlinkMacSystemFont, system-ui, sans-serif"'
@@ -2688,6 +2690,10 @@ const HOVER_CSS =
 // A chart tooltip for the point (x, y) in a W×H drawing: a dark rounded label above the point, or
 // below it near the top edge, kept inside the drawing. It follows an invisible hover target.
 function svgTip(x, y, text, W, H) {
+  return '<circle class="h" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="8" fill="transparent"/>' + tipLabel(x, y, text, W, H)
+}
+
+function tipLabel(x, y, text, W, H, cls = 'tip') {
   // never wider than the drawing: a long reading is cut short rather than run off the edge
   const room = Math.max(8, Math.floor((W - 4 - 16) / 6.7))
   if (text.length > room) text = text.slice(0, room - 1) + '…'
@@ -2696,10 +2702,24 @@ function svgTip(x, y, text, W, H) {
   const tx = Math.max(2, Math.min(W - w - 2, x - w / 2))
   const ty = y - 12 - h >= 2 ? y - 12 - h : Math.min(H - h - 2, y + 12)
   return (
-    '<circle class="h" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="8" fill="transparent"/>' +
-    '<g class="tip"><rect x="' + tx.toFixed(1) + '" y="' + ty.toFixed(1) + '" width="' + w + '" height="' + h + '" rx="6" fill="#1C1C1E" fill-opacity="0.96" stroke="#48484A"/>' +
+    '<g class="' + cls + '"><rect x="' + tx.toFixed(1) + '" y="' + ty.toFixed(1) + '" width="' + w + '" height="' + h + '" rx="6" fill="#1C1C1E" fill-opacity="0.96" stroke="#48484A"/>' +
     '<text x="' + (tx + w / 2).toFixed(1) + '" y="' + (ty + 15).toFixed(1) + '" font-size="12" fill="#F2F2F7" text-anchor="middle"' + FONT + '>' + escapeXml(text) + '</text></g>'
   )
+}
+
+// On a light pane the vivid colours above are too pale to read against white, so every drawing
+// carries the system's light-theme variants of the same colours, chosen by the appearance the app
+// reports. Only the vivid colours change: either variant still reads on the other pane, so a drawing
+// stays legible even where the reported appearance and the pane's own disagree. Neutrals, the
+// playhead and its knockout among them, are drawn to read on both and never change.
+const LIGHT_PAIRS = [['#0A84FF', '#007AFF'], ['#BF5AF2', '#AF52DE'], ['#FF375F', '#FF2D55'], ['#64D2FF', '#0A84C2'], ['#00C7BE', '#0C9C94'], ['#30D158', '#28A745'], ['#FF9F0A', '#E07C00'], ['#FF453A', '#E5302A'], ['#FFD60A', '#D69E00'], ['#AC8E68', '#8F7455']]
+const LIGHT_CSS =
+  '<style>@media (prefers-color-scheme:light){' +
+  LIGHT_PAIRS.map(([dark, light]) => '[fill="' + dark + '"]{fill:' + light + '}[stroke="' + dark + '"]{stroke:' + light + '}').join('') +
+  '}</style>'
+function withLight(svg) {
+  const at = svg.indexOf('>') + 1
+  return svg.slice(0, at) + LIGHT_CSS + svg.slice(at)
 }
 
 function title(s) {
@@ -2724,7 +2744,7 @@ export function svgMeter(parts, total, markers, thin = false) {
     .map((m) => (typeof m === 'number' ? { at: m } : m))
     .filter((m) => m.at > 0 && m.at < 100)
     .map((m) => '<rect x="' + ((m.at / 100) * W - 1).toFixed(1) + '" y="0" width="2" height="' + H + '" fill="' + HEX.marker + '">' + title(m.title) + '</rect>')
-  return (
+  return withLight(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS +
     '<clipPath id="m"><rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" rx="' + h / 2 + '"/></clipPath>' +
     '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" rx="' + h / 2 + '" fill="' + HEX.track + '"/>' +
@@ -2735,6 +2755,7 @@ export function svgMeter(parts, total, markers, thin = false) {
 // Bars from the left, one slot each, so the first turn is on the left and room is left for
 // more. `colors` and `titles` give each bar its own colour and hover text; `average`
 // draws a dashed line at the mean.
+// With `extra.stacks`, each bar is split into its parts ([{ value, hex }] per bar), bottom up.
 export function svgBars(values, slots, extra = {}) {
   const W = 600
   const H = 64
@@ -2744,13 +2765,24 @@ export function svgBars(values, slots, extra = {}) {
   const bw = (W - gap * (n - 1)) / n
   const bars = values.map((v, i) => {
     const h = Math.max(2, (v / max) * (H - 4))
+    const x = (i * (bw + gap)).toFixed(1)
+    const stack = extra.stacks && extra.stacks[i] ? extra.stacks[i].filter((p) => p.value > 0) : null
+    if (stack && stack.length && v > 0) {
+      let y = H - 1
+      const rects = stack.map((p) => {
+        const ph = (p.value / v) * h
+        y -= ph
+        return '<rect x="' + x + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + ph.toFixed(1) + '" fill="' + p.hex + '"/>'
+      })
+      return '<g class="p">' + title(extra.titles && extra.titles[i]) + rects.join('') + '</g>'
+    }
     const fill = extra.colors ? extra.colors[i] : i === values.length - 1 ? HEX.bar : HEX.barPast
-    return '<rect class="p" x="' + (i * (bw + gap)).toFixed(1) + '" y="' + (H - 1 - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + fill + '">' + title(extra.titles && extra.titles[i]) + '</rect>'
+    return '<rect class="p" x="' + x + '" y="' + (H - 1 - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + fill + '">' + title(extra.titles && extra.titles[i]) + '</rect>'
   })
   const mean = extra.average && values.length >= 2 ? avg(values) : null
   const my = mean !== null ? (H - 1 - (mean / max) * (H - 4)).toFixed(1) : 0
   const line = mean !== null ? '<line x1="0" x2="' + W + '" y1="' + my + '" y2="' + my + '" stroke="' + HEX.marker + '" stroke-width="1.5" stroke-dasharray="4 4">' + title(extra.averageTitle) + '</line>' : ''
-  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + '<rect x="0" y="' + (H - 1) + '" width="' + W + '" height="1" fill="' + HEX.track + '"/>' + bars.join('') + line + '</svg>'
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + '<rect x="0" y="' + (H - 1) + '" width="' + W + '" height="1" fill="' + HEX.track + '"/>' + bars.join('') + line + '</svg>')
 }
 
 function escapeXml(s) {
@@ -2782,7 +2814,7 @@ export function svgStages(phases) {
     x += w + gap
     return g
   })
-  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + parts.join('') + '</svg>'
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + parts.join('') + '</svg>')
 }
 
 // Every agent of a run on one time line, a row each, from when it started to when it ended (or
@@ -2808,7 +2840,7 @@ export function svgTimeline(agents, startedAt, now) {
     return '<rect class="p" x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + row + '" rx="4" fill="' + (fill[a.state] || HEX.marker) + '"' + (isWaiting ? ' fill-opacity="0.45"' : '') + '>' + title(words) + '</rect>'
   })
   const H = Math.max(row, agents.length * (row + gap) - gap)
-  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none"/>' + bars.join('') + '</svg>'
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none"/>' + bars.join('') + '</svg>')
 }
 
 // The colour each model family's share takes in a cost bar.
@@ -2818,7 +2850,31 @@ export const FAMILY_HEX = { Opus: '#0A84FF', Sonnet: '#BF5AF2', Fable: '#FF9F0A'
 // its identity colour whatever its state; the words beside it carry the state.
 // One meaning per colour: a limit or a budget is drawn in a neutral, told apart by its name and place;
 // red, amber and green mean status alone, and blue, purple and cyan name models alone.
-export const RING_HEX = { context: '#D1D1D6', five_hour: '#D1D1D6', seven_day: '#D1D1D6', seven_day_opus: '#D1D1D6', session: '#D1D1D6', daily: '#D1D1D6', spending: '#D1D1D6' }
+// Each thing that can run out keeps one vivid colour everywhere it is drawn, so it is found at a
+// glance: the weekly limit in blue, the 5-hour one in purple, a model's own weekly limit in pink,
+// context in cyan and a budget in mint. None is a status colour: amber and red alone say a limit is
+// running out early or nearly out, and green alone says all is well.
+export const RING_HEX = { context: '#64D2FF', five_hour: '#BF5AF2', seven_day: '#0A84FF', seven_day_opus: '#FF375F', session: '#00C7BE', daily: '#00C7BE', spending: '#0A84FF' }
+
+// Each project's own colour, kept wherever the project is drawn (the week's bars, the projects list,
+// the busiest project), so it can be followed down the page. The six most used this fortnight get
+// one each, from the key's hash so a project keeps its colour from day to day; the rest are grey.
+export const PROJECT_HEX = ['#BF5AF2', '#FF375F', '#64D2FF', '#00C7BE', '#AC8E68', '#5E5CE6']
+export const OTHER_HEX = '#8E8E93'
+export function projectHues(projects) {
+  const out = Object.create(null)
+  const taken = new Set()
+  const ranked = [...(projects || [])].filter((p) => p.total > 0).sort((a, z) => z.total - a.total).slice(0, PROJECT_HEX.length)
+  for (const p of ranked) {
+    let h = 0
+    for (const ch of String(p.key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+    let i = h % PROJECT_HEX.length
+    while (taken.has(i)) i = (i + 1) % PROJECT_HEX.length
+    taken.add(i)
+    out[p.key] = PROJECT_HEX[i]
+  }
+  return out
+}
 export function modelHex(model) {
   const m = String(model || '')
   if (m.includes('opus')) return '#0A84FF'
@@ -2863,7 +2919,7 @@ export function svgRunway(g, { width = 600, height = 14, isFluid = false } = {})
   }
   // the reset post: the end of every runway
   parts.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="0" y2="12" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
-  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + height + '" width="' + W + '" height="' + height + '"' + (isFluid ? ' preserveAspectRatio="none"' : '') + '>' + parts.join('') + '</svg>'
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + height + '" width="' + W + '" height="' + height + '"' + (isFluid ? ' preserveAspectRatio="none"' : '') + '>' + parts.join('') + '</svg>')
 }
 
 // Where a limit stands on its runway: the share used, the share of its window gone, and where the
@@ -2872,10 +2928,15 @@ export function svgRunway(g, { width = 600, height = 14, isFluid = false } = {})
 // the playhead, and where the window runs out and resets in words over their posts. It is the runway
 // of the tiles made large enough to read at a glance, for the one limit that matters most.
 // g: { used, elapsed, runOut (% of the window, or null), hex, startMs, endMs, unit: 'day' | 'hour',
-//      nowLabel, runLabel, endLabel }.
+//      nowLabel, runLabel, endLabel, days }.
+// `days`, for a window of days: [{ startMs, endMs, parts: [{ value, hex }], tip }], each day's use
+// drawn as a bar under the runway, in that day's column, stacked by project in each project's colour.
+// So the week's fill and the work that made it sit on one calendar; a day says what it held on hover.
 export function svgWindow(g, { width = 600 } = {}) {
   const W = Math.max(240, Math.round(width))
-  const H = 64
+  const days = g.unit === 'day' && Array.isArray(g.days) && g.days.some((x) => x.parts.some((p) => p.value > 0)) ? g.days : null
+  const BY = 96 // the bars' baseline, under the runway's strand
+  const H = days ? BY + 20 : 64
   const span = Math.max(1, g.endMs - g.startMs)
   const clamp = (v) => Math.max(0, Math.min(100, v || 0))
   const x = (pct) => (clamp(pct) / 100) * W
@@ -2886,7 +2947,7 @@ export function svgWindow(g, { width = 600 } = {}) {
   const hasClock = g.elapsed !== null && g.elapsed !== undefined
   const e = hasClock ? x(g.elapsed) : null
   const early = hasClock && g.runOut !== null && g.runOut !== undefined
-  const label = (tx, ty, str, anchor, fill, weight) => '<text x="' + tx.toFixed(1) + '" y="' + ty + '" font-size="11" fill="' + (fill || HEX.marker) + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
+  const label = (tx, ty, str, anchor, fill, weight) => '<text x="' + tx.toFixed(1) + '" y="' + ty + '" font-size="12" fill="' + (fill || HEX.marker) + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
   const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="10" fill="#8E8E93" fill-opacity="0.24"/>']
   if (u > 0) parts.push('<rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/>')
   if (early && u > e) parts.push('<rect x="' + e.toFixed(1) + '" y="' + T + '" width="' + (u - e).toFixed(1) + '" height="10" fill="' + HEX.warning + '"/>')
@@ -2920,7 +2981,7 @@ export function svgWindow(g, { width = 600 } = {}) {
       for (let i = 0; i < bounds.length - 1; i++) {
         const a = xMs(bounds[i])
         const b = xMs(bounds[i + 1])
-        if (b - a >= 34) side.push([(a + b) / 2, new Date((bounds[i] + bounds[i + 1]) / 2).toLocaleDateString([], { weekday: 'short' }), 'middle'])
+        if (b - a >= 34) side.push([(a + b) / 2, new Date((bounds[i] + bounds[i + 1]) / 2).toLocaleDateString([], { weekday: 'short' }), 'middle', i])
       }
     }
   } catch {
@@ -2935,14 +2996,14 @@ export function svgWindow(g, { width = 600 } = {}) {
       const ro = x(g.runOut)
       parts.push('<line x1="' + ro.toFixed(1) + '" x2="' + W + '" y1="' + (T + 15.5) + '" y2="' + (T + 15.5) + '" stroke="' + HEX.warning + '" stroke-width="1.5"' + ns + '/>')
       parts.push('<line class="ro" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="' + (T - 4) + '" y2="' + (T + 20) + '" stroke="' + HEX.warning + '" stroke-width="3"' + ns + '/>')
-      if (g.runLabel) flags.push({ at: ro, text: g.runLabel, fill: HEX.warning, weight: 600, wide: g.runLabel.length * 6.3 })
+      if (g.runLabel) flags.push({ at: ro, text: g.runLabel, fill: HEX.warning, weight: 600, wide: g.runLabel.length * 6.9 })
     }
     parts.push('<line x1="' + e.toFixed(1) + '" x2="' + e.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 20) + '" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
     parts.push('<line class="now" x1="' + e.toFixed(1) + '" x2="' + e.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 20) + '" stroke="#F2F2F7" stroke-width="2"' + ns + '/>')
-    if (g.nowLabel) flags.push({ at: e, text: g.nowLabel, fill: '#F2F2F7', weight: 600, wide: g.nowLabel.length * 6.3 })
+    if (g.nowLabel) flags.push({ at: e, text: g.nowLabel, fill: '#F2F2F7', weight: 600, wide: g.nowLabel.length * 6.9 })
   }
   parts.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="' + (T - 6) + '" y2="' + (T + 20) + '" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
-  if (g.endLabel) flags.push({ at: W, text: g.endLabel, fill: HEX.marker, wide: g.endLabel.length * 6.3, edge: 'end' })
+  if (g.endLabel) flags.push({ at: W, text: g.endLabel, fill: HEX.marker, wide: g.endLabel.length * 6.9, edge: 'end' })
   // flags over the track, each kept inside the drawing and dropped when it would run into another
   const placed = []
   for (const f of flags.sort((a, z) => (z.weight || 0) - (a.weight || 0))) {
@@ -2960,8 +3021,43 @@ export function svgWindow(g, { width = 600 } = {}) {
     placed.push([from, from + f.wide])
     parts.push(label(anchor === 'start' ? from : anchor === 'end' ? from + f.wide : from + f.wide / 2, flagY, f.text, anchor, f.fill, f.weight))
   }
-  for (const [at, text, anchor] of side) parts.push(label(at, H - 4, text, anchor))
-  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + parts.join('') + '</svg>'
+  const today = days ? days.findIndex((x) => x.isToday) : -1
+  for (const [at, text, anchor, i] of side) parts.push(label(at, H - 4, text, anchor, i === today ? '#F2F2F7' : undefined, i === today ? 600 : undefined))
+  let css = ''
+  if (days) {
+    // each day a column: its bar, stacked from the baseline, and an invisible target the height of
+    // the column; the cards come after every column, so a card is never under the next day's bar
+    const top = 44
+    const max = Math.max(...days.map((x) => x.parts.reduce((n, p) => n + p.value, 0)), 0.0001)
+    parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="1" fill="#8E8E93" fill-opacity="0.35"/>')
+    const tips = []
+    days.forEach((day, i) => {
+      const a = xMs(day.startMs)
+      const b = xMs(day.endMs)
+      if (b - a < 4) return
+      const bw = Math.min(30, Math.max(5, (b - a) * 0.46))
+      const cx = (a + b) / 2
+      const total = day.parts.reduce((n, p) => n + p.value, 0)
+      const height = total > 0 ? Math.max(3, (total / max) * (BY - top)) : 0
+      let y = BY
+      const shown = day.parts.filter((p) => p.value > 0)
+      const rects = shown.map((p, j) => {
+        const h = j === shown.length - 1 ? y - (BY - height) : (p.value / total) * height
+        y -= h
+        const isTop = j === shown.length - 1
+        // the top of each bar is rounded and the rest square, so a stack reads as one bar
+        return isTop && h > 3
+          ? '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2.5" fill="' + p.hex + '"/><rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (y + h / 2).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (h / 2).toFixed(1) + '" fill="' + p.hex + '"/>'
+          : '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" fill="' + p.hex + '"/>'
+      })
+      parts.push('<g class="p d' + i + '">' + rects.join('') + '<rect x="' + a.toFixed(1) + '" y="' + (top - 6) + '" width="' + (b - a).toFixed(1) + '" height="' + (BY - top + 6) + '" fill="transparent"/></g>')
+      if (day.tip) tips.push(tipLabel(cx, BY - height, day.tip, W, H, 'tip t' + i))
+      if (day.tip) css += '.d' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
+    })
+    parts.push(...tips)
+  }
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + (days ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>'
+  return withLight(svg)
 }
 
 export function runwayOf(kind, pct, resetAt, now) {
@@ -3033,7 +3129,7 @@ export function svgForecast(f) {
   for (const s of samples.filter((_, i) => i % step === 0)) tips.push([x(s.at), y(s.pct), (f.labels.sample ? f.labels.sample(s) : '') || Math.round(s.pct) + '%'])
   const nowX = x(f.now)
   tips.push([nowX, y(f.pct), f.labels.now])
-  return (
+  return withLight(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + HOVER_CSS +
     hline(0, false) + hline(100, true, 'The limit') + (f.alertAt > 0 && f.alertAt < 100 ? hline(f.alertAt, false, 'Your alert at ' + f.alertAt + '%') : '') +
     label(L - 6, y(100) + 4, '100%', 'end') + (f.alertAt > 0 && f.alertAt < 100 ? label(L - 6, y(f.alertAt) + 4, f.alertAt + '%', 'end') : '') + label(L - 6, y(0) + 4, '0%', 'end') +

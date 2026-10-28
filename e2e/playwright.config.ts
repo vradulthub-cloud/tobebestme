@@ -11,7 +11,8 @@ export default defineConfig({
   reporter: [['list'], ['html', { outputFolder: './.out/report', open: 'never' }]],
   timeout: 60_000,
   projects: [
-    { name: 'desktop', testMatch: /desktop\.spec\.ts/, use: { browserName: 'chromium' } },
+    // the pane is drawn dark, as the app the renders stand in for is here
+    { name: 'desktop', testMatch: /desktop\.spec\.ts/, use: { browserName: 'chromium', colorScheme: 'dark' } },
     // after the desktop checks, so real sessions don't compete with Chromium for the CPU
     { name: 'terminal', testMatch: /terminal\.spec\.ts/, fullyParallel: false, timeout: 180_000, dependencies: ['desktop'] },
     { name: 'live', testMatch: /live-workflow\.spec\.ts/, timeout: 600_000 },
