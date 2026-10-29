@@ -3,7 +3,10 @@
 // spacing steps, its type sizes, absolutely placed boxes against their parent, hover cards revealed
 // by their keyed Box or their hover `scope` group, and Buttons as real buttons with their names.
 // It is an approximation of the app, not the app: checks here catch layout and paint-order bugs
-// (a card cut off at the top, text drawn over another), not the app's exact pixels.
+// (a card cut off at the top, text drawn over another), not the app's exact pixels. Where the app's
+// own renderer sets a rule, this follows it: a drawing with no words is dropped, a still drawing is
+// sized as an image and an interactive one as a frame (300 by 150 where not told), and a box is a
+// positioning parent only when it holds an absolutely placed box, with no stacking order beyond that.
 
 const STEP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 }
 const CELL_X = 8.4
@@ -61,8 +64,8 @@ function node(n) {
         border: p.borderStyle ? '1px solid ' + (p.borderColor ? col(p.borderColor) : S.border) : undefined,
         'border-radius': p.borderStyle ? 10 : undefined,
         background: p.backgroundColor,
-        // every box is a positioning parent, as the surface places an absolute box against its parent
-        position: p.position || 'relative',
+        // as in the app, a box is a positioning parent only when an absolutely placed box sits directly in it
+        position: p.position === 'absolute' ? 'absolute' : (n.children || []).some((c) => c && c.type === 'Box' && c.props && c.props.position === 'absolute') ? 'relative' : undefined,
         top: p.top === undefined ? undefined : p.top * CELL_Y,
         bottom: p.bottom === undefined ? undefined : p.bottom * CELL_Y,
         left: p.left === undefined ? undefined : p.left * CELL_X,
@@ -98,23 +101,25 @@ function node(n) {
       return '<button type="button" data-key="' + esc(p.key || '') + '" data-variant="' + esc(p.variant || '') + '" aria-label="' + esc(label) + '" style="' + style(st) + '">' + esc(label) + '</button>'
     }
     case 'Svg': {
-      // CSS pixels; with no height the drawing keeps its own proportions at the drawn width, and
-      // with no width it takes its own width up to the slot (SvgProps)
+      // the app refuses a drawing whose words are blank, and draws nothing in its place
+      if (!String(p.alt ?? '').trim()) return ''
       let src = String(p.source || '')
-      const own = /<svg[^>]*?\swidth="([\d.]+)"/.exec(src)
+      const root = (/<svg\b[^>]*>/.exec(src) || [''])[0]
+      const own = (name) => { const m = new RegExp('\\s' + name + '="([\\d.]+)"').exec(root); return m ? Number(m[1]) : undefined }
+      const box = /viewBox="[-\d.]+ [-\d.]+ ([\d.]+) ([\d.]+)"/.exec(root)
       src = src.replace(/<svg ([^>]*?)\swidth="[^"]*"/, '<svg $1').replace(/<svg ([^>]*?)\sheight="[^"]*"/, '<svg $1')
-      // the app draws an interactive drawing in a frame of its own; a frame given neither a width nor
-      // a height is the browser's default 300 by 150, with the drawing shrunk to fit inside it
-      if (p.isInteractive && p.width === undefined && p.height === undefined) {
-        src = src.replace('<svg ', '<svg style="display:block;width:100%;height:100%" ')
-        return '<div role="img" aria-label="' + esc(p.alt || '') + '" data-svg="1" data-frame="default" style="' + style({ width: 300, height: 150, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'
+      src = src.replace('<svg ', '<svg style="display:block;width:100%;height:100%" ')
+      let width, height
+      if (p.isInteractive) {
+        // a frame: the size it is given, the browser's 300 by 150 where it is not, the drawing filling it
+        width = p.width ?? 300
+        height = p.height ?? 150
+      } else {
+        // an image: the size it is given, or its own; with only a height, as wide as its proportions make it
+        width = p.width ?? own('width') ?? (p.height && box ? (p.height * Number(box[1])) / Number(box[2]) : 300)
+        height = p.height ?? own('height') ?? (box ? (width * Number(box[2])) / Number(box[1]) : 150)
       }
-      // with no width and no width of its own, the browser falls back to its default 300px (seen in the app)
-      const width = p.width ?? (own ? Number(own[1]) : 300)
-      src = src.replace('<svg ', '<svg style="display:block;width:100%;height:' + (p.height ? p.height + 'px' : 'auto') + '" ')
-      // a drawing with no words is decoration (a field of colour): hidden from a reader, and the pointer passes through
-      if (!p.alt) return '<div aria-hidden="true" data-svg="decor" style="' + style({ width: width ?? '100%', 'max-width': '100%', height: p.height, 'flex-shrink': 0, display: 'flex', 'pointer-events': 'none' }) + '">' + src + '</div>'
-      return '<div role="img" aria-label="' + esc(p.alt || '') + '" data-svg="1" style="' + style({ width: width ?? '100%', 'max-width': '100%', height: p.height, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'
+      return '<div role="img" aria-label="' + esc(p.alt) + '" data-svg="1"' + (p.isInteractive && p.width === undefined ? ' data-frame="default"' : '') + (/preserveAspectRatio="none"/.test(root) ? ' data-fluid="1"' : '') + ' style="' + style({ width, 'max-width': '100%', height, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'
     }
     case 'Input':
       return '<div data-input="' + esc(p.key || '') + '" style="display:flex;gap:8px;align-items:flex-start;width:100%"><input aria-label="' + esc(p.placeholder || p.key || '') + '" placeholder="' + esc(p.placeholder || '') + '" value="' + esc(p.value || '') + '" style="flex:1;min-width:0;border:1px solid ' + S.fieldBorder + ';border-radius:8px;padding:6px 10px;background:' + S.field + ';color:' + S.text + ';font-size:13px"><button type="button" aria-label="' + esc(p.submitLabel || 'Submit') + '" style="background:' + S.button + ';color:' + S.buttonText + ';border:0;border-radius:7px;padding:3px 10px;font-size:13px">' + esc(p.submitLabel || 'Submit') + '</button></div>'
@@ -156,7 +161,7 @@ export function renderPage(tree, { width = 720, title = 'ToBeBestMe', scheme = '
   return (
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="' + scheme + '"><title>' + esc(title) + '</title><style>' + CSS + '</style></head>' +
     '<body style="margin:0;background:' + S.bg + ';color:' + S.text + ';font:14px -apple-system,BlinkMacSystemFont,system-ui,sans-serif;">' +
-    '<main id="pane" style="width:' + width + 'px;max-width:100%;box-sizing:border-box;padding:14px">' + body + '</main>' +
+    '<main id="pane" style="position:relative;width:' + width + 'px;max-width:100%;box-sizing:border-box;padding:14px">' + body + '</main>' +
     '<script>' + SCRIPT + '</script></body></html>'
   )
 }

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -342,13 +342,57 @@ test('the run-out is hatched, its marker pulses, bars spring up and the figure i
   expect(shown, 'decorative marks are still drawn with reduced motion set').toBe(0)
 })
 
-test('the fields of colour behind a tab’s head are decoration: hidden from a screen reader and out of the pointer’s way, and the words over them keep their contrast', async ({ page }) => {
-  for (const view of ['all', 'workflows', 'overview', 'usage']) {
+test('every drawing is one the Claude app draws as made: it has words and a size within the app’s bounds, and an interactive one comes through the app’s scrub whole', async ({ page }) => {
+  // the app's own rules, read from its renderer: blank words draw nothing, a frame with no width is
+  // 300px, sizes stop at 4096px, and an interactive drawing is cleaned by DOMPurify before its frame
+  const trees = [...new Set(manifest.map((m) => join(OUT, 'pages', m.page.replace(/\.html$/, '.json'))))].filter((f) => existsSync(f)).map((f) => JSON.parse(readFileSync(f, 'utf8')))
+  const svgs = new Map<string, any>()
+  const walk = (n: any) => {
+    if (!n || typeof n === 'string') return
+    if (n.type === 'Svg') svgs.set(JSON.stringify(n.props), n.props)
+    for (const c of n.children || []) walk(c)
+  }
+  trees.forEach(walk)
+  expect(svgs.size).toBeGreaterThan(20)
+  for (const p of svgs.values()) {
+    expect(String(p.alt ?? '').trim().length, 'a drawing with no words: ' + String(p.source).slice(0, 80)).toBeGreaterThan(0)
+    expect(p.width > 0 && p.width <= 4096 && p.height > 0 && p.height <= 4096, 'size ' + p.width + '×' + p.height + ' for ' + p.alt).toBe(true)
+    expect(String(p.source).length).toBeLessThanOrEqual(131072)
+  }
+  await page.setContent('<!doctype html><body></body>')
+  await page.addScriptTag({ path: join(fileURLToPath(new URL('.', import.meta.url)), '..', 'node_modules', 'dompurify', 'dist', 'purify.min.js') })
+  const interactive = [...svgs.values()].filter((p) => p.isInteractive).map((p) => ({ alt: String(p.alt), source: String(p.source) }))
+  expect(interactive.length).toBeGreaterThan(3)
+  const losses = await page.evaluate((list) => {
+    const keep = (name: string, value: string) => name.startsWith('on') ? false : name === 'href' || name === 'xlink:href' ? value.trim().startsWith('#') : true
+    return list.flatMap(({ alt, source }) => {
+      const purify = (window as any).DOMPurify(window)
+      purify.addHook('uponSanitizeAttribute', (_: any, a: any) => { if (!keep(a.attrName, a.attrValue)) a.keepAttr = false })
+      const frag = purify.sanitize(source, { USE_PROFILES: { svg: true, svgFilters: true }, ADD_TAGS: ['animate', 'set', 'use'], ADD_ATTR: ['from', 'to', 'calcMode'], FORBID_TAGS: ['script', 'foreignObject', 'image', 'a', 'iframe'], ALLOW_DATA_ATTR: false, ALLOW_UNKNOWN_PROTOCOLS: false, FORCE_BODY: true, RETURN_DOM_FRAGMENT: true })
+      const kids = [...frag.childNodes].filter((n: any) => n.nodeType !== 3 || n.textContent.trim())
+      if (kids.length !== 1 || kids[0].localName !== 'svg') return [alt + ': the scrub left no drawing, so the app shows its words instead']
+      const before = new DOMParser().parseFromString('<body>' + source + '</body>', 'text/html').body
+      const count = (root: any) => { const m: Record<string, number> = {}; root.querySelectorAll('*').forEach((el: any) => { m['<' + el.localName + '>'] = (m['<' + el.localName + '>'] || 0) + 1; for (const a of el.attributes) m[a.name] = (m[a.name] || 0) + 1 }); return m }
+      const a = count(before), b = count(frag)
+      // non-scaling strokes are scrubbed, which only matters in a drawing stretched to its slot
+      const isStretched = /preserveAspectRatio="none"/.test(source)
+      return Object.keys(a).filter((k) => (b[k] || 0) < a[k] && (k !== 'vector-effect' || isStretched)).map((k) => alt + ': the scrub drops ' + k)
+    })
+  }, interactive)
+  expect(losses).toEqual([])
+})
+
+test('a drawing stretched to its slot fills it, and the lead figure’s glow is drawn inside it, under the digits', async ({ page }) => {
+  for (const view of ['all', 'overview', 'usage']) {
     const v = manifest.find((m) => m.state === 'busy' && m.view === view && m.cols === 148 && !m.details && !m.scheme)!
     await open(page, v)
-    const decor = page.locator('[data-svg="decor"]')
-    expect(await decor.count(), view + ': no field of colour').toBeGreaterThan(0)
-    expect(await decor.first().getAttribute('aria-hidden')).toBe('true')
-    expect(await decor.first().evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none')
+    const short = await page.evaluate(() => [...document.querySelectorAll('[data-fluid]')].map((el) => {
+      const parent = el.parentElement!
+      const cs = getComputedStyle(parent)
+      const room = parent.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      return { alt: el.getAttribute('aria-label')!.slice(0, 50), width: Math.round(el.getBoundingClientRect().width), room: Math.round(room) }
+    }).filter((x) => x.width < x.room - 2))
+    expect(short, view + ': a stretched drawing short of its slot').toEqual([])
+    expect(await page.locator('svg[data-fig] .bloom text').count(), view + ': the lead figure has no glow').toBeGreaterThan(0)
   }
 })

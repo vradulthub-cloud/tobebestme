@@ -75,7 +75,8 @@ import {
   paceWords,
   midHex,
   svgFigure,
-  svgAura,
+  settleMotion,
+  FLUID_PX,
 } from './lib.js'
 
 // Costs as dollars, or as a share of the weekly limit when that is what runs out (costShare): set
@@ -143,6 +144,25 @@ export function kit(el, e, primary = { isTaken: false }) {
   // about how many pixels the column is: the pane's own padding is taken off, and a sub-kit is given its own
   const px = Math.round(columns * 8.4) - 28
   const hasSvg = !isTerminal && !!el.Svg
+  // Every drawing goes through here, so each is sized the way the app sizes it: the app draws a still
+  // drawing as an image and an interactive one in a frame of its own, and a frame given no width is
+  // the browser's 300px. A drawing stretched to its slot (preserveAspectRatio none) is given a width
+  // wider than any slot, which the app caps at the slot; any other keeps the size it was made at.
+  // Its motion is settled to how long its tab has been open (settleMotion), so a redraw carries an
+  // animation on instead of playing it again from the start.
+  const Svg = (p) => {
+    const source = settleMotion(p.source, e.motionAge)
+    const root = (/<svg\b[^>]*>/.exec(source) || [''])[0]
+    const own = (name) => {
+      const m = new RegExp('\\s' + name + '="([\\d.]+)"').exec(root)
+      return m ? Number(m[1]) : undefined
+    }
+    const box = /viewBox="[-\d.]+ [-\d.]+ ([\d.]+) ([\d.]+)"/.exec(root)
+    const isFluid = /preserveAspectRatio="none"/.test(root)
+    const width = p.width ?? (isFluid ? FLUID_PX : own('width') ?? (box ? Number(box[1]) : undefined))
+    const height = p.height ?? own('height') ?? (box && width && !isFluid ? Math.round((width * Number(box[2])) / Number(box[1])) : undefined)
+    return el.Svg(clean({ ...p, source, width, height }))
+  }
   const text = (s, props = {}) => Text(clean({ ...props, children: [s] }))
   const footnote = (s, props = {}) => text(s, { size: 'footnote', dimColor: true, wrap: 'wrap', ...props })
   // guidance a person acts on is body size in a quiet colour; the small footnote size is for captions and labels
@@ -185,7 +205,7 @@ export function kit(el, e, primary = { isTaken: false }) {
   }
 
   const k = {
-    Box, Text, Button, Markdown, Input, Link, Svg: el.Svg, isTerminal, hasSvg, columns, px, text, footnote, guide,
+    Box, Text, Button, Markdown, Input, Link, Svg, isTerminal, hasSvg, columns, px, text, footnote, guide,
     isRoomy: columns >= 90,
     // the look of a grouped body, for a row of tiles that is one group
     groupProps: isTerminal ? {} : { paddingX: 'md', paddingY: 'md', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true },
@@ -237,7 +257,6 @@ export function kit(el, e, primary = { isTaken: false }) {
         width: '100%',
         rowGap: 'sm',
         children: [
-          ...(extra.glow && hasSvg ? auraLayer(k, extra.glow.hexes, extra.glow.height || 130, { isLive: extra.glow.isLive, strength: 0.18 }) : []),
           ...head,
           extra.isPlain ? Box({ paddingX: 'xs', flexDirection: 'column', children: [body] }) : Box({ flexDirection: 'column', paddingX: 'md', paddingY: 'md', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true, children: [body] }),
         ],
@@ -304,7 +323,7 @@ export function kit(el, e, primary = { isTaken: false }) {
     cellWidth: (c) => Math.min(c.width || 0, Math.max(8, columns - 18)),
     // A slim bar in a table cell: `value` of `max`, in a colour that names what it measures.
     bar: (value, max, hex, alt) => {
-      if (hasSvg) return Box({ width: '100%', children: [el.Svg({ source: svgMeter([{ value, hex }], max, [], true), alt, height: 6 })] })
+      if (hasSvg) return Box({ width: '100%', children: [Svg({ source: svgMeter([{ value, hex }], max, [], true), alt, height: 6 })] })
       const cells = max > 0 ? Math.max(value > 0 ? 1 : 0, Math.round((value / max) * 10)) : 0
       return Text({ children: [Text({ color: 'suggestion', children: ['▬'.repeat(cells)] }), Text({ dimColor: true, children: ['·'.repeat(10 - cells)] })] })
     },
@@ -314,19 +333,12 @@ export function kit(el, e, primary = { isTaken: false }) {
     heads: (cells) => k.row(cells, { size: 'footnote', dimColor: true }),
     // Something working right now: a softly pulsing dot on desktop (still with reduced motion), a
     // coloured dot on the terminal. `words` names it for a reader that cannot see it.
-    live: (hex, color, words) => (hasSvg ? Box({ flexShrink: 0, width: 2, alignItems: 'center', children: [el.Svg({ source: svgLive(hex), alt: words, width: 14, height: 14 })] }) : text('●', { color })),
-    // A drawing made at a fixed size, laid out at that size. The app puts an interactive drawing in a
-    // frame of its own, and a frame given no width and height is the browser's default 300 by 150,
-    // with the drawing shrunk to fit inside it; so the size the markup was made at is passed on.
-    drawing: (source, alt, extra = {}) => {
-      const tag = /<svg[^>]*>/.exec(source)
-      const w = tag && /\swidth="([\d.]+)"/.exec(tag[0])
-      const h = tag && /\sheight="([\d.]+)"/.exec(tag[0])
-      return el.Svg(clean({ source, alt, width: w ? Number(w[1]) : undefined, height: h ? Number(h[1]) : undefined, ...extra }))
-    },
+    live: (hex, color, words) => (hasSvg ? Box({ flexShrink: 0, width: 2, alignItems: 'center', children: [Svg({ source: svgLive(hex), alt: words, width: 14, height: 14 })] }) : text('●', { color })),
+    // A drawing made at a fixed size, laid out at that size (Svg passes on the size it was made at).
+    drawing: (source, alt, extra = {}) => Svg(clean({ source, alt, ...extra })),
     // A meter: an SVG where the surface draws one, block characters on the terminal.
     meter: (parts, total, markers, alt, thin = false) => {
-      if (hasSvg) return el.Svg({ source: svgMeter(parts, total, markers, thin), alt, height: thin ? 6 : 14, isInteractive: parts.some((p) => p.title) ? true : undefined })
+      if (hasSvg) return Svg({ source: svgMeter(parts, total, markers, thin), alt, height: thin ? 6 : 14, isInteractive: parts.some((p) => p.title) ? true : undefined })
       const width = thin ? 14 : Math.max(10, Math.min(60, columns - 6))
       let used = 0
       const runs = parts.map((p) => {
@@ -338,7 +350,7 @@ export function kit(el, e, primary = { isTaken: false }) {
     },
     // Bars over time, oldest on the left; with `titles`, a bar says what it was on hover.
     bars: (values, slots, alt, height = 56, extra = {}) =>
-      hasSvg ? el.Svg(clean({ source: svgBars(values, slots, extra), alt, height, isInteractive: extra.titles ? true : undefined })) : text(sparkline(values, slots), { color: 'suggestion' }),
+      hasSvg ? Svg(clean({ source: svgBars(values, slots, extra), alt, height, isInteractive: extra.titles ? true : undefined })) : text(sparkline(values, slots), { color: 'suggestion' }),
     // A view has one primary button, the first one drawn: a later one asking for it is drawn as the others are.
     // `isTab` marks the open tab on the terminal, which is not the view's action.
     button: (key, label, onPress, props = {}) => {
@@ -443,14 +455,6 @@ function heroFigure(k, value, { size = 34, level, hues, align } = {}) {
   return k.drawing(src, String(value))
 }
 
-// A soft field of colour behind a head or a card, as the first child of its box so everything else paints
-// over it. Decorative: no words, and it lets the pointer through.
-function auraLayer(k, hexes, height, extra = {}) {
-  if (!k.hasSvg) return []
-  const w = Math.max(240, k.px)
-  return [k.Box({ position: 'absolute', top: 0, left: 0, children: [k.Svg({ source: svgAura(hexes, w, height, extra), alt: '', width: w, height })] })]
-}
-
 function runwayBar(k, it, where, widthPx) {
   const r = it.runway
   const words = it.label + ' ' + it.valueText + (r.runOut !== null && r.runOut !== undefined ? ', runs out before it resets' : r.projected !== null && r.projected !== undefined ? ', on pace for about ' + Math.round(r.projected) + '% by the reset' : r.elapsed !== null && r.elapsed !== undefined ? ', ' + Math.round(r.elapsed) + '% of the window gone' : '')
@@ -516,7 +520,6 @@ function lead(k, o) {
     rowGap: 'xs',
     paddingX: k.isTerminal ? 1 : 'xs',
     children: [
-      ...auraLayer(k, figureLevel ? STATUS_HUES[figureLevel] : k.hues || TAB_HUES.all, 190, { isLive: o.isLive || !!figureLevel }),
       isWide ? k.Box({ flexDirection: 'row', alignItems: 'flex-end', width: '100%', children: [words, ...(figure ? [figure] : [])] }) : k.Box({ flexDirection: 'column', children: [words, ...(figure ? [figure] : [])] }),
       ...(o.visual && o.visual.length ? [k.Box({ flexDirection: 'column', rowGap: 'sm', marginTop: 'sm', children: o.visual })] : []),
     ],
@@ -2066,7 +2069,6 @@ function homeHero(k, d, h, act) {
     rowGap: 'xs',
     paddingX: k.isTerminal ? 1 : 'xs',
     children: [
-      ...auraLayer(k, level === 'success' ? (chats ? ['#0A84FF', '#BF5AF2'] : ['#0A84FF', '#00C7BE']) : STATUS_HUES[level], 230, { isLive: level !== 'success' || chats > 0, strength: 0.24 }),
       isWide ? k.Box({ flexDirection: 'row', alignItems: 'flex-end', width: '100%', children: [words, ...(figure ? [figure] : [])] }) : k.Box({ flexDirection: 'column', children: [words, ...(figure ? [figure] : [])] }),
       ...(item
         ? [
@@ -2297,7 +2299,7 @@ function needsCard(k, d, act, w) {
       ...shown.map((x, i) => needRow(k, d, act, w, x, i, x === first, i === 0 || x === first || d.view.openNeed === x.key)),
       ...(w.needs.length > 5 ? [k.buttons([k.button('needs-more', more > 0 ? 'Show ' + more + ' more' : 'Show fewer', act.toggleNeeds, { dimColor: true })])] : []),
     ],
-    { gap: 'lg', glow: { hexes: w.needs.some((x) => x.kind === 'permission') ? STATUS_HUES.error : STATUS_HUES.warning, height: 150, isLive: true } },
+    { gap: 'lg' },
   )
 }
 
@@ -2565,7 +2567,7 @@ function liveRunCard(k, d, act, r, i) {
       ...(agents.length > 6 && p.total > 8 ? [k.buttons([k.button('flow-more-' + i, isOpen ? 'Show fewer' : 'Show all ' + agents.length + ' agents', () => act.setView({ openRun: isOpen ? '' : r.runId }), { dimColor: true })])] : []),
       ...controls,
     ],
-    { gap: 'md', glow: { hexes: r.paused || isStopping ? STATUS_HUES.warning : ['#0A84FF', '#5E5CE6'], height: 150, isLive: !r.paused && !isStopping } },
+    { gap: 'md' },
   )
 }
 
@@ -2944,7 +2946,7 @@ function runningNowCard(k, d, act) {
       { key: 'home-other-' + i, tip: { title: r.name, lines: [plural(r.agents.filter((a) => a.isActive).length, 'agent', 'agents') + ' working now.'] } },
     )),
   ]
-  return k.card('Running now', 'Workflows working through a job, with their agents done so far.', [...rows, k.buttons([k.button('home-flows', 'Open Workflows', act.openWorkflows)])], { glow: { hexes: ['#0A84FF', '#5E5CE6'], height: 110, isLive: true } })
+  return k.card('Running now', 'Workflows working through a job, with their agents done so far.', [...rows, k.buttons([k.button('home-flows', 'Open Workflows', act.openWorkflows)])])
 }
 
 // What Home is drawn from: this tab's figures and the plan's windows, worked out once.

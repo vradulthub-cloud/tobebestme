@@ -3181,7 +3181,7 @@ export function register(on, options) {
       void refreshOwnSkills($)
       void refreshPromptIdeas($)
     }
-    return drawDashboard(kit($.ui.resolve(e), e), d, actions($, d))
+    return drawDashboard(kit($.ui.resolve(e), { ...e, motionAge: motionAge('pane:' + d.view.tab, d.now) }), d, actions($, d))
   })
 
   // ---- the line above the prompt, in every session ----------------------------------
@@ -3190,8 +3190,18 @@ export function register(on, options) {
     if (opts.scanProjects) void refreshLive($, false, 60_000) // what waits is only as new as this list
     const d = await gather($)
     d.bandRows = e.props.maxRows
-    return drawBand(kit($.ui.resolve(e), e), d, actions($, d))
+    return drawBand(kit($.ui.resolve(e), { ...e, motionAge: motionAge('band', d.now) }), d, actions($, d))
   })
+}
+
+// How long ago the drawings in view first appeared: the pane's tab when it was opened, the band when
+// it was first drawn. The drawings' entrances run from then (settleMotion), so the redraws that come
+// with every turn carry them on rather than starting them again.
+const shownSince = {}
+function motionAge(key, now) {
+  const [place] = key.split(':')
+  if (!shownSince[place] || shownSince[place].key !== key) shownSince[place] = { key, at: now }
+  return Math.max(0, now - shownSince[place].at)
 }
 
 function randomId() {

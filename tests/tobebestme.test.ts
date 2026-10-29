@@ -402,7 +402,7 @@ test('a busy session leads with its most pressing problem, what fixing it saves,
     // the rings, icons and bars are SVG where the surface draws SVG, every one named; meters on the terminal
     const svgs = await ui.findAll({ type: 'Svg' })
     expect(svgs.length > 0).toBe(surface === 'desktop')
-    expect(svgs.filter((x: any) => !String(x.props.alt).trim() && !String(x.props.source).includes('data-decor'))).toHaveLength(0)
+    expect(svgs.filter((x: any) => !String(x.props.alt).trim())).toHaveLength(0) // the app draws nothing for a drawing with blank words
 
     text = await shown(ui) // what fills the window is on This session too
     expect(text).toContain('What fills it')
@@ -1049,6 +1049,48 @@ test('Home leads with one big figure and says where the pace lands, and each sav
   }
 })
 
+test('every desktop drawing is one the app draws as made: named, given its size, within the app’s bounds; and its entrance plays once a tab is opened, not again on every redraw', async ($, on) => {
+  const { clock } = stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'five_hour', percentUsed: 40, resetsAt: '2026-10-23T14:00:00Z' }] })
+  transcripts(on, WEEK)
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 148 } })
+  const sourcesOf = async () => (await ui.findAll({ type: 'Svg' })).map((x: any) => String(x.props.source))
+  for (const tab of ['all', 'workflows', 'overview', 'usage', 'skills', 'settings']) {
+    await ui.press({ key: 'tab-' + tab })
+    for (const x of (await ui.findAll({ type: 'Svg' })) as any[]) {
+      const p = x.props
+      // the app draws nothing for blank words, and a frame given no width is the browser's 300px
+      expect(String(p.alt).trim().length, tab + ': a drawing with no words').toBeGreaterThan(0)
+      expect(p.width > 0 && p.width <= 4096, tab + ': width ' + p.width + ' for ' + p.alt).toBe(true)
+      expect(p.height > 0 && p.height <= 4096, tab + ': height ' + p.height + ' for ' + p.alt).toBe(true)
+      expect(String(p.source).length).toBeLessThanOrEqual(131072)
+    }
+  }
+  // the entrance runs from when the tab opened: part-way, a redraw carries it on; after, it is still and unchanging
+  await ui.press({ key: 'tab-usage' })
+  const fresh = (await sourcesOf()).join('')
+  expect(fresh).toContain('class="msw"')
+  expect(fresh).not.toContain('animation-delay:-')
+  clock.now += 1000
+  await ui.press({ key: 'details' })
+  const midway = (await sourcesOf()).join('')
+  expect(midway).toContain('.msw,.mbar,.mrise{animation-delay:-1.00s}')
+  expect(midway).toMatch(/animation-delay:-0\.\d\ds/) // a bar that started later is that much further on
+  clock.now += 5000
+  await ui.press({ key: 'details' })
+  const settled = await sourcesOf()
+  expect(settled.join('')).toContain('.msw,.mbar,.mrise{animation:none}')
+  expect(settled.join('')).not.toContain('animation-delay:-')
+  // redrawn with nothing changed (the clock moves the forecasts, so it stands still here), the markup is the same, so the app keeps the images it has
+  await ui.press({ key: 'details' })
+  await ui.press({ key: 'details' })
+  expect(await sourcesOf()).toEqual(settled)
+  // another tab is a fresh entrance
+  await ui.press({ key: 'tab-overview' })
+  expect((await sourcesOf()).join('')).not.toContain('<style>.msw,.mbar,.mrise{animation:none}')
+  await ui.unmount()
+})
+
 test('the desktop pane is cinematic and the terminal is not: sweeps, a hatched run-out, falling tokens and gradient figures, every one switched off by reduced motion', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
@@ -1064,9 +1106,9 @@ test('the desktop pane is cinematic and the terminal is not: sweeps, a hatched r
   expect(joined).toMatch(/fill="url\(#mh\d+\)"/) // the stretch after the run-out is hatched
   expect(joined).toMatch(/class="ro mpu"/) // the run-out marker pulses
   expect(sources.some((x: string) => x.includes('data-fig='))).toBe(true) // a gradient figure leads the tab
-  // every drawing that moves says how to stop it, and the decorative ones carry no words
+  // every drawing that moves says how to stop it, and the lead figure glows from inside its own drawing
   for (const src of sources.filter((x: string) => x.includes('animation:'))) expect(src).toContain('@media (prefers-reduced-motion:reduce){')
-  expect(sources.some((x: string) => x.includes('data-decor='))).toBe(true)
+  expect(sources.some((x: string) => x.includes('data-fig=') && x.includes('class="bloom"') && x.includes('feGaussianBlur'))).toBe(true)
   // the figure's gradient keeps the contrast the words need, on a dark pane and on a light one
   const lum = (hex: string) => {
     const n = parseInt(hex.slice(1), 16)
@@ -1074,7 +1116,7 @@ test('the desktop pane is cinematic and the terminal is not: sweeps, a hatched r
   }
   const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
   for (const src of sources.filter((x: string) => x.includes('data-fig='))) {
-    const m = /--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}@media[^{]*\{svg\[data-fig="[^"]+"\]\{--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}/.exec(src)
+    const m = /--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}[^@]*@media[^{]*\{svg\[data-fig="[^"]+"\]\{--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}/.exec(src)
     expect(m).not.toBeNull()
     for (const hex of [m![1], m![2]]) expect(ratio(hex, '#1E1E1E')).toBeGreaterThanOrEqual(4.5)
     for (const hex of [m![3], m![4]]) expect(ratio(hex, '#FFFFFF')).toBeGreaterThanOrEqual(4.5)
@@ -1284,7 +1326,7 @@ test('All projects adds up every project from Claude Code’s own records, workt
     expect(text).toContain('Opus 5.5 did 88% of this week’s work')
     expect(text).toContain('Last 14 days')
     expect(text).toContain('Models this week: Opus 5.5 87%, Sonnet 5.5 12%, Haiku 5.5 1%.') // the busiest project, on hover
-    if (surface === 'desktop') expect((await ui.findAll({ type: 'Svg' })).filter((x: any) => !String(x.props.alt).trim() && !String(x.props.source).includes('data-decor'))).toHaveLength(0)
+    if (surface === 'desktop') expect((await ui.findAll({ type: 'Svg' })).filter((x: any) => !String(x.props.alt).trim())).toHaveLength(0)
 
     await ui.press({ key: 'proj-today' })
     text = await shown(ui)

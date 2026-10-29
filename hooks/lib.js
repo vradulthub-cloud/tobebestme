@@ -2831,7 +2831,7 @@ function title(s) {
 // The desktop pane is allowed to be bold: fills sweep in when a drawing first appears, a faint
 // sheen travels along the projected ghost, the run-out marker pulses, the part of a window past the
 // run-out is hatched, the week's bars spring up with tokens falling into them, and the big figures
-// are drawn in gradients over a soft field of their tab's colours. Every animation stops, and the
+// are drawn in gradients with a soft bloom of their own colours behind them. Every animation stops, and the
 // still drawing is the finished one, where the viewer has asked for reduced motion; the decorative
 // ones (falling tokens, the sheen) are then not drawn at all. Class names are shared by every
 // drawing on the page, so this stylesheet is the same string wherever it appears.
@@ -2847,9 +2847,30 @@ export const MOTION_CSS =
   '@keyframes mbar{from{transform:scaleY(0)}to{transform:scaleY(1)}}' +
   '.mpt{animation:mpt 1.4s cubic-bezier(.45,0,1,1) both}@keyframes mpt{from{transform:translateY(-22px);opacity:0}30%{opacity:1}to{transform:translateY(0);opacity:0}}' +
   '.mrise{animation:mrise .7s cubic-bezier(.22,1,.36,1) both}@keyframes mrise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}' +
-  '.mglow{animation:mglow 2.6s ease-in-out 3}@keyframes mglow{0%,100%{opacity:1}50%{opacity:.45}}' +
-  '@media (prefers-reduced-motion:reduce){.msw,.msh,.mpu,.mhalo,.mbar,.mpt,.mrise,.mglow{animation:none}.msh,.mhalo,.mpt{display:none}}' +
+  '@media (prefers-reduced-motion:reduce){.msw,.msh,.mpu,.mhalo,.mbar,.mpt,.mrise{animation:none}.msh,.mhalo,.mpt{display:none}}' +
   '</style>'
+
+// The app draws every drawing afresh on each redraw, and a drawing whose markup changed is a new
+// image, so its entrance would play again from the start each time a figure moved. Instead the
+// entrance plays once, from when the tab was opened (`ageMs` ago): a redraw part-way through carries
+// each animation on from where it had got to, and one after that draws the finished state, still,
+// so its markup stops changing and the app keeps the image it has. Loops (the pulse, the halo, the
+// travelling sheen, today's falling tokens) keep going. With no age, the markup is left as it is.
+export const SETTLE_MS = 2600
+export function settleMotion(source, ageMs) {
+  const src = String(source)
+  if (!(ageMs > 0) || !src.includes(MOTION_CSS)) return src
+  if (ageMs >= SETTLE_MS) {
+    return src.replace(MOTION_CSS, MOTION_CSS + '<style>.msw,.mbar,.mrise{animation:none}.msh:not(.msl),.mpt:not([style*="infinite"]){display:none}</style>')
+  }
+  const at = (ms) => (ms / 1000).toFixed(2) + 's'
+  return src
+    .replace(MOTION_CSS, MOTION_CSS + '<style>.msw,.mbar,.mrise{animation-delay:' + at(-ageMs) + '}.msh:not(.msl){animation-delay:' + at(600 - ageMs) + '}</style>')
+    .replace(/animation-delay:(\d+)ms/g, (_, ms) => 'animation-delay:' + at(Number(ms) - ageMs))
+}
+
+// Wider than any pane: a drawing stretched to its slot is given this width, and the app caps it at the slot.
+export const FLUID_PX = 4000
 
 // The moving highlight's gradient, and the hatching of the part of a window after its run-out.
 const SHEEN_DEFS = '<defs><linearGradient id="msheen" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient></defs>'
@@ -2896,41 +2917,29 @@ export function toneFor(hex, isDark) {
 }
 
 // A figure drawn big, in a gradient from one colour of its tab to the next: the number a tab leads
-// with. `hexes` are the two ends; the dark and the light pane each get ends that read on them.
+// with. `hexes` are the two ends; the dark and the light pane each get ends that read on them. A
+// blurred copy of it glows underneath, inside the drawing, so the glow is always under the digits
+// and fades out before the drawing's edge; it is fainter on a light pane, where it would read as a smudge.
 export function svgFigure(value, { size = 36, align = 'start', hexes = ['#0A84FF', '#BF5AF2'] } = {}) {
   const str = String(value)
   const charW = (c) => (/[0-9]/.test(c) ? 0.6 : c === '%' ? 0.9 : c === ' ' ? 0.28 : /[.,:]/.test(c) ? 0.3 : /[A-Z]/.test(c) ? 0.68 : 0.58)
-  const W = Math.ceil([...str].reduce((n, c) => n + charW(c) * size, 0)) + 6
+  const pad = Math.max(3, Math.round(size * 0.09)) // room for the glow, and no more, so the figure stays flush with its words
+  const W = Math.ceil([...str].reduce((n, c) => n + charW(c) * size, 0)) + 2 + pad * 2
   const H = Math.round(size * 1.18)
   const dark = hexes.map((h) => toneFor(h, true))
   const light = hexes.map((h) => toneFor(h, false))
   const id = 'mf' + dark.map((h) => h.slice(1)).join('')
-  const x = align === 'end' ? W - 2 : 2
+  const x = align === 'end' ? W - pad : pad
+  const glyphs = (cls) => '<text class="' + cls + '" x="' + x + '" y="' + Math.round(size * 0.92) + '" font-size="' + size + '" font-weight="700" text-anchor="' + (align === 'end' ? 'end' : 'start') + '" fill="url(#' + id + ')" style="font-variant-numeric:tabular-nums;letter-spacing:-0.02em"' + FONT + '>' + escapeXml(str) + '</text>'
   // the gradient's ends are custom properties on the drawing, so a light pane's pair replaces them
   // (an attribute colour would be caught by the light rules every other drawing carries)
   return (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" data-fig="' + id + '" overflow="visible">' +
     MOTION_CSS +
-    '<style>svg[data-fig="' + id + '"]{--a:' + dark[0] + ';--b:' + dark[1] + '}@media (prefers-color-scheme:light){svg[data-fig="' + id + '"]{--a:' + light[0] + ';--b:' + light[1] + '}}</style>' +
-    '<defs><linearGradient id="' + id + '" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--a)"/><stop offset="1" style="stop-color:var(--b)"/></linearGradient></defs>' +
-    '<text class="mrise" x="' + x + '" y="' + Math.round(size * 0.92) + '" font-size="' + size + '" font-weight="700" text-anchor="' + (align === 'end' ? 'end' : 'start') + '" fill="url(#' + id + ')" style="font-variant-numeric:tabular-nums;letter-spacing:-0.02em"' + FONT + '>' + escapeXml(str) + '</text></svg>'
-  )
-}
-
-// A soft field of colour behind the head of a tab: two blurred pools of its colours, faint enough that
-// the words over them keep their contrast. It carries no words, and the pointer passes through it.
-// `isLive` lets it breathe a few times when something wants attention.
-export function svgAura(hexes, width, height, { isLive = false, strength = 0.2 } = {}) {
-  const W = Math.max(120, Math.round(width))
-  const H = Math.round(height)
-  const stops = (hex, id) => '<radialGradient id="' + id + '"><stop offset="0" stop-color="' + hex + '" stop-opacity="' + strength + '"/><stop offset="1" stop-color="' + hex + '" stop-opacity="0"/></radialGradient>'
-  const ia = 'ma' + hexes[0].slice(1)
-  const ib = 'ma' + hexes[1].slice(1)
-  return withLight(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" data-decor="1" style="pointer-events:none">' + MOTION_CSS +
-    '<defs>' + stops(hexes[0], ia) + (ib === ia ? '' : stops(hexes[1], ib)) + '</defs>' +
-    '<g' + (isLive ? ' class="mglow"' : '') + '><ellipse cx="' + (W * 0.3).toFixed(0) + '" cy="' + (H * 0.4).toFixed(0) + '" rx="' + (W * 0.3).toFixed(0) + '" ry="' + (H * 0.58).toFixed(0) + '" fill="url(#' + ia + ')"/>' +
-    '<ellipse cx="' + (W * 0.72).toFixed(0) + '" cy="' + (H * 0.34).toFixed(0) + '" rx="' + (W * 0.28).toFixed(0) + '" ry="' + (H * 0.55).toFixed(0) + '" fill="url(#' + ib + ')"/></g></svg>'
+    '<style>svg[data-fig="' + id + '"]{--a:' + dark[0] + ';--b:' + dark[1] + '}svg[data-fig="' + id + '"] .bloom{opacity:.75}@media (prefers-color-scheme:light){svg[data-fig="' + id + '"]{--a:' + light[0] + ';--b:' + light[1] + '}svg[data-fig="' + id + '"] .bloom{opacity:.3}}</style>' +
+    '<defs><linearGradient id="' + id + '" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--a)"/><stop offset="1" style="stop-color:var(--b)"/></linearGradient>' +
+    '<filter id="' + id + 'b" x="-10%" y="-25%" width="120%" height="150%"><feGaussianBlur stdDeviation="' + (size * 0.035).toFixed(1) + '"/></filter></defs>' +
+    '<g class="bloom" filter="url(#' + id + 'b)">' + glyphs('mrise') + '</g>' + glyphs('mrise') + '</svg>'
   )
 }
 
