@@ -74,6 +74,8 @@ import {
   limitLevel,
   paceWords,
   midHex,
+  svgFigure,
+  svgAura,
 } from './lib.js'
 
 // Costs as dollars, or as a share of the weekly limit when that is what runs out (costShare): set
@@ -235,6 +237,7 @@ export function kit(el, e, primary = { isTaken: false }) {
         width: '100%',
         rowGap: 'sm',
         children: [
+          ...(extra.glow && hasSvg ? auraLayer(k, extra.glow.hexes, extra.glow.height || 130, { isLive: extra.glow.isLive, strength: 0.18 }) : []),
           ...head,
           extra.isPlain ? Box({ paddingX: 'xs', flexDirection: 'column', children: [body] }) : Box({ flexDirection: 'column', paddingX: 'md', paddingY: 'md', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true, children: [body] }),
         ],
@@ -379,6 +382,7 @@ export function drawDashboard(k, d, act) {
   k.showDetails = !!d.view.showDetails
   const wanted = OLD_TABS[d.view.tab] || d.view.tab
   const tab = TABS.some((t) => t.id === wanted) ? wanted : 'all'
+  k.hues = TAB_HUES[tab]
   const body =
     tab === 'all' ? allTab(k, d, act)
     : tab === 'usage' ? usageTab(k, d, act)
@@ -414,6 +418,39 @@ export function drawDashboard(k, d, act) {
 
 // A runway for one item: an SVG on desktop, block characters on the terminal. Its words say the
 // same thing, so it never rests on colour alone.
+// Each tab has its own two colours, used for the soft field behind its head and the gradient of its big
+// figure: identity only. Amber and red are left to status, and take over a figure that has passed an alert.
+const TAB_HUES = {
+  all: ['#0A84FF', '#BF5AF2'],
+  workflows: ['#BF5AF2', '#FF375F'],
+  overview: ['#64D2FF', '#00C7BE'],
+  usage: ['#0A84FF', '#00C7BE'],
+  skills: ['#5E5CE6', '#BF5AF2'],
+  settings: ['#64D2FF', '#8E8E93'],
+}
+const STATUS_HUES = { warning: ['#FFB340', '#FF9F0A'], error: ['#FF6961', '#FF453A'] }
+
+// The big figure of a head, drawn in a gradient on desktop: a limit past its alert is amber and one nearly
+// out is red, every other figure takes its tab's colours. Null on the terminal, and where the value would
+// not fit its half of the row (the plain text figure truncates there instead).
+function heroFigure(k, value, { size = 34, level, hues, align } = {}) {
+  if (!k.hasSvg) return null
+  const room = Math.floor(k.px * (k.columns >= 90 ? 0.5 : 0.9))
+  const fit = Math.min(size, Math.floor(room / Math.max(1, String(value).length * 0.62)))
+  if (fit < 20) return null
+  const status = level === 'warning' || level === 'error' ? STATUS_HUES[level] : null
+  const src = svgFigure(value, { size: fit, align: align || (k.columns >= 90 ? 'end' : 'start'), hexes: status || hues || k.hues || TAB_HUES.all })
+  return k.drawing(src, String(value))
+}
+
+// A soft field of colour behind a head or a card, as the first child of its box so everything else paints
+// over it. Decorative: no words, and it lets the pointer through.
+function auraLayer(k, hexes, height, extra = {}) {
+  if (!k.hasSvg) return []
+  const w = Math.max(240, k.px)
+  return [k.Box({ position: 'absolute', top: 0, left: 0, children: [k.Svg({ source: svgAura(hexes, w, height, extra), alt: '', width: w, height })] })]
+}
+
 function runwayBar(k, it, where, widthPx) {
   const r = it.runway
   const words = it.label + ' ' + it.valueText + (r.runOut !== null && r.runOut !== undefined ? ', runs out before it resets' : r.projected !== null && r.projected !== undefined ? ', on pace for about ' + Math.round(r.projected) + '% by the reset' : r.elapsed !== null && r.elapsed !== undefined ? ', ' + Math.round(r.elapsed) + '% of the window gone' : '')
@@ -457,9 +494,10 @@ function lead(k, o) {
   })
   const f = o.figure
   const figureLevel = f && f.level && f.level !== 'success' && f.level !== 'info' ? f.level : undefined
+  const big = f ? heroFigure(k, f.value, { size: 36, level: figureLevel }) : null
   const figureBody = f
     ? [
-        k.text(f.value, { size: 'title', weight: 'semibold', tabular: true, color: figureLevel, wrap: 'truncate-end' }),
+        big || k.text(f.value, { size: 'title', weight: 'semibold', tabular: true, color: figureLevel, wrap: 'truncate-end' }),
         k.footnote(f.caption, { wrap: 'truncate-end', ...(figureLevel ? { color: figureLevel, dimColor: undefined } : {}) }),
         ...(f.sub ? [k.footnote(f.sub, { wrap: 'truncate-end', tabular: true })] : []),
       ]
@@ -478,6 +516,7 @@ function lead(k, o) {
     rowGap: 'xs',
     paddingX: k.isTerminal ? 1 : 'xs',
     children: [
+      ...auraLayer(k, figureLevel ? STATUS_HUES[figureLevel] : k.hues || TAB_HUES.all, 190, { isLive: o.isLive || !!figureLevel }),
       isWide ? k.Box({ flexDirection: 'row', alignItems: 'flex-end', width: '100%', children: [words, ...(figure ? [figure] : [])] }) : k.Box({ flexDirection: 'column', children: [words, ...(figure ? [figure] : [])] }),
       ...(o.visual && o.visual.length ? [k.Box({ flexDirection: 'column', rowGap: 'sm', marginTop: 'sm', children: o.visual })] : []),
     ],
@@ -2017,7 +2056,7 @@ function homeHero(k, d, h, act) {
         flexShrink: 0,
         ...(isWide ? { paddingLeft: 'lg' } : { paddingTop: 'xs' }),
         children: [
-          k.text(Math.round(tightest.pct) + '%', { size: 'title', weight: 'semibold', tabular: true, color: quiet(level) }),
+          heroFigure(k, Math.round(tightest.pct) + '%', { size: 52, level, hues: TAB_HUES.all }) || k.text(Math.round(tightest.pct) + '%', { size: 'title', weight: 'semibold', tabular: true, color: quiet(level) }),
           k.footnote('of your ' + limitPhrase(tightest.label) + (level === 'error' ? ' · nearly out' : level === 'warning' ? ' · past your alert' : ''), { wrap: 'truncate-end', ...(level === 'success' ? {} : { color: level, dimColor: undefined }) }),
         ],
       })
@@ -2027,6 +2066,7 @@ function homeHero(k, d, h, act) {
     rowGap: 'xs',
     paddingX: k.isTerminal ? 1 : 'xs',
     children: [
+      ...auraLayer(k, level === 'success' ? (chats ? ['#0A84FF', '#BF5AF2'] : ['#0A84FF', '#00C7BE']) : STATUS_HUES[level], 230, { isLive: level !== 'success' || chats > 0, strength: 0.24 }),
       isWide ? k.Box({ flexDirection: 'row', alignItems: 'flex-end', width: '100%', children: [words, ...(figure ? [figure] : [])] }) : k.Box({ flexDirection: 'column', children: [words, ...(figure ? [figure] : [])] }),
       ...(item
         ? [
@@ -2257,7 +2297,7 @@ function needsCard(k, d, act, w) {
       ...shown.map((x, i) => needRow(k, d, act, w, x, i, x === first, i === 0 || x === first || d.view.openNeed === x.key)),
       ...(w.needs.length > 5 ? [k.buttons([k.button('needs-more', more > 0 ? 'Show ' + more + ' more' : 'Show fewer', act.toggleNeeds, { dimColor: true })])] : []),
     ],
-    { gap: 'lg' },
+    { gap: 'lg', glow: { hexes: w.needs.some((x) => x.kind === 'permission') ? STATUS_HUES.error : STATUS_HUES.warning, height: 150, isLive: true } },
   )
 }
 
@@ -2525,7 +2565,7 @@ function liveRunCard(k, d, act, r, i) {
       ...(agents.length > 6 && p.total > 8 ? [k.buttons([k.button('flow-more-' + i, isOpen ? 'Show fewer' : 'Show all ' + agents.length + ' agents', () => act.setView({ openRun: isOpen ? '' : r.runId }), { dimColor: true })])] : []),
       ...controls,
     ],
-    { gap: 'md' },
+    { gap: 'md', glow: { hexes: r.paused || isStopping ? STATUS_HUES.warning : ['#0A84FF', '#5E5CE6'], height: 150, isLive: !r.paused && !isStopping } },
   )
 }
 
@@ -2721,6 +2761,7 @@ function workflowsLead(k, d, act, { fl, mine, others, sv }) {
     headline,
     facts: facts.join(' · ') + '.',
     figure: figure ? { ...figure, level } : null,
+    isLive: running > 0 && !approval,
     visual,
   })
 }
@@ -2903,7 +2944,7 @@ function runningNowCard(k, d, act) {
       { key: 'home-other-' + i, tip: { title: r.name, lines: [plural(r.agents.filter((a) => a.isActive).length, 'agent', 'agents') + ' working now.'] } },
     )),
   ]
-  return k.card('Running now', 'Workflows working through a job, with their agents done so far.', [...rows, k.buttons([k.button('home-flows', 'Open Workflows', act.openWorkflows)])])
+  return k.card('Running now', 'Workflows working through a job, with their agents done so far.', [...rows, k.buttons([k.button('home-flows', 'Open Workflows', act.openWorkflows)])], { glow: { hexes: ['#0A84FF', '#5E5CE6'], height: 110, isLive: true } })
 }
 
 // What Home is drawn from: this tab's figures and the plan's windows, worked out once.

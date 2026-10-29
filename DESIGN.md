@@ -155,3 +155,14 @@ Every setting is a `userConfig` field, so it appears in Claude Code's own `/conf
 - **Daily spend** adds up the sessions on this machine that run ToBeBestMe, from Claude Code's exact costs.
 - **Every project's figures** are list-price estimates from the token counts in Claude Code's transcripts, read on this computer only.
 - **What waits for you** is read from where each transcript stopped. A permission prompt leaves no trace there, so it shows only for sessions running now (`claude agents --json`).
+
+## The desktop pane's visual language
+
+The pane in the desktop app is deliberately bold, and it is the only surface that is: it does not follow Apple's Human Interface Guidelines, and the terminal does not change at all. Everything below is drawn only where `k.hasSvg` is true, as SVG with CSS inside it.
+
+- **Hero figures.** The tightest limit's percentage on Home and each tab's lead figure are drawn big, in a gradient between the tab's two identity colours (Home blue to violet, Workflows violet to pink, This session cyan to mint, Usage blue to mint, Skills indigo to violet, Settings cyan to grey). Amber and red take the figure over once a limit is past its alert or nearly out: status colour keeps its meaning. The gradient's ends are pulled until the digits hold 4.5:1 on a dark and on a light pane.
+- **Atmosphere.** A soft field of the tab's colours sits behind each lead, richer on Home. It carries no words, is hidden from screen readers and lets the pointer through.
+- **Live states glow.** A chat waiting on you (red if it asks for permission), a running workflow and a limit past its alert get a field that breathes a few times, then rests.
+- **Runways that move.** The fill sweeps in from the left the first time it is drawn and a band of light crosses it once; the projected ghost carries a slow moving sheen; the run-out marker pulses; and the stretch of the window after the run-out is hatched, so "out" is a texture as well as a colour.
+- **Week bars.** Each bar springs up from its baseline a beat after the one before it, and a few tokens fall into its top (today's keep falling).
+- **Rules that still hold.** Words are 4.5:1 or better in dark and light and never under 11px; amber and red mean status; every animation is switched off under `prefers-reduced-motion: reduce`, and the decorative marks (the sheen, the halo, the falling tokens) are then not drawn at all; the still drawing is always the finished one.

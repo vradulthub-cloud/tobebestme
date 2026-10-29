@@ -2791,7 +2791,7 @@ const LIGHT_PAIRS = [['#0A84FF', '#007AFF'], ['#BF5AF2', '#AF52DE'], ['#FF375F',
 const LIGHT_TEXT = [['#F2F2F7', '#1C1C1E'], ['#8E8E93', '#636366'], ['#FF9F0A', '#B34C00'], ['#FF453A', '#D70015'], ['#AEAEB2', '#636366']]
 const LIGHT_CSS =
   '<style>@media (prefers-color-scheme:light){' +
-  LIGHT_PAIRS.map(([dark, light]) => '[fill="' + dark + '"]{fill:' + light + '}[stroke="' + dark + '"]{stroke:' + light + '}').join('') +
+  LIGHT_PAIRS.map(([dark, light]) => '[fill="' + dark + '"]{fill:' + light + '}[stroke="' + dark + '"]{stroke:' + light + '}[stop-color="' + dark + '"]{stop-color:' + light + '}').join('') +
   LIGHT_TEXT.map(([dark, light]) => 'svg>text[fill="' + dark + '"]{fill:' + light + '}').join('') +
   // what is drawn to read on dark and nearly vanishes on white is turned round or darkened: the track
   // is firmer, the strand under it and the posts are a mid grey, and the playhead is dark with a
@@ -2827,6 +2827,113 @@ function title(s) {
   return s ? '<title>' + escapeXml(s) + '</title>' : ''
 }
 
+// ---- motion and atmosphere (desktop drawings only) ---------------------------------------------
+// The desktop pane is allowed to be bold: fills sweep in when a drawing first appears, a faint
+// sheen travels along the projected ghost, the run-out marker pulses, the part of a window past the
+// run-out is hatched, the week's bars spring up with tokens falling into them, and the big figures
+// are drawn in gradients over a soft field of their tab's colours. Every animation stops, and the
+// still drawing is the finished one, where the viewer has asked for reduced motion; the decorative
+// ones (falling tokens, the sheen) are then not drawn at all. Class names are shared by every
+// drawing on the page, so this stylesheet is the same string wherever it appears.
+export const MOTION_CSS =
+  '<style>' +
+  '.msw{transform-box:fill-box;transform-origin:0 50%;animation:msw .9s cubic-bezier(.22,1,.36,1) both}' +
+  '@keyframes msw{from{transform:scaleX(0)}to{transform:scaleX(1)}}' +
+  '.msh{animation:msh 1.4s ease-in-out .6s both}.msh.msl{animation-duration:3.2s;animation-delay:0s;animation-iteration-count:infinite;animation-timing-function:linear}' +
+  '@keyframes msh{from{transform:translateX(0)}to{transform:translateX(var(--d,200px))}}' +
+  '.mpu{animation:mpu 1.8s ease-in-out infinite}@keyframes mpu{0%,100%{opacity:1}50%{opacity:.35}}' +
+  '.mhalo{transform-box:fill-box;transform-origin:center;animation:mhalo 1.8s ease-out infinite}@keyframes mhalo{from{transform:scale(.5);opacity:.8}to{transform:scale(2.6);opacity:0}}' +
+  '.mbar{transform-box:fill-box;transform-origin:50% 100%;animation:mbar .85s cubic-bezier(.34,1.56,.64,1) both}' +
+  '@keyframes mbar{from{transform:scaleY(0)}to{transform:scaleY(1)}}' +
+  '.mpt{animation:mpt 1.4s cubic-bezier(.45,0,1,1) both}@keyframes mpt{from{transform:translateY(-22px);opacity:0}30%{opacity:1}to{transform:translateY(0);opacity:0}}' +
+  '.mrise{animation:mrise .7s cubic-bezier(.22,1,.36,1) both}@keyframes mrise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}' +
+  '.mglow{animation:mglow 2.6s ease-in-out 3}@keyframes mglow{0%,100%{opacity:1}50%{opacity:.45}}' +
+  '@media (prefers-reduced-motion:reduce){.msw,.msh,.mpu,.mhalo,.mbar,.mpt,.mrise,.mglow{animation:none}.msh,.mhalo,.mpt{display:none}}' +
+  '</style>'
+
+// The moving highlight's gradient, and the hatching of the part of a window after its run-out.
+const SHEEN_DEFS = '<defs><linearGradient id="msheen" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient></defs>'
+function hatchDefs(period) {
+  return '<defs><pattern id="mh' + period + '" width="' + period + '" height="' + period + '" patternUnits="userSpaceOnUse" patternTransform="skewX(-35)"><rect width="' + Math.max(1.5, period / 3).toFixed(1) + '" height="' + period + '" fill="' + HEX.warning + '" fill-opacity="0.7"/></pattern></defs>'
+}
+// A band of light that travels across [x, x + w) of a track at y, once (or for ever, `isLoop`); it is
+// clipped to the part it is over by a drawing of its own, so no clip needs a name.
+function sheen(x, y, w, h, isLoop) {
+  if (w < 6) return ''
+  const band = Math.min(70, Math.max(24, w * 0.4))
+  return '<svg x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '" overflow="hidden"><rect class="msh' + (isLoop ? ' msl' : '') + '" x="' + (-band).toFixed(1) + '" y="0" width="' + band.toFixed(1) + '" height="' + h + '" fill="url(#msheen)" style="--d:' + (w + band).toFixed(1) + 'px"/></svg>'
+}
+// The hatched stretch of a track after its run-out: stripes in the warning colour, so "out" is a
+// texture as well as a colour.
+function outZone(x, y, w, h, period) {
+  return w > 2 ? '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '" fill="url(#mh' + period + ')"/>' : ''
+}
+
+// Contrast: a gradient's stops are each pulled toward white (on a dark pane) or black (on a light one)
+// until their words hold 4.5:1 with a little to spare, so a gradient figure reads wherever it lands.
+function lumHex(hex) {
+  const n = parseInt(String(hex).slice(1), 16)
+  const lin = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+}
+function ratioHex(a, b) {
+  const [x, y] = [lumHex(a), lumHex(b)]
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+function mixHex(hex, to, t) {
+  const n = parseInt(hex.slice(1), 16)
+  const m = parseInt(to.slice(1), 16)
+  const ch = (s) => Math.round(((n >> s) & 255) * (1 - t) + ((m >> s) & 255) * t)
+  return '#' + [16, 8, 0].map((s) => ch(s).toString(16).padStart(2, '0')).join('').toUpperCase()
+}
+export function toneFor(hex, isDark) {
+  const bg = isDark ? '#1E1E1E' : '#FFFFFF'
+  const to = isDark ? '#FFFFFF' : '#000000'
+  const need = isDark ? 5.2 : 4.8
+  let out = String(hex).toUpperCase()
+  for (let t = 0; t <= 1 && ratioHex(out, bg) < need; t += 0.04) out = mixHex(String(hex), to, t)
+  return out
+}
+
+// A figure drawn big, in a gradient from one colour of its tab to the next: the number a tab leads
+// with. `hexes` are the two ends; the dark and the light pane each get ends that read on them.
+export function svgFigure(value, { size = 36, align = 'start', hexes = ['#0A84FF', '#BF5AF2'] } = {}) {
+  const str = String(value)
+  const charW = (c) => (/[0-9]/.test(c) ? 0.6 : c === '%' ? 0.9 : c === ' ' ? 0.28 : /[.,:]/.test(c) ? 0.3 : /[A-Z]/.test(c) ? 0.68 : 0.58)
+  const W = Math.ceil([...str].reduce((n, c) => n + charW(c) * size, 0)) + 6
+  const H = Math.round(size * 1.18)
+  const dark = hexes.map((h) => toneFor(h, true))
+  const light = hexes.map((h) => toneFor(h, false))
+  const id = 'mf' + dark.map((h) => h.slice(1)).join('')
+  const x = align === 'end' ? W - 2 : 2
+  // the gradient's ends are custom properties on the drawing, so a light pane's pair replaces them
+  // (an attribute colour would be caught by the light rules every other drawing carries)
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" data-fig="' + id + '" overflow="visible">' +
+    MOTION_CSS +
+    '<style>svg[data-fig="' + id + '"]{--a:' + dark[0] + ';--b:' + dark[1] + '}@media (prefers-color-scheme:light){svg[data-fig="' + id + '"]{--a:' + light[0] + ';--b:' + light[1] + '}}</style>' +
+    '<defs><linearGradient id="' + id + '" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--a)"/><stop offset="1" style="stop-color:var(--b)"/></linearGradient></defs>' +
+    '<text class="mrise" x="' + x + '" y="' + Math.round(size * 0.92) + '" font-size="' + size + '" font-weight="700" text-anchor="' + (align === 'end' ? 'end' : 'start') + '" fill="url(#' + id + ')" style="font-variant-numeric:tabular-nums;letter-spacing:-0.02em"' + FONT + '>' + escapeXml(str) + '</text></svg>'
+  )
+}
+
+// A soft field of colour behind the head of a tab: two blurred pools of its colours, faint enough that
+// the words over them keep their contrast. It carries no words, and the pointer passes through it.
+// `isLive` lets it breathe a few times when something wants attention.
+export function svgAura(hexes, width, height, { isLive = false, strength = 0.2 } = {}) {
+  const W = Math.max(120, Math.round(width))
+  const H = Math.round(height)
+  const stops = (hex, id) => '<radialGradient id="' + id + '"><stop offset="0" stop-color="' + hex + '" stop-opacity="' + strength + '"/><stop offset="1" stop-color="' + hex + '" stop-opacity="0"/></radialGradient>'
+  const ia = 'ma' + hexes[0].slice(1)
+  const ib = 'ma' + hexes[1].slice(1)
+  return withLight(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" data-decor="1" style="pointer-events:none">' + MOTION_CSS +
+    '<defs>' + stops(hexes[0], ia) + (ib === ia ? '' : stops(hexes[1], ib)) + '</defs>' +
+    '<g' + (isLive ? ' class="mglow"' : '') + '><ellipse cx="' + (W * 0.3).toFixed(0) + '" cy="' + (H * 0.4).toFixed(0) + '" rx="' + (W * 0.3).toFixed(0) + '" ry="' + (H * 0.58).toFixed(0) + '" fill="url(#' + ia + ')"/>' +
+    '<ellipse cx="' + (W * 0.72).toFixed(0) + '" cy="' + (H * 0.34).toFixed(0) + '" rx="' + (W * 0.28).toFixed(0) + '" ry="' + (H * 0.55).toFixed(0) + '" fill="url(#' + ib + ')"/></g></svg>'
+  )
+}
+
 // A rounded horizontal meter: parts [{ value, hex, title }] over total; markers are
 // percentages, or { at, title }.
 export function svgMeter(parts, total, markers, thin = false) {
@@ -2846,10 +2953,10 @@ export function svgMeter(parts, total, markers, thin = false) {
     .filter((m) => m.at > 0 && m.at < 100)
     .map((m) => '<rect x="' + ((m.at / 100) * W - 1).toFixed(1) + '" y="0" width="2" height="' + H + '" fill="' + HEX.marker + '">' + title(m.title) + '</rect>')
   return withLight(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + MOTION_CSS +
     '<clipPath id="m"><rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" rx="' + h / 2 + '"/></clipPath>' +
     '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" rx="' + h / 2 + '" fill="' + HEX.track + '"/>' +
-    '<g clip-path="url(#m)">' + rects.join('') + '</g>' + ticks.join('') + '</svg>'
+    '<g clip-path="url(#m)"><g class="msw">' + rects.join('') + '</g></g>' + ticks.join('') + '</svg>'
   )
 }
 
@@ -2875,15 +2982,15 @@ export function svgBars(values, slots, extra = {}) {
         y -= ph
         return '<rect x="' + x + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + ph.toFixed(1) + '" fill="' + p.hex + '"/>'
       })
-      return '<g class="p">' + title(extra.titles && extra.titles[i]) + rects.join('') + '</g>'
+      return '<g class="p">' + title(extra.titles && extra.titles[i]) + '<g class="mbar" style="animation-delay:' + Math.min(i, 24) * 30 + 'ms">' + rects.join('') + '</g></g>'
     }
     const fill = extra.colors ? extra.colors[i] : i === values.length - 1 ? HEX.bar : HEX.barPast
-    return '<rect class="p" x="' + x + '" y="' + (H - 1 - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + fill + '">' + title(extra.titles && extra.titles[i]) + '</rect>'
+    return '<g class="p">' + title(extra.titles && extra.titles[i]) + '<g class="mbar" style="animation-delay:' + Math.min(i, 24) * 30 + 'ms"><rect x="' + x + '" y="' + (H - 1 - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + fill + '"/></g></g>'
   })
   const mean = extra.average && values.length >= 2 ? avg(values) : null
   const my = mean !== null ? (H - 1 - (mean / max) * (H - 4)).toFixed(1) : 0
   const line = mean !== null ? '<line x1="0" x2="' + W + '" y1="' + my + '" y2="' + my + '" stroke="' + HEX.marker + '" stroke-width="1.5" stroke-dasharray="4 4">' + title(extra.averageTitle) + '</line>' : ''
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + '<rect x="0" y="' + (H - 1) + '" width="' + W + '" height="1" fill="' + HEX.track + '"/>' + bars.join('') + line + '</svg>')
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + MOTION_CSS + '<rect x="0" y="' + (H - 1) + '" width="' + W + '" height="1" fill="' + HEX.track + '"/>' + bars.join('') + line + '</svg>')
 }
 
 function escapeXml(s) {
@@ -3003,17 +3110,23 @@ export function svgRunway(g, { width = 600, height = 14, isFluid = false } = {})
   const e = hasClock ? x(g.elapsed) : null
   const early = hasClock && g.runOut !== null && g.runOut !== undefined
   const parts = ['<rect x="0" y="0" width="' + W + '" height="6" fill="#8E8E93" fill-opacity="0.24"/>']
-  if (u > 0) parts.push('<rect x="0" y="0" width="' + u.toFixed(1) + '" height="6" fill="' + g.hex + '"/>')
-  if (early && u > e) parts.push('<rect x="' + e.toFixed(1) + '" y="0" width="' + (u - e).toFixed(1) + '" height="6" fill="' + HEX.warning + '"/>')
-  // where the pace lands by the reset: a faint ghost of the fill ahead of it
+  // the fill sweeps in from the left when the drawing first appears, and a band of light crosses it once
+  const fills = []
+  if (u > 0) fills.push('<rect x="0" y="0" width="' + u.toFixed(1) + '" height="6" fill="' + g.hex + '"/>')
+  if (early && u > e) fills.push('<rect x="' + e.toFixed(1) + '" y="0" width="' + (u - e).toFixed(1) + '" height="6" fill="' + HEX.warning + '"/>')
+  if (fills.length) parts.push('<g class="msw">' + fills.join('') + '</g>', sheen(0, 0, u, 6, false))
+  // where the pace lands by the reset: a faint ghost of the fill ahead of it, with a slow sheen moving over it
   const pr = hasClock && g.projected !== null && g.projected !== undefined ? x(g.projected) : null
-  if (pr !== null && pr > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="0" width="' + (pr - u).toFixed(1) + '" height="6" fill="' + (early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>')
+  if (pr !== null && pr > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="0" width="' + (pr - u).toFixed(1) + '" height="6" fill="' + (early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>', sheen(u, 0, pr - u, 6, true))
+  const period = Math.max(5, Math.round(W / 110))
   if (hasClock) {
     const ro = early ? x(g.runOut) : null
+    if (early) parts.push(hatchDefs(period), outZone(ro, 0, W - ro, 6, period))
     if (e > 0) parts.push('<rect x="0" y="9" width="' + e.toFixed(1) + '" height="3" fill="#AEAEB2"/>')
     if (early) {
       parts.push('<line x1="' + ro.toFixed(1) + '" x2="' + W + '" y1="10.5" y2="10.5" stroke="' + HEX.warning + '" stroke-width="1.5"' + ns + '/>')
-      parts.push('<line class="ro" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="7" y2="' + height + '" stroke="' + HEX.warning + '" stroke-width="3"' + ns + '/>')
+      parts.push('<line class="mpu" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="6" y2="' + height + '" stroke="' + HEX.warning + '" stroke-width="9" stroke-opacity="0.28"' + ns + '/>')
+      parts.push('<line class="ro mpu" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="7" y2="' + height + '" stroke="' + HEX.warning + '" stroke-width="3"' + ns + '/>')
     }
     // the playhead, with a knockout in the card's colour so it reads on any fill
     parts.push('<line x1="' + e.toFixed(1) + '" x2="' + e.toFixed(1) + '" y1="0" y2="12" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
@@ -3023,7 +3136,7 @@ export function svgRunway(g, { width = 600, height = 14, isFluid = false } = {})
   }
   // the reset post: the end of every runway
   parts.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="0" y2="12" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + height + '" width="' + W + '" height="' + height + '"' + (isFluid ? ' preserveAspectRatio="none"' : '') + '>' + parts.join('') + '</svg>')
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + height + '" width="' + W + '" height="' + height + '"' + (isFluid ? ' preserveAspectRatio="none"' : '') + '>' + MOTION_CSS + SHEEN_DEFS + parts.join('') + '</svg>')
 }
 
 // Where a limit stands on its runway: the share used, the share of its window gone, and where the
@@ -3056,10 +3169,14 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
   const early = hasClock && g.runOut !== null && g.runOut !== undefined
   const label = (tx, ty, str, anchor, fill, weight) => '<text x="' + tx.toFixed(1) + '" y="' + ty + '" font-size="12" fill="' + (fill || HEX.marker) + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
   const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="10" fill="#8E8E93" fill-opacity="0.24"/>']
-  if (u > 0) parts.push('<rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/>')
-  if (early && u > e) parts.push('<rect x="' + e.toFixed(1) + '" y="' + T + '" width="' + (u - e).toFixed(1) + '" height="10" fill="' + HEX.warning + '"/>')
+  const fills = []
+  if (u > 0) fills.push('<rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/>')
+  if (early && u > e) fills.push('<rect x="' + e.toFixed(1) + '" y="' + T + '" width="' + (u - e).toFixed(1) + '" height="10" fill="' + HEX.warning + '"/>')
+  if (fills.length) parts.push('<g class="msw">' + fills.join('') + '</g>', sheen(0, T, u, 10, false))
   const pr = hasClock && g.projected !== null && g.projected !== undefined ? x(g.projected) : null
-  if (pr !== null && pr > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (pr - u).toFixed(1) + '" height="10" fill="' + (early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>')
+  if (pr !== null && pr > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (pr - u).toFixed(1) + '" height="10" fill="' + (early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>', sheen(u, T, pr - u, 10, true))
+  const period = Math.max(5, Math.round(W / 110))
+  if (early) parts.push(hatchDefs(period), outZone(x(g.runOut), T, W - x(g.runOut), 10, period))
   // the days, or hours, of the window: a hairline between them and the name of each under it
   const marks = []
   const side = []
@@ -3104,7 +3221,8 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
     if (early) {
       const ro = x(g.runOut)
       parts.push('<line x1="' + ro.toFixed(1) + '" x2="' + W + '" y1="' + (T + 15.5) + '" y2="' + (T + 15.5) + '" stroke="' + HEX.warning + '" stroke-width="1.5"' + ns + '/>')
-      parts.push('<line class="ro" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="' + (T - 4) + '" y2="' + (T + 20) + '" stroke="' + HEX.warning + '" stroke-width="3"' + ns + '/>')
+      parts.push('<circle class="mhalo" cx="' + ro.toFixed(1) + '" cy="' + (T + 5) + '" r="9" fill="' + HEX.warning + '" fill-opacity="0.45"/>')
+      parts.push('<line class="ro mpu" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="' + (T - 4) + '" y2="' + (T + 20) + '" stroke="' + HEX.warning + '" stroke-width="3"' + ns + '/>')
       if (g.runLabel) flags.push({ at: ro, text: g.runLabel, fill: HEX.warning, weight: 600, wide: g.runLabel.length * 6.9 })
     }
     parts.push('<line x1="' + e.toFixed(1) + '" x2="' + e.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 20) + '" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
@@ -3163,7 +3281,10 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
       // a picked day stands out: the others step back, and it keeps a mark under its bar
       const isBack = g.picked !== undefined && g.picked !== null && g.picked >= 0 && g.picked !== i
       if (g.picked === i) parts.push('<rect class="pick" x="' + (cx - bw / 2 - 3).toFixed(1) + '" y="' + (BY + 1) + '" width="' + (bw + 6).toFixed(1) + '" height="2" rx="1" fill="#AEAEB2"/>')
-      parts.push('<g class="p d' + i + '"' + (isBack ? ' opacity="0.35"' : '') + '>' + rects.join('') + '<rect x="' + a.toFixed(1) + '" y="' + (top - 6) + '" width="' + (b - a).toFixed(1) + '" height="' + (BY - top + 6) + '" fill="transparent"/></g>')
+      // each bar springs up from its baseline a beat after the one before it, and a few tokens fall into
+      // its top (a few passes on a day, for ever on today's, which is still being filled)
+      const grains = height > 0 && !isBack ? [0, 1, 2].map((n) => '<circle class="mpt" cx="' + (cx + (n - 1) * bw * 0.28).toFixed(1) + '" cy="' + (BY - height - 2).toFixed(1) + '" r="1.8" fill="' + (shown[shown.length - 1].hex) + '" fill-opacity="0.85" style="animation-delay:' + (300 + i * 70 + n * 330) + 'ms;animation-iteration-count:' + (day.isToday ? 'infinite' : 2) + '"/>').join('') : ''
+      parts.push('<g class="p d' + i + '"' + (isBack ? ' opacity="0.35"' : '') + '><g class="mbar" style="animation-delay:' + i * 70 + 'ms">' + rects.join('') + '</g>' + grains + '<rect x="' + a.toFixed(1) + '" y="' + (top - 6) + '" width="' + (b - a).toFixed(1) + '" height="' + (BY - top + 6) + '" fill="transparent"/></g>')
       if (day.tip) tips.push(tipLabel(cx, BY - height, day.tip, W, H, 'tip t' + i))
       if (day.tip) css += '.d' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
     })
@@ -3172,7 +3293,7 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
   // fluid, it stretches to its slot's width; its strokes keep their weight as it does
   // every drawing names its size: the app draws markup without one at the browser's default 300px
   const size = ' width="' + W + '" height="' + H + '"'
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '"' + size + '>' + (days ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>'
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '"' + size + '>' + MOTION_CSS + SHEEN_DEFS + (days ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>'
   return withLight(svg)
 }
 
@@ -3198,11 +3319,11 @@ export function svgContext(g, { width = 600 } = {}) {
   const u = x(g.used)
   const label = (tx, ty, str, anchor, fill, weight) => '<text x="' + tx.toFixed(1) + '" y="' + ty + '" font-size="12" fill="' + (fill || HEX.marker) + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
   const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="10" fill="#8E8E93" fill-opacity="0.24"/>']
-  if (u > 0) parts.push('<rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/>')
+  if (u > 0) parts.push('<g class="msw"><rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/></g>', sheen(0, T, u, 10, false))
   const stop = g.compactAt || g.total
   if (g.per && g.ahead > 0) {
     const to = x(Math.min(stop, g.used + g.per * g.ahead))
-    if (to > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (to - u).toFixed(1) + '" height="10" fill="' + (g.early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>')
+    if (to > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (to - u).toFixed(1) + '" height="10" fill="' + (g.early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>', sheen(u, T, to - u, 10, true))
   }
   // where Claude Code warns you and switches helpers: short neutral ticks that say so on hover
   for (const [at, words] of [[g.warnAt, 'Warning at ' + g.warnAt + '%'], [g.cheaperAt, 'Helpers switch at ' + g.cheaperAt + '%']]) {
@@ -3253,7 +3374,7 @@ export function svgContext(g, { width = 600 } = {}) {
     turns.forEach((t, i) => {
       const cx = (i + 0.5) * slot
       const top2 = y(t.context)
-      parts.push('<g class="p c' + i + '"><rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + top2.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, BASE - top2).toFixed(1) + '" rx="2" fill="' + (t.hex || g.hex) + '"/><rect x="' + (cx - slot / 2).toFixed(1) + '" y="' + top + '" width="' + slot.toFixed(1) + '" height="' + (BASE - top) + '" fill="transparent"/></g>')
+      parts.push('<g class="p c' + i + '"><g class="mbar" style="animation-delay:' + Math.min(i, 24) * 35 + 'ms"><rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + top2.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, BASE - top2).toFixed(1) + '" rx="2" fill="' + (t.hex || g.hex) + '"/></g><rect x="' + (cx - slot / 2).toFixed(1) + '" y="' + top + '" width="' + slot.toFixed(1) + '" height="' + (BASE - top) + '" fill="transparent"/></g>')
       if (t.title) {
         tips.push(tipLabel(cx, top2, t.title, W, H, 'tip t' + i))
         css += '.c' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
@@ -3268,7 +3389,7 @@ export function svgContext(g, { width = 600 } = {}) {
     parts.push(label(0, H - 5, 'Context after each of the last ' + turns.length + ' turns', 'start'))
     if (ahead > 0 && W - (turns.length * slot) > 96) parts.push(label(W, H - 5, 'at this pace', 'end'))
   }
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + (hasBars ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>')
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + MOTION_CSS + SHEEN_DEFS + (hasBars ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>')
 }
 
 // Something working right now: a dot with a soft ring that widens and fades every 1.6 s, the way the

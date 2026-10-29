@@ -156,13 +156,24 @@ for (const v of manifest) {
       for (const t of document.querySelectorAll('#pane svg text')) {
         if (t.closest('.tip') || !visible(t)) continue
         const cs = getComputedStyle(t)
+        // a gradient: every one of its stops must hold the ratio, on this pane's own colour for it
+        const grad = /url\(["']?#([^"')]+)/.exec(cs.fill)
+        if (grad) {
+          const stops = [...(t.ownerSVGElement!.querySelectorAll('#' + CSS.escape(grad[1]) + ' stop') as NodeListOf<SVGStopElement>)]
+          for (const stop of stops) {
+            const r = contrast(getComputedStyle(stop).stopColor, paneBg)
+            if (r < 4.5) drawn.push(`${r.toFixed(2)}:1 gradient text “${(t.textContent || '').slice(0, 30)}” (${getComputedStyle(stop).stopColor})`)
+          }
+          if (!stops.length) drawn.push('gradient text with no stops “' + (t.textContent || '').slice(0, 30) + '”')
+          continue
+        }
         const r = contrast(cs.fill, paneBg)
         if (r < 4.5) drawn.push(`${r.toFixed(2)}:1 text “${(t.textContent || '').slice(0, 30)}” (${cs.fill})`)
       }
       for (const m of document.querySelectorAll('#pane svg rect, #pane svg circle, #pane svg path')) {
         if (m.closest('.tip') || !visible(m)) continue
         const cs = getComputedStyle(m)
-        if (cs.fill === 'none' || cs.fill.startsWith('rgba') || Number(cs.fillOpacity) < 0.9 || Number(cs.opacity) < 0.9) continue
+        if (cs.fill === 'none' || cs.fill.startsWith('url(') || cs.fill.startsWith('rgba') || Number(cs.fillOpacity) < 0.9 || Number(cs.opacity) < 0.9) continue
         const [r, g, b] = rgb(cs.fill)
         if (Math.max(r, g, b) - Math.min(r, g, b) < 28) continue // a grey: neutral
         const box = m.getBoundingClientRect()
@@ -220,7 +231,7 @@ for (const v of manifest) {
     expect.soft(cardProblems, 'hover cards cut off or covered: ' + JSON.stringify(cardProblems)).toEqual([])
 
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.screenshot({ path: join(OUT, 'shots', v.page.replace(/\.html$/, '.png')), fullPage: true })
+    await page.screenshot({ path: join(OUT, 'shots', v.page.replace(/\.html$/, '.png')), fullPage: true, animations: 'disabled' }) // finished animations are shown at their end state
     info.annotations.push({ type: 'buttons', description: String(report.buttons) })
   })
 }
@@ -311,4 +322,33 @@ test('each limit is drawn as a runway, not a ring: the weekly one shows its run-
   expect(await page.locator('svg line.post').count()).toBeGreaterThanOrEqual(await tracks.count())
   const names = await page.locator('[role=img]:has(line.post)').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') || ''))
   expect(names.every((n) => /\d+%/.test(n))).toBe(true)
+})
+
+test('the run-out is hatched, its marker pulses, bars spring up and the figure is a gradient, and reduced motion turns every animation off', async ({ page }) => {
+  const v = manifest.find((m) => m.state === 'busy' && m.view === 'all' && m.cols === 148 && !m.details && !m.scheme)!
+  await open(page, v)
+  expect(await page.locator('svg rect[fill^="url(#mh"]').count(), 'the stretch after the run-out is not hatched').toBeGreaterThan(0)
+  expect(await page.locator('svg line.ro.mpu').count(), 'the run-out marker does not pulse').toBeGreaterThan(0)
+  expect(await page.locator('svg g.mbar').count(), 'the week’s bars do not spring up').toBeGreaterThan(0)
+  expect(await page.locator('svg[data-fig] text[fill^="url("]').count(), 'the lead figure is not a gradient').toBeGreaterThan(0)
+  // with motion allowed the marker is animating; with reduced motion nothing is
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'no-preference' })
+  const live = () => page.evaluate(() => [...document.querySelectorAll('#pane svg .mpu, #pane svg .msw, #pane svg .mbar, #pane svg .msh, #pane svg .mrise')].filter((e) => getComputedStyle(e).animationName !== 'none').length)
+  expect(await live(), 'nothing animates with motion allowed').toBeGreaterThan(0)
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
+  expect(await live(), 'something still animates with reduced motion set').toBe(0)
+  // the decoration (falling tokens, sheen, halo) is not drawn at all
+  const shown = await page.evaluate(() => [...document.querySelectorAll('#pane svg .mpt, #pane svg .msh, #pane svg .mhalo')].filter((e) => getComputedStyle(e).display !== 'none').length)
+  expect(shown, 'decorative marks are still drawn with reduced motion set').toBe(0)
+})
+
+test('the fields of colour behind a tab’s head are decoration: hidden from a screen reader and out of the pointer’s way, and the words over them keep their contrast', async ({ page }) => {
+  for (const view of ['all', 'workflows', 'overview', 'usage']) {
+    const v = manifest.find((m) => m.state === 'busy' && m.view === view && m.cols === 148 && !m.details && !m.scheme)!
+    await open(page, v)
+    const decor = page.locator('[data-svg="decor"]')
+    expect(await decor.count(), view + ': no field of colour').toBeGreaterThan(0)
+    expect(await decor.first().getAttribute('aria-hidden')).toBe('true')
+    expect(await decor.first().evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none')
+  }
 })

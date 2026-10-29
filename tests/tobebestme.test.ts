@@ -126,6 +126,11 @@ async function shown(ui: any) {
   return (await ui.findAll({ type: 'Text' })).map((t: any) => t.text).join('\n')
 }
 
+// The big figures of a tab are drawn in gradients (an Svg whose alt is the figure itself, marked data-fig).
+async function figures(ui: any) {
+  return (await ui.findAll({ type: 'Svg' })).filter((x: any) => String(x.props.source).includes('data-fig')).map((x: any) => String(x.props.alt))
+}
+
 // Ends a main turn the way the engine reports one.
 function completeTurn($: any, usage: any, durationMs = 30_000) {
   return $.turn.complete({ answer: 'done', durationMs, isAborted: false, turnId: 't', reason: 'answer', usage })
@@ -397,7 +402,7 @@ test('a busy session leads with its most pressing problem, what fixing it saves,
     // the rings, icons and bars are SVG where the surface draws SVG, every one named; meters on the terminal
     const svgs = await ui.findAll({ type: 'Svg' })
     expect(svgs.length > 0).toBe(surface === 'desktop')
-    expect(svgs.filter((x: any) => !String(x.props.alt).trim())).toHaveLength(0)
+    expect(svgs.filter((x: any) => !String(x.props.alt).trim() && !String(x.props.source).includes('data-decor'))).toHaveLength(0)
 
     text = await shown(ui) // what fills the window is on This session too
     expect(text).toContain('What fills it')
@@ -496,12 +501,12 @@ test('each limit is a runway, not a ring: the weekly one says in words and in ma
   expect(sources.some((src: string) => src.includes('stroke-dasharray'))).toBe(false)
   const weekly = svgs.find((x: any) => String(x.props.alt).startsWith('Weekly limit'))
   expect(weekly?.props.alt).toBe('Weekly limit 86%, runs out before it resets')
-  expect(String(weekly?.props.source)).toContain('class="ro"') // the run-out stop
+  expect(String(weekly?.props.source)).toMatch(/class="ro[ "]/) // the run-out stop
   expect(String(weekly?.props.source)).toContain('class="now"') // the playhead
   expect(String(weekly?.props.source)).toContain('class="post"') // the reset
   const fiveHour = svgs.find((x: any) => String(x.props.alt).startsWith('5-hour limit'))
   expect(String(fiveHour?.props.alt)).toMatch(/on pace for about \d+% by the reset/)
-  expect(String(fiveHour?.props.source)).not.toContain('class="ro"') // on pace: no stop
+  expect(String(fiveHour?.props.source)).not.toMatch(/class="ro[ "]/) // on pace: no stop
   expect(String(fiveHour?.props.source)).toContain('class="ahead"') // where the pace lands, ahead of the fill
   await desktop.unmount()
 
@@ -1026,7 +1031,11 @@ test('Home leads with one big figure and says where the pace lands, and each sav
     const ui = await $.ui.mount({ ...PANE, surface })
     await ui.press({ key: 'usage-refresh' })
     const text = await shown(ui)
-    expect(text).toContain('30%\nof your weekly limit')
+    // the figure is drawn as a gradient on the desktop and is text on the terminal
+    if (surface === 'desktop') {
+      expect(await figures(ui)).toContain('30%')
+      expect(text).toContain('of your weekly limit')
+    } else expect(text).toContain('30%\nof your weekly limit')
     expect(text).toMatch(/On pace to end the week at about 4\d%\./)
     // helpers did 55% of the week on Opus and Haiku: moving them to Haiku lands the week lower
     expect(text).toMatch(/If helpers ran on Haiku: on pace to end the week at about \d+%\./)
@@ -1038,6 +1047,45 @@ test('Home leads with one big figure and says where the pace lands, and each sav
     await ui.press({ key: 'details' })
     await ui.unmount()
   }
+})
+
+test('the desktop pane is cinematic and the terminal is not: sweeps, a hatched run-out, falling tokens and gradient figures, every one switched off by reduced motion', async ($, on) => {
+  stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
+  transcripts(on, WEEK)
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await desktop.press({ key: 'usage-refresh' })
+  const sources = (await desktop.findAll({ type: 'Svg' })).map((x: any) => String(x.props.source))
+  const joined = sources.join('\n')
+  expect(joined).toContain('class="msw"') // fills sweep in
+  expect(joined).toContain('class="mbar"') // the week's bars spring up
+  expect(joined).toContain('class="mpt"') // tokens fall into them
+  expect(joined).toContain('class="msh msl"') // the projected ghost has a moving sheen
+  expect(joined).toMatch(/fill="url\(#mh\d+\)"/) // the stretch after the run-out is hatched
+  expect(joined).toMatch(/class="ro mpu"/) // the run-out marker pulses
+  expect(sources.some((x: string) => x.includes('data-fig='))).toBe(true) // a gradient figure leads the tab
+  // every drawing that moves says how to stop it, and the decorative ones carry no words
+  for (const src of sources.filter((x: string) => x.includes('animation:'))) expect(src).toContain('@media (prefers-reduced-motion:reduce){')
+  expect(sources.some((x: string) => x.includes('data-decor='))).toBe(true)
+  // the figure's gradient keeps the contrast the words need, on a dark pane and on a light one
+  const lum = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16)
+    return [16, 8, 0].map((sh, i) => { const v = ((n >> sh) & 255) / 255; return (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4) * [0.2126, 0.7152, 0.0722][i] }).reduce((a, b) => a + b, 0)
+  }
+  const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
+  for (const src of sources.filter((x: string) => x.includes('data-fig='))) {
+    const m = /--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}@media[^{]*\{svg\[data-fig="[^"]+"\]\{--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}/.exec(src)
+    expect(m).not.toBeNull()
+    for (const hex of [m![1], m![2]]) expect(ratio(hex, '#1E1E1E')).toBeGreaterThanOrEqual(4.5)
+    for (const hex of [m![3], m![4]]) expect(ratio(hex, '#FFFFFF')).toBeGreaterThanOrEqual(4.5)
+  }
+  await desktop.unmount()
+  // the terminal draws none of it
+  const terminal = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await terminal.press({ key: 'usage-refresh' })
+  expect(await terminal.findAll({ type: 'Svg' })).toHaveLength(0)
+  expect(JSON.stringify(await terminal.drawn())).not.toContain('keyframes')
+  await terminal.unmount()
 })
 
 test('the week on Home is something to press: a day picks itself out and Projects follows it, a project in the legend stands out, and each comes back in one press', async ($, on) => {
@@ -1133,7 +1181,7 @@ test('Usage opens on the forecast and where the week went, and Skills and Settin
   await ui.press({ key: 'tab-settings' })
   text = await shown(ui)
   expect(text).toMatch(/on autopilot/)
-  expect(text).toMatch(/\d of \d\non autopilot/)
+  expect(text + '\n' + (await figures(ui)).join('\n')).toMatch(/\d of \d\non autopilot|\d of \d/)
   await ui.unmount()
 })
 
@@ -1236,7 +1284,7 @@ test('All projects adds up every project from Claude Code’s own records, workt
     expect(text).toContain('Opus 5.5 did 88% of this week’s work')
     expect(text).toContain('Last 14 days')
     expect(text).toContain('Models this week: Opus 5.5 87%, Sonnet 5.5 12%, Haiku 5.5 1%.') // the busiest project, on hover
-    if (surface === 'desktop') expect((await ui.findAll({ type: 'Svg' })).filter((x: any) => !String(x.props.alt).trim())).toHaveLength(0)
+    if (surface === 'desktop') expect((await ui.findAll({ type: 'Svg' })).filter((x: any) => !String(x.props.alt).trim() && !String(x.props.source).includes('data-decor'))).toHaveLength(0)
 
     await ui.press({ key: 'proj-today' })
     text = await shown(ui)
@@ -2082,7 +2130,8 @@ test('Workflows says how to spend less, from every project’s finished runs, an
   let text = await shown(ui)
   expect(text).toContain('No workflows running')
   // the lead says what the month cost and what part of it could have been saved; the run from 60 days ago is left out
-  expect(text).toContain('$240\non workflows in 30 days')
+  expect(text + '\n' + (await figures(ui)).join('\n')).toMatch(/\$240(\non workflows in 30 days)?/)
+  expect(text).toContain('on workflows in 30 days')
   expect(text).toContain('2 runs in the last 30 days')
   expect(text).toContain('could have saved up to $36.00')
   expect(text).toContain('Costliest runs')

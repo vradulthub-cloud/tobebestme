@@ -112,6 +112,8 @@ function node(n) {
       // with no width and no width of its own, the browser falls back to its default 300px (seen in the app)
       const width = p.width ?? (own ? Number(own[1]) : 300)
       src = src.replace('<svg ', '<svg style="display:block;width:100%;height:' + (p.height ? p.height + 'px' : 'auto') + '" ')
+      // a drawing with no words is decoration (a field of colour): hidden from a reader, and the pointer passes through
+      if (!p.alt) return '<div aria-hidden="true" data-svg="decor" style="' + style({ width: width ?? '100%', 'max-width': '100%', height: p.height, 'flex-shrink': 0, display: 'flex', 'pointer-events': 'none' }) + '">' + src + '</div>'
       return '<div role="img" aria-label="' + esc(p.alt || '') + '" data-svg="1" style="' + style({ width: width ?? '100%', 'max-width': '100%', height: p.height, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'
     }
     case 'Input':

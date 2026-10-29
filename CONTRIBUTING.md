@@ -12,7 +12,7 @@ cd e2e && npm install && npm test
 
 How ToBeBestMe is written:
 
-- **Design.** It follows Apple's Human Interface Guidelines: sentence case, buttons that say what they do, one primary action per view, nothing under 11px, colour only for meaning. DESIGN.md has the details.
+- **Design.** It has its own visual language, described in DESIGN.md: sentence case, buttons that say what they do, one primary action per view, nothing under 11px, colour only for meaning. DESIGN.md has the details.
 - **Honest numbers.** Estimates are shown as ranges and say what they come from. Don't make a guess look precise.
 - **No secrets, ever.** Not in code, tests, fixtures or screenshots. The e2e screenshots can show your own projects; they stay under `e2e/.out/`, which git ignores.
 - **Security issues** go through SECURITY.md, not public issues.
