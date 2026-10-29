@@ -56,8 +56,9 @@ kitTest('e2e: an empty session', { timeoutMs: 120_000 }, async ($: any, on: any)
 })
 
 kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true } }, async ($: any, on: any) => {
-  const { store } = stubs(on, { ...HIGH(), rateLimits: [...HIGH().rateLimits, { kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
+  const { store, usage, clock } = stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN }, rateLimits: [...HIGH().rateLimits, { kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
   effects(on)
+  on('turn.start', (_$: unknown, e: any) => ({ turnId: e.turnId }))
   // real sessions carry long titles and long branch names; neither may push a column off the pane
   waitingDesk(on, [], [
     { sessionId: 'local_long', title: 'Price tracker · nightly sync run (scraper tasks + scoreboard) and the follow-up review', cwd: '/Users/me/Projects/price-tracker-app', branch: 'claude/live-deployment-review-3f9a2c-remaining-cleanup-work-7b41e0', prNumber: 874, prState: 'MERGED', isRunning: false, isArchived: false, lastActivityAt: '2026-10-23T09:00:00Z' },
@@ -65,7 +66,10 @@ kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true 
   ])
   // a week of work spread over its days, as a real week is, so the calendar has something to show
   const spread = (name: string, file: string, days: [string, number][]) => ({ path: '-Users-me-Projects-' + name + '/' + file + '.jsonl', ageMs: 86_400_000, cwd: '/Users/me/Projects/' + name, answers: days.map(([at, tokens]) => [at + 'T15:00:00Z', 'claude-opus-5-5', 0, tokens, 0, 0]) })
+  const spreadAt = (name: string, file: string, at: string, tokens: number) => ({ path: '-Users-me-Projects-' + name + '/' + file + '.jsonl', ageMs: 3_600_000, cwd: '/Users/me/Projects/' + name, answers: [[at, 'claude-opus-5-5', 0, tokens, 0, 0]] })
   const SPREAD = [
+    // this morning's work, so today's total in every session is never less than this session's own
+    spreadAt('storefront', 'today1', '2026-10-23T09:30:00Z', 220_000),
     spread('storefront', 'w1', [['2026-10-19', 260_000], ['2026-10-20', 380_000], ['2026-10-21', 520_000], ['2026-10-22', 300_000]]),
     spread('ledger-api', 'w2', [['2026-10-19', 180_000], ['2026-10-21', 240_000], ['2026-10-22', 120_000]]),
     spread('reports', 'w3', [['2026-10-20', 160_000], ['2026-10-22', 220_000]]),
@@ -88,6 +92,20 @@ kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true 
   const warm = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await warm.press({ key: 'usage-refresh' })
   await warm.unmount()
+  // a session that has been going for half an hour: ten turns, the conversation growing about 8k a turn
+  // towards the compaction point, so This session has a history to draw and a pace to read
+  const ctx = usage.context.tokens
+  for (let i = 0; i < 10; i++) {
+    clock.now = NOW - 1_800_000 + i * 180_000
+    usage.cost = { usd: 12.5 - (9 - i) * 0.9 - 0.9 }
+    await $.turn.start({ turnId: 't' + i, text: 'go' } as any)
+    usage.context = { ...usage.context, tokens: ctx - (9 - i) * 8_000 }
+    usage.cost = { usd: 12.5 - (9 - i) * 0.9 }
+    await completeTurn($, { ...USAGE, input_tokens: 900, cache_read_input_tokens: ctx - (9 - i) * 8_000, output_tokens: 1_200 + i * 80, model: i % 4 === 3 ? 'claude-sonnet-5-5' : 'claude-opus-5-5' }, 70_000 + i * 6_000)
+  }
+  clock.now = NOW
+  usage.context = { ...usage.context, tokens: ctx }
+  usage.cost = { usd: 12.5 }
   await e2eDump($, 'busy')
   // the calendar with a day and a project picked: the others step back, and Projects follows
   for (const cols of [148, 40]) {
@@ -144,7 +162,10 @@ function prepare() {
   } catch {}
 }
 
-export const pageName = (m) => [m.state, m.view, m.cols].join('-') + (m.details ? '-details' : '') + '.html'
+export const pageName = (m) => [m.state, m.view, m.cols].join('-') + (m.details ? '-details' : '') + (m.scheme === 'light' ? '-light' : '') + '.html'
+
+// The views also drawn on a light pane: the two real states, at a phone and at a wide desktop width.
+const isLit = (m) => (m.state === 'busy' || m.state === 'empty') && (m.cols === 40 || m.cols === 148) && !m.details
 
 export function exportPages({ claude = process.env.CLAUDE_BIN || 'claude' } = {}) {
   prepare()
@@ -165,6 +186,12 @@ export function exportPages({ claude = process.env.CLAUDE_BIN || 'claude' } = {}
     writeFileSync(join(PAGES, name), renderPage(tree, { width: Math.round(meta.cols * CELL_X) + 28, title: name }))
     writeFileSync(join(PAGES, name.replace(/\.html$/, '.json')), JSON.stringify(tree))
     manifest.push({ ...meta, page: name })
+    if (isLit(meta)) {
+      const lit = { ...meta, scheme: 'light' }
+      const litName = pageName(lit)
+      writeFileSync(join(PAGES, litName), renderPage(tree, { width: Math.round(meta.cols * CELL_X) + 28, title: litName, scheme: 'light' }))
+      manifest.push({ ...lit, page: litName })
+    }
   }
   writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1))
   return manifest

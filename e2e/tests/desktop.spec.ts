@@ -10,17 +10,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 // ALL-CAPS labels, and the mod's own colours readable on the pane.
 
 const OUT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '.out')
-type View = { state: string; view: string; cols: number; details: boolean; page: string }
+type View = { state: string; view: string; cols: number; details: boolean; page: string; scheme?: 'light' }
 const manifest: View[] = JSON.parse(readFileSync(join(OUT, 'manifest.json'), 'utf8'))
 const VIEWPORT: Record<number, number> = { 40: 375, 88: 768, 148: 1280, 220: 1920 }
 
 async function open(page: Page, v: View) {
+  // the pane is dark by default; a light view is drawn on a light pane, and the drawings' own
+  // light-theme colours follow the appearance the page reports
+  await page.emulateMedia({ colorScheme: v.scheme === 'light' ? 'light' : 'dark' })
   await page.setViewportSize({ width: VIEWPORT[v.cols] ?? 1280, height: 900 })
   await page.goto(pathToFileURL(join(OUT, 'pages', v.page)).href)
 }
 
 for (const v of manifest) {
-  test(`${v.state} › ${v.view} › ${VIEWPORT[v.cols]}px${v.details ? ' › details' : ''}`, async ({ page }, info) => {
+  test(`${v.state} › ${v.view} › ${VIEWPORT[v.cols]}px${v.details ? ' › details' : ''}${v.scheme === 'light' ? ' › light' : ''}`, async ({ page }, info) => {
     await open(page, v)
 
     // nothing wider than the window: no sideways scrolling at any width
@@ -47,10 +50,10 @@ for (const v of manifest) {
       }
       return out.slice(0, 5)
     })
-    expect.soft(spill, 'something runs past the pane').toEqual([])
+    expect.soft(spill, 'something runs past the pane: ' + JSON.stringify(spill)).toEqual([])
     // an interactive drawing given no size sits in the app's default 300 by 150 frame, shrunk to fit
     const framed = await page.evaluate(() => [...document.querySelectorAll('[data-frame=default]')].map((el) => el.getAttribute('aria-label')!.slice(0, 40)))
-    expect.soft(framed, 'a drawing with no size of its own').toEqual([])
+    expect.soft(framed, 'a drawing with no size of its own: ' + JSON.stringify(framed)).toEqual([])
 
     const report = await page.evaluate(() => {
       const visible = (el: Element) => {
@@ -126,7 +129,7 @@ for (const v of manifest) {
           const alpha = bg.startsWith('rgba') ? Number(bg.match(/[\d.]+/g)![3]) : 1
           if (bg !== 'rgba(0, 0, 0, 0)' && alpha > 0.5) return bg
         }
-        return 'rgb(30, 30, 30)'
+        return getComputedStyle(document.body).backgroundColor
       }
       const faint: string[] = []
       for (const el of document.querySelectorAll('#pane span.t[style*="color:#"]')) {
@@ -141,13 +144,40 @@ for (const v of manifest) {
         const isMark = /^[●■◆○◐✓✕‖▬█░]+$/.test(text)
         if (ratio < (px >= 18 || isMark ? 3 : 4.5)) faint.push(`${ratio.toFixed(2)}:1 “${text.slice(0, 40)}”`)
       }
-      return { small, overlaps, unnamed, shouting, faint, buttons: document.querySelectorAll('button').length }
+      // drawings: their words need 4.5:1 on the pane (hover cards carry their own dark box), and
+      // their coloured marks 3:1 (WCAG's rule for graphics). Greys are neutrals, drawn to read on both.
+      const paneBg = getComputedStyle(document.body).backgroundColor
+      const rgb = (c: string) => (c.match(/[\d.]+/g) || []).map(Number)
+      const contrast = (a: string, b: string) => {
+        const [x, y] = [lum(a), lum(b)]
+        return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+      }
+      const drawn: string[] = []
+      for (const t of document.querySelectorAll('#pane svg text')) {
+        if (t.closest('.tip') || !visible(t)) continue
+        const cs = getComputedStyle(t)
+        const r = contrast(cs.fill, paneBg)
+        if (r < 4.5) drawn.push(`${r.toFixed(2)}:1 text “${(t.textContent || '').slice(0, 30)}” (${cs.fill})`)
+      }
+      for (const m of document.querySelectorAll('#pane svg rect, #pane svg circle, #pane svg path')) {
+        if (m.closest('.tip') || !visible(m)) continue
+        const cs = getComputedStyle(m)
+        if (cs.fill === 'none' || cs.fill.startsWith('rgba') || Number(cs.fillOpacity) < 0.9 || Number(cs.opacity) < 0.9) continue
+        const [r, g, b] = rgb(cs.fill)
+        if (Math.max(r, g, b) - Math.min(r, g, b) < 28) continue // a grey: neutral
+        const box = m.getBoundingClientRect()
+        if (box.width * box.height < 20) continue
+        const ratio = contrast(cs.fill, paneBg)
+        if (ratio < 3) drawn.push(`${ratio.toFixed(2)}:1 mark ${cs.fill} (${m.tagName})`)
+      }
+      return { small, overlaps, unnamed, shouting, faint, drawn: [...new Set(drawn)].slice(0, 6), buttons: document.querySelectorAll('button').length }
     })
-    expect.soft(report.small, 'type under 11px').toEqual([])
-    expect.soft(report.overlaps, 'text drawn over other text').toEqual([])
-    expect.soft(report.unnamed, 'controls without a name').toEqual([])
-    expect.soft(report.shouting, 'labels in capitals').toEqual([])
-    expect.soft(report.faint, 'text below WCAG AA contrast').toEqual([])
+    expect.soft(report.small, 'type under 11px: ' + JSON.stringify(report.small)).toEqual([])
+    expect.soft(report.overlaps, 'text drawn over other text: ' + JSON.stringify(report.overlaps)).toEqual([])
+    expect.soft(report.unnamed, 'controls without a name: ' + JSON.stringify(report.unnamed)).toEqual([])
+    expect.soft(report.shouting, 'labels in capitals: ' + JSON.stringify(report.shouting)).toEqual([])
+    expect.soft(report.faint, 'text below WCAG AA contrast: ' + JSON.stringify(report.faint)).toEqual([])
+    expect.soft(report.drawn, 'a drawing’s words or marks below WCAG contrast on this pane: ' + JSON.stringify(report.drawn)).toEqual([])
     // one primary action per view (Apple's rule): the white button is the main thing to do
     const primaries = await page.locator('button[data-variant=primary]').allTextContents()
     expect.soft(primaries.length, 'more than one primary button: ' + primaries.join(', ')).toBeLessThanOrEqual(1)
@@ -187,7 +217,7 @@ for (const v of manifest) {
       }, i)
       if (problem) cardProblems.push(problem)
     }
-    expect.soft(cardProblems, 'hover cards cut off or covered').toEqual([])
+    expect.soft(cardProblems, 'hover cards cut off or covered: ' + JSON.stringify(cardProblems)).toEqual([])
 
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.screenshot({ path: join(OUT, 'shots', v.page.replace(/\.html$/, '.png')), fullPage: true })

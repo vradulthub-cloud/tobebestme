@@ -80,6 +80,7 @@ import {
   SCAN_DAYS,
   SCAN_SH,
   SCAN_AWK,
+  recentHours,
   parseScan,
   parseTranscript,
   usageSummary,
@@ -146,7 +147,7 @@ const day = atom({ plugin: 'tobebestme', key: 'day' }, { date: '', startUsd: 0 }
 const wins = atom({ plugin: 'tobebestme', key: 'wins' }, { compactions: 0, tokensFreed: 0, notes: 0, skills: 0 })
 const skill = atom({ plugin: 'tobebestme', key: 'skill' }, { describe: '', draft: null, scope: 'project', ideas: [] })
 const skillUse = atom({ plugin: 'tobebestme', key: 'skillUse' }, {}) // skill -> times run this session
-const view = atom({ plugin: 'tobebestme', key: 'view' }, { tab: 'all', confirm: '', showNote: false, showAllActivity: false, showMore: false, advanced: false, editing: '', busy: '', skillFilter: '', skillShow: 'top', runGoal: '', projectsBy: 'week', showAllProjects: false, replying: '', showAllNeeds: false, showCheckup: false, showAllUsed: false, openRun: '', showSetAside: false, showDetails: false, openNeed: '', tourStep: 0, habitsAt: 0, day: '', project: '' })
+const view = atom({ plugin: 'tobebestme', key: 'view' }, { tab: 'all', confirm: '', showNote: false, showAllActivity: false, showMore: false, advanced: false, editing: '', busy: '', skillFilter: '', skillShow: 'top', runGoal: '', projectsBy: 'week', showAllProjects: false, replying: '', showAllNeeds: false, showCheckup: false, showAllUsed: false, showAllIdeas: false, openRun: '', showSetAside: false, showDetails: false, openNeed: '', openPick: '', tourStep: 0, habitsAt: 0, day: '', project: '' })
 const override = atom({ plugin: 'tobebestme', key: 'override' }, { main: '', helpers: '' }) // models chosen for this session from the dashboard
 // This session's workflow runs, by run id: what each is for, its controls (paused, how many
 // agents at once, a model for the rest), and each agent's state, model, tokens and cost.
@@ -735,7 +736,8 @@ async function readEveryProject($, force) {
       // a transcript keeps its last figures until it is read again, so totals never dip mid-read;
       // rows from before sessions' details and skill runs were kept (1.0) are read again once
       if (row) d.files[f.rel] = row
-      if (!row || row[0] !== f.size || row[1] !== f.mtime || row.length < 7) todo.push(f)
+      // (a row from before hours were kept is read again once if it is recent enough to matter to a window's first day)
+      if (!row || row[0] !== f.size || row[1] !== f.mtime || row.length < 7 || (row.length < 8 && f.mtime > now - 9 * 86_400_000)) todo.push(f)
     }
     todo.sort((a, z) => z.mtime - a.mtime) // the newest first: they are the ones that may wait for you
     usageStore = { v: 1, at: usageStore.at, dirs, floor: Number(usageStore.floor) || 0 }
@@ -750,7 +752,7 @@ async function readEveryProject($, force) {
         // a session's own transcript also keeps what it was about and what it waits for, and
         // every transcript the skills it ran
         const meta = f.rel.includes('/') ? null : r.meta || null
-        d.files[f.rel] = r.isSkipped ? [f.size, f.mtime, 0, {}, 1, meta, null] : [f.size, f.mtime, r.last, r.days, 0, meta, r.skills || null]
+        d.files[f.rel] = r.isSkipped ? [f.size, f.mtime, 0, {}, 1, meta, null, null] : [f.size, f.mtime, r.last, r.days, 0, meta, r.skills || null, recentHours(r.hours, now)]
         if (!d.cwd && r.cwd) d.cwd = r.cwd
       })
       usageVersion += 1
@@ -2007,10 +2009,10 @@ async function checkAlerts($) {
       fire.push(['warning', 'At your pace the ' + limitLabel(r.kind).toLowerCase() + ' runs out around ' + fmtClock(o.fullAt, now) + ', ' + roughSpan(shortfall(o)) + ' before it resets.', 'pace:' + r.kind + ':' + tag])
     }
   }
-  if (pct() >= opts.contextWarnAt && !a.context) fire.push(['warning', 'Context is ' + pct() + '% full. A handoff note now makes a fresh start easy.'])
+  if (pct() >= opts.contextWarnAt && !a.context) fire.push(['warning', 'Context reached ' + pct() + '%, past your ' + opts.contextWarnAt + '% warning. A handoff note now makes a fresh start easy.'])
   next.context = pct() >= opts.contextWarnAt
   const helpersSwitched = opts.mode === 'automatic' && !opts.helpersAlwaysCheap && routeFor(true, reached) !== null
-  if (helpersSwitched && !a.routing) fire.push(['info', 'Helpers now use ' + opts.cheapModel + ' to save budget.'])
+  if (helpersSwitched && !a.routing) fire.push(['info', 'Helpers now use ' + titleCaseWord(opts.cheapModel) + ' to save budget.'])
   next.routing = helpersSwitched
   if (JSON.stringify(next) !== JSON.stringify(a)) await update($, alerts, () => next)
   for (const [level, text, key] of fire) await alert($, level, text, key)
@@ -2625,9 +2627,10 @@ function actions($, d) {
       if (key === 'note') return writeNote()
       if (key === 'use-sonnet') return chooseModel($, { main: 'sonnet' }, 'Sonnet is on for this session.')
       if (key === 'use-opus') return chooseModel($, { main: 'opus' }, 'Opus is on for this session.')
-      if (key === 'helpers-cheap') return chooseModel($, { helpers: opts.cheapModel }, 'Helpers in this session now use ' + opts.cheapModel + '.')
+      if (key === 'helpers-cheap') return chooseModel($, { helpers: opts.cheapModel }, 'Helpers in this session now use ' + titleCaseWord(opts.cheapModel) + '.')
       if (key === 'cheap-sonnet') return setOption($, 'cheapModel', 'sonnet')
       if (key === 'model-default') return chooseModel($, { main: '', helpers: '' }, 'Back to the usual models for this session.')
+      if (key === 'workflow-start') return fillPrompt($, 'Use a workflow for this: ', 'a workflow request, after you finish the sentence')
       if (key === 'mcp') return fillPrompt($, '/mcp', 'your MCP servers')
       if (key === 'memory') return fillPrompt($, '/memory', 'your memory files')
       if (key === 'plugins') return fillPrompt($, '/plugin', 'your plugins')

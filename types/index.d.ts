@@ -88,10 +88,12 @@ export type BudgetView = {
   showAllNeeds: boolean
   showCheckup: boolean
   showAllUsed: boolean
+  showAllIdeas?: boolean
   openRun?: string
   showSetAside?: boolean
   showDetails?: boolean
   openNeed?: string
+  openPick?: string // the project in Pick up drawn whole, besides the first
   tourStep?: number
   habitsAt?: number
   day?: string // a day of the week picked on Home's calendar ('YYYY-MM-DD'), or '' for the week

@@ -125,7 +125,7 @@ export const SETTINGS = [
     fields: [
       { field: 'workflowCheck', kind: 'choice', options: WORKFLOW_CHECKS, label: 'Check each workflow before it runs', help: 'Explain it shows what a workflow will do as it starts. Ask me first asks in the chat before it starts.' },
       { field: 'workflowTips', kind: 'boolean', label: 'Suggest workflows', help: 'When a task looks like a job for a workflow, say so and which kind, with a ready request.' },
-      { field: 'workflowBudget', kind: 'number', unit: '$', presets: [0, 5, 10, 25, 50], min: 0, max: 100000, label: 'Pause a workflow past', help: 'Once a run costs this much, new agents wait until you raise the limit or resume. Nothing is stopped, and each run can change its own.' },
+      { field: 'workflowBudget', kind: 'number', unit: '$', presets: [0, 5, 10, 25, 50], min: 0, max: 100000, label: 'Run spending limit', help: 'Once a run costs this much, new agents wait until you raise the limit or resume. Nothing is stopped, and each run can change its own.' },
       { field: 'turnLine', kind: 'boolean', label: 'Line under each answer', help: "Context, session cost and the turn's cost." },
       { field: 'band', kind: 'boolean', label: 'Summary above the prompt', help: 'One line in every session, with a button that opens this dashboard.' },
       { field: 'openOnStart', kind: 'boolean', label: 'Open the dashboard in every session', help: 'Beside the chat: at the start in a wide window, otherwise with your first message.' },
@@ -294,7 +294,7 @@ export function modeWords(o) {
 
 export function atBudgetWords(o) {
   if (o.atBudget === 'hold') return 'New prompts are held until you raise it.'
-  if (o.atBudget === 'cheaper' && o.mode !== 'off') return 'Every request now uses ' + o.cheapModel + '.'
+  if (o.atBudget === 'cheaper' && o.mode !== 'off') return 'Every request now uses ' + titleCase(o.cheapModel) + '.'
   return ''
 }
 
@@ -346,14 +346,10 @@ export function isEarly(r, o) {
   return shortfall(o) >= Math.max(20 * 60_000, (WINDOW_MS[r.kind] || 5 * 3_600_000) * 0.08)
 }
 
-// "a day", "2.5 hours", "40 minutes": how early, said the way a person would.
+// One way of saying a span everywhere (Home, This session, alerts), so the same limit never reads
+// "32 h 38 min" in one place and "a day" in another.
 export function roughSpan(ms) {
-  const h = ms / 3_600_000
-  if (h >= 36) return Math.round(h / 24) + ' days'
-  if (h >= 20) return 'a day'
-  if (h >= 1.25) return Math.round(h * 2) / 2 + ' hours'
-  if (h >= 0.75) return 'an hour'
-  return Math.max(1, Math.round(ms / 60_000)) + ' minutes'
+  return fmtSpan(ms)
 }
 
 export function limitLevel(r, o, opts) {
@@ -395,6 +391,25 @@ function turnGap(turns) {
   return gaps.length >= 2 ? median(gaps) : null
 }
 
+// How the context is growing and what that means for the compaction window: the point Claude Code
+// compacts at (or the window's end), the tokens left before it, the typical growth of a turn (the
+// median of the recent ones that grew, once there are two) and so about how many turns remain.
+export function contextPace(d) {
+  const recent = d.turns.slice(-8)
+  const b = d.breakdown
+  const compactAt = b && b.isAutoCompactEnabled && typeof b.autoCompactThreshold === 'number' ? b.autoCompactThreshold : null
+  const target = compactAt || d.window
+  if (!(target > 0)) return null
+  const free = Math.max(0, target - d.tokens)
+  const growth = []
+  for (let i = 1; i < recent.length; i++) {
+    const g = (recent[i].context || 0) - (recent[i - 1].context || 0)
+    if (recent[i].context && recent[i - 1].context && g > 0) growth.push(g)
+  }
+  const per = growth.length >= 2 ? median(growth) : null
+  return { target, compactAt, free, per, mean: growth.length ? avg(growth) : 0, turns: per ? Math.floor(free / per) : null, gap: turnGap(d.turns) }
+}
+
 // One row per thing that can run out: usage limits (from their pace), context (turns or
 // tokens left before auto-compaction) and budgets (money left, and turns at the average).
 // Useful from the first minute; turn-based figures join in once there are turns.
@@ -405,27 +420,18 @@ export function outlook(d) {
     const tip = { title: label + ', ' + Math.round(l.r.percentUsed) + '% used', lines: [paceSentence(l, d.now), 'Pace is your use so far over the time this window has run, so breaks count.'] }
     if (isEarly(l.r, l.o)) rows.push({ label, value: 'runs out around ' + fmtClock(l.o.fullAt, d.now), sub: l.o.resetAt !== null ? fmtSpan(l.o.resetAt - l.o.fullAt) + ' before it resets' : '', level: 'warning', soon: l.o.fullAt - d.now, tip })
     else if (runsOutFirst(l.o)) rows.push({ label, value: 'lasts until about its reset', sub: 'runs out around ' + fmtClock(l.o.fullAt, d.now) + ', just before ' + fmtClock(l.o.resetAt, d.now), level: 'success', soon: Infinity, tip })
-    else if (l.o.atReset !== null) rows.push({ label, value: 'lasts until it resets', sub: 'about ' + Math.round(l.o.atReset) + '% by ' + fmtClock(l.o.resetAt, d.now), level: 'success', soon: Infinity, tip })
+    else if (l.o.atReset !== null) rows.push({ label, value: 'lasts until it resets', sub: 'on pace for about ' + Math.round(l.o.atReset) + '% by its reset at ' + fmtClock(l.o.resetAt, d.now), level: 'success', soon: Infinity, tip })
     else rows.push({ label, value: Math.round(l.r.percentUsed) + '% used', sub: l.o.resetAt !== null ? 'resets ' + fmtClock(l.o.resetAt, d.now) : '', level: l.level, soon: Infinity, tip: { title: tip.title, lines: ['The pace shows once the window has run a quarter of an hour.'] } })
   }
 
   const recent = d.turns.slice(-8)
   const gap = turnGap(d.turns)
-  const b = d.breakdown
-  const compactAt = b && b.isAutoCompactEnabled && typeof b.autoCompactThreshold === 'number' ? b.autoCompactThreshold : null
-  const target = compactAt || d.window
-  if (target > 0) {
-    const free = Math.max(0, target - d.tokens)
-    const growth = []
-    for (let i = 1; i < recent.length; i++) {
-      const g = (recent[i].context || 0) - (recent[i - 1].context || 0)
-      if (recent[i].context && recent[i - 1].context && g > 0) growth.push(g)
-    }
+  const pace = contextPace(d)
+  if (pace) {
+    const { compactAt, free, per, turns: n } = pace
     const label = compactAt ? 'Auto-compaction' : 'Context'
-    const tip = { title: label, lines: [compactAt ? 'Claude Code summarizes the conversation once it reaches ' + fmtTokens(compactAt) + ' tokens.' : 'The window holds ' + fmtTokens(d.window) + ' tokens.', growth.length >= 2 ? 'Recent turns added about ' + fmtTokens(avg(growth)) + ' tokens each.' : 'A turn count shows after a few turns.'] }
-    if (growth.length >= 2) {
-      const per = median(growth)
-      const n = Math.floor(free / per)
+    const tip = { title: label, lines: [compactAt ? 'Claude Code summarizes the conversation once it reaches ' + fmtTokens(compactAt) + ' tokens.' : 'The window holds ' + fmtTokens(d.window) + ' tokens.', per ? 'Recent turns added about ' + fmtTokens(pace.mean) + ' tokens each.' : 'A turn count shows after a few turns.'] }
+    if (per) {
       if (n < 1) rows.push({ label, value: 'likely within a turn', sub: fmtTokens(free) + ' tokens to go; recent turns added about ' + fmtTokens(per), level: 'warning', soon: 0, tip })
       else rows.push({ label, value: 'about ' + plural(n, 'turn', 'turns') + ' away', sub: fmtTokens(free) + ' tokens to go' + (gap && n * gap >= 60_000 ? ', about ' + fmtSpan(n * gap) : ''), level: n <= 3 ? 'warning' : 'success', soon: gap ? n * gap : Infinity, tip })
     } else {
@@ -505,7 +511,10 @@ export function advise(d) {
   }
   const cheap = titleCase(o.cheapModel)
   if (d.cheapMissing) push(1, 'warning', cheap + " isn't available on your account", 'Requests sent to it got no answer, so helpers keep their own model and nothing switches to save budget. Sonnet is the next cheaper choice.', { key: 'cheap-sonnet', label: 'Use Sonnet as the cheaper model' }, true)
-  const goCheap = o.mode !== 'always' && o.mode !== 'off' ? { key: 'mode-always', label: 'Use ' + cheap + ' for everything' } : undefined
+  // the lighter step first: helpers (searching, reading) move to the cheaper model, while the main
+// conversation's own model is Right model for the job's call, so the two never advise differently
+  const ovNow = d.override || { main: '', helpers: '' }
+  const goCheap = o.mode !== 'off' && o.mode !== 'always' && !ovNow.helpers && !o.helpersAlwaysCheap ? { key: 'helpers-cheap', label: 'Use ' + cheap + ' for helpers' } : undefined
   const budgets = { key: 'spending', label: 'Change budgets' }
 
   if (o.sessionBudget > 0 && d.usd >= o.sessionBudget) push(0, 'error', 'Session budget reached', 'This session has cost ' + fmtUsd(d.usd) + ' of ' + fmtUsd(o.sessionBudget) + '. ' + atBudgetWords(o), budgets, true)
@@ -782,6 +791,29 @@ BEGIN { FS = "\034"; cur = "" }
 END { flush() }
 `
 
+// A transcript's use by local hour, to the nearest ten-thousandth of a dollar:
+// { 'YYYY-MM-DD': [hour, usd, hour, usd, ...] }, kept so the first day of a limit's window can be
+// counted from the hour the window opened, not from midnight.
+function addHour(hours, at, model, t) {
+  const date = dayKey(at)
+  if (!isSafeKey(date)) return
+  const usd = tokensUsd(model, t.map((v) => Number(v) || 0))
+  if (!(usd > 0)) return
+  const hour = new Date(at).getHours()
+  const row = (hours[date] = hours[date] || [])
+  const i = row.indexOf(hour)
+  if (i >= 0 && i % 2 === 0) row[i + 1] = Math.round((row[i + 1] + usd) * 1e4) / 1e4
+  else row.push(hour, Math.round(usd * 1e4) / 1e4)
+}
+
+// The hours worth keeping: the last ten days, the most a window's first day can reach back.
+export function recentHours(hours, now, days = 10) {
+  const keep = new Set(lastDays(now, days))
+  const out = {}
+  for (const date of Object.keys(hours || {})) if (keep.has(date)) out[date] = hours[date]
+  return out
+}
+
 function addTokens(days, date, model, t) {
   if (!isSafeKey(date)) return
   const day = (days[date] = days[date] || {})
@@ -799,7 +831,11 @@ export function parseScan(text) {
     const p = line.split('\t')
     if (p[0] === 'S' && p.length >= 10) {
       const at = Date.parse(p[2] + '0:00Z')
-      if (Number.isFinite(at)) addTokens(file(p[1]).days, dayKey(at), p[3], p.slice(4, 10))
+      if (Number.isFinite(at)) {
+        const f = file(p[1])
+        addTokens(f.days, dayKey(at), p[3], p.slice(4, 10))
+        addHour((f.hours = f.hours || {}), at, p[3], p.slice(4, 10))
+      }
     } else if (p[0] === 'K' && p.length >= 6) {
       const f = file(p[1])
       const name = p[2].replace(/^\//, '')
@@ -863,7 +899,7 @@ function oneLine(s, n) {
 
 // The same from a transcript's text, where no shell can run the search.
 export function parseTranscript(text) {
-  const f = { days: {}, cwd: '', last: 0 }
+  const f = { days: {}, hours: {}, cwd: '', last: 0 }
   const seen = new Set()
   const meta = { branch: '', title: '', prompt: '', longPrompt: '', pr: 0, url: '', recap: '', entry: '' }
   // what it waits for, cleared the way the search clears it
@@ -950,6 +986,7 @@ export function parseTranscript(text) {
     if (x.gitBranch) meta.branch = String(x.gitBranch)
     f.last = Math.max(f.last, at)
     addTokens(f.days, dayKey(at), m.model, t)
+    addHour(f.hours, at, m.model, t)
   }
   f.meta = sessionMeta(meta.branch, meta.title, meta.prompt, meta.longPrompt, meta.pr, meta.url, wait, meta.recap, meta.entry, isScheduled)
   if (Object.keys(skills).length) f.skills = skills
@@ -1010,7 +1047,7 @@ export function usageSummary(store, now, cheap = 'haiku') {
   for (const folder of Object.keys(dirs)) {
     const dir = dirs[folder] || {}
     const at = projectOf(dir.cwd, folder)
-    const p = (projects[at.key] = projects[at.key] || { key: at.key, name: at.name, path: at.path, days: keys.map(() => 0), models: {}, tokens: [0, 0, 0, 0], helpers: 0, workflows: 0, sessionsToday: new Set(), sessionsWeek: new Set(), worktrees: new Set(), lastAt: 0, answers: 0 })
+    const p = (projects[at.key] = projects[at.key] || { key: at.key, name: at.name, path: at.path, days: keys.map(() => 0), models: {}, hours: {}, noHours: {}, tokens: [0, 0, 0, 0], helpers: 0, workflows: 0, sessionsToday: new Set(), sessionsWeek: new Set(), worktrees: new Set(), lastAt: 0, answers: 0 })
     if (at.isWorktree) p.worktrees.add(folder)
     for (const rel of Object.keys(dir.files || {})) {
       const row = dir.files[rel] || []
@@ -1026,6 +1063,15 @@ export function usageSummary(store, now, cheap = 'haiku') {
           const usd = tokensUsd(model, t)
           days[i] += usd
           p.days[i] += usd
+          // the last eight days by hour, for the first day of a window; a transcript read before hours were kept
+          // has none, and its use that day is clipped by the share of the day that was left instead
+          if (i >= keys.length - 8) {
+            const at = row[7] && row[7][date]
+            if (at) {
+              const prof = (p.hours[date] = p.hours[date] || new Array(24).fill(0))
+              for (let j = 0; j + 1 < at.length; j += 2) prof[at[j]] += at[j + 1]
+            } else p.noHours[date] = (p.noHours[date] || 0) + usd
+          }
           p.lastAt = Math.max(p.lastAt, row[2] || 0)
           if (date === today) {
             p.sessionsToday.add(sid)
@@ -1055,6 +1101,8 @@ export function usageSummary(store, now, cheap = 'haiku') {
       name: p.name,
       path: p.path,
       days: p.days,
+      hours: p.hours,
+      noHours: p.noHours,
       today: p.days[p.days.length - 1],
       week: sum(p.days.slice(-7)),
       total: sum(p.days),
@@ -1093,7 +1141,9 @@ function times(x) {
 export function modelName(model) {
   const m = shortModel(model).replace(/\[.*\]$/, '')
   const parts = /^(fable|mythos|opus|sonnet|haiku)-(\d+)(?:-(\d+))?/.exec(m)
-  return parts ? titleCase(parts[1]) + ' ' + parts[2] + (parts[3] && parts[3].length === 1 ? '.' + parts[3] : '') : m
+  if (parts) return titleCase(parts[1]) + ' ' + parts[2] + (parts[3] && parts[3].length === 1 ? '.' + parts[3] : '')
+  // a family on its own ("haiku", as a setting or a helper's alias) is spelled the same way
+  return /^(fable|mythos|opus|sonnet|haiku)$/.test(m) ? titleCase(m) : m
 }
 
 // What stands out across projects this week, in plain words: at most three, the most useful first.
@@ -1190,7 +1240,7 @@ export function habitIdeas(d, { max = 3, snooze = 30 * 86_400_000 } = {}) {
     }
   }
   const open = [...signals, ...habits.filter((x) => !x.isDone)].filter((x) => !isPut(x.key)).sort((a, z) => z.weight - a.weight)
-  return { ideas: open.slice(0, max), have: habits.filter((x) => x.isDone).length, total: habits.length, isDone: open.length === 0 }
+  return { ideas: open.slice(0, max), open: open.length, have: habits.filter((x) => x.isDone).length, total: habits.length, isDone: open.length === 0 }
 }
 
 // `o.fmt` writes a cost as the page does (a dollar figure, or a share of the weekly limit).
@@ -2281,6 +2331,8 @@ export function costShare(d) {
 // A share of the weekly limit, as short as it can be read: "<0.1%", "0.4%", "12%".
 export function fmtShare(pct) {
   if (!(pct > 0)) return '0%'
+  // more than the whole limit is said in weeks of it: "150%" of a weekly limit reads as a mistake
+  if (pct >= 100) return Math.round(pct / 10) / 10 + ' weeks’ worth'
   if (pct < 0.1) return '<0.1%'
   if (pct < 10) return Math.round(pct * 10) / 10 + '%'
   return Math.round(pct) + '%'
@@ -2290,7 +2342,7 @@ export function fmtShare(pct) {
 export function shareWords(usd, share) {
   if (!share || !(usd > 0)) return ''
   const pct = usd * share.pctPerUsd
-  return pct < 1 ? 'under 1% of your weekly limit' : 'about ' + Math.round(pct) + '% of your weekly limit'
+  return pct < 1 ? 'under 1% of your weekly limit' : pct >= 100 ? 'about ' + fmtShare(pct) + ' of your weekly limit' : 'about ' + Math.round(pct) + '% of your weekly limit'
 }
 
 // Which model did most of a stage's work, from what it cost on each.
@@ -2452,9 +2504,9 @@ export function modelAdvice(d) {
   } else if (ov.main) {
     rec = { title: titleCase(shortModel(ov.main).split('-')[0]) + ' is on for this session', detail: 'You chose it here; other sessions keep their own model. Switch back for hard design or review.', action: { key: 'model-default', label: 'Go back to the usual model' } }
   } else if (family === 'fable' && worst !== 'success') {
-    rec = { model: 'opus', title: 'Switch this session to Opus', detail: (early ? limitLabel(early.r.kind) + ' runs out early at this pace. ' : 'A usage limit is past your alert. ') + 'Opus costs less than half as much per token as ' + modelName(main) + ' and handles most coding and design well. Switch back for the hardest problems.', action: { key: 'use-opus', label: 'Use Opus here' } }
+    rec = { model: 'opus', title: 'Switch this session to Opus', detail: (early ? limitLabel(early.r.kind) + ' runs out early at this pace. ' : 'A usage limit is past your alert. ') + 'Opus costs less than half as much per token as ' + modelName(main) + ' and handles most coding and design well. Switch back for the hardest problems.', action: { key: 'use-opus', label: 'Switch this conversation to Opus' } }
   } else if (family === 'opus' && worst !== 'success') {
-    rec = { model: 'sonnet', title: 'Switch this session to Sonnet', detail: (early ? limitLabel(early.r.kind) + ' runs out early at this pace. ' : 'A usage limit is past your alert. ') + 'Sonnet writes and fixes code nearly as well as Opus and uses the limit much more slowly. Switch back for hard design or review.', action: { key: 'use-sonnet', label: 'Use Sonnet here' } }
+    rec = { model: 'sonnet', title: 'Switch this session to Sonnet', detail: (early ? limitLabel(early.r.kind) + ' runs out early at this pace. ' : 'A usage limit is past your alert. ') + 'Sonnet writes and fixes code nearly as well as Opus and uses the limit much more slowly. Switch back for hard design or review.', action: { key: 'use-sonnet', label: 'Switch this conversation to Sonnet' } }
   } else if (worst === 'error' && !helpersCheap) {
     rec = { model: o.cheapModel, title: 'Put helpers on ' + cheap, detail: 'A limit is nearly out. Helpers mostly search and read, which ' + cheap + ' does well.', action: { key: 'helpers-cheap', label: 'Helpers on ' + cheap + ' here' } }
   } else if ((family === 'opus' || family === 'fable') && mix === 'explore' && !helpersCheap) {
@@ -2470,7 +2522,7 @@ export function modelAdvice(d) {
   } else {
     rec = { title: 'The right model for each kind of work', detail: 'A suggestion appears after the first answer.' }
   }
-  return { main: shortModel(main), family, mix, mixWords, rec, override: ov }
+  return { main: main ? modelName(main) : '', family, mix, mixWords, rec, override: ov }
 }
 
 // How far the limits stretch for a long run: hours of work at the recent pace, and when to start.
@@ -2732,11 +2784,40 @@ function tipLabel(x, y, text, W, H, cls = 'tip') {
 // reports. Only the vivid colours change: either variant still reads on the other pane, so a drawing
 // stays legible even where the reported appearance and the pane's own disagree. Neutrals, the
 // playhead and its knockout among them, are drawn to read on both and never change.
-const LIGHT_PAIRS = [['#0A84FF', '#007AFF'], ['#BF5AF2', '#AF52DE'], ['#FF375F', '#FF2D55'], ['#64D2FF', '#0A84C2'], ['#00C7BE', '#0C9C94'], ['#30D158', '#28A745'], ['#FF9F0A', '#E07C00'], ['#FF453A', '#E5302A'], ['#FFD60A', '#D69E00'], ['#AC8E68', '#8F7455']]
+// A drawing's words are held to the same rule as the page's (4.5:1), so the grey of its labels, the
+// white of "Now" and the amber of "Runs out" each have a light-theme variant too. Words inside a hover
+// card sit on the card's own dark box and keep theirs (they are not direct children of the drawing).
+const LIGHT_PAIRS = [['#0A84FF', '#007AFF'], ['#BF5AF2', '#AF52DE'], ['#FF375F', '#FF2D55'], ['#64D2FF', '#0A84C2'], ['#00C7BE', '#0C9C94'], ['#30D158', '#28A745'], ['#FF9F0A', '#D47000'], ['#FF453A', '#E5302A'], ['#FFD60A', '#B8860B'], ['#AC8E68', '#8F7455']]
+const LIGHT_TEXT = [['#F2F2F7', '#1C1C1E'], ['#8E8E93', '#636366'], ['#FF9F0A', '#B34C00'], ['#FF453A', '#D70015'], ['#AEAEB2', '#636366']]
 const LIGHT_CSS =
   '<style>@media (prefers-color-scheme:light){' +
   LIGHT_PAIRS.map(([dark, light]) => '[fill="' + dark + '"]{fill:' + light + '}[stroke="' + dark + '"]{stroke:' + light + '}').join('') +
+  LIGHT_TEXT.map(([dark, light]) => 'svg>text[fill="' + dark + '"]{fill:' + light + '}').join('') +
+  // what is drawn to read on dark and nearly vanishes on white is turned round or darkened: the track
+  // is firmer, the strand under it and the posts are a mid grey, and the playhead is dark with a
+  // white knockout (it is white with a dark one on a dark pane)
+  'svg>rect[fill="#8E8E93"][fill-opacity="0.24"]{fill-opacity:.4}' +
+  'svg>rect[fill="#AEAEB2"]{fill:#6E6E73}svg>line[stroke="#AEAEB2"]{stroke:#6E6E73}' +
+  'svg>line[stroke="#1C1C1E"]{stroke:#FFFFFF}svg>line.now[stroke="#F2F2F7"]{stroke:#1C1C1E}' +
+  'svg>line[stroke="#8E8E93"]{stroke-opacity:.8}' +
   '}</style>'
+
+// A colour for words and dots drawn as text, which cannot follow the appearance the way a drawing's
+// colours do: the vivid colour where it reads on a white pane too, else its light-theme variant,
+// which reads on a dark one as well (3:1 on both).
+export function midHex(hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''))
+  if (!m) return hex
+  const lin = (v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+  const n = parseInt(m[1], 16)
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+  if (L <= 0.3) return hex
+  const pair = LIGHT_PAIRS.find(([dark]) => dark.toLowerCase() === m[0].toLowerCase())
+  return pair ? pair[1] : hex
+}
 function withLight(svg) {
   const at = svg.indexOf('>') + 1
   return svg.slice(0, at) + LIGHT_CSS + svg.slice(at)
@@ -3089,9 +3170,105 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
     parts.push(...tips)
   }
   // fluid, it stretches to its slot's width; its strokes keep their weight as it does
-  const size = isFluid ? ' preserveAspectRatio="none"' : ' width="' + W + '" height="' + H + '"'
+  // every drawing names its size: the app draws markup without one at the browser's default 300px
+  const size = ' width="' + W + '" height="' + H + '"'
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '"' + size + '>' + (days ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>'
   return withLight(svg)
+}
+
+// The context window, laid out like the week is: its runway over a row of bars, one per turn. The
+// track is the window compaction works to; the fill is what is in use, a faint ghost ahead of it is
+// where the next few turns at the recent pace take it, and a post marks where Claude Code compacts.
+// Under it, each turn's context size stands as a bar against a dashed line at the compaction point, so
+// whether the conversation will make it reads as bars climbing towards a line, then the ghosts that
+// reach it. Flags over the track say where it is now, where it compacts and how big the window is;
+// each is dropped, not overlapped, when the drawing is narrow.
+// g: { used, total (tokens), compactAt (tokens | null), warnAt, cheaperAt (percent), hex, early (bool),
+//      per (tokens a turn | null), ahead (turns to draw ahead), turns: [{ context, title }], labels: { now, compact, end } }
+export function svgContext(g, { width = 600 } = {}) {
+  const W = Math.max(240, Math.round(width))
+  const total = Math.max(1, g.total)
+  const x = (t) => Math.max(0, Math.min(W, (t / total) * W))
+  const ns = ' vector-effect="non-scaling-stroke"'
+  const T = 20
+  const hasBars = (g.turns || []).length >= 3
+  const BH = 56
+  const BASE = T + 10 + 14 + BH
+  const H = hasBars ? BASE + 22 : T + 24
+  const u = x(g.used)
+  const label = (tx, ty, str, anchor, fill, weight) => '<text x="' + tx.toFixed(1) + '" y="' + ty + '" font-size="12" fill="' + (fill || HEX.marker) + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
+  const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="10" fill="#8E8E93" fill-opacity="0.24"/>']
+  if (u > 0) parts.push('<rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/>')
+  const stop = g.compactAt || g.total
+  if (g.per && g.ahead > 0) {
+    const to = x(Math.min(stop, g.used + g.per * g.ahead))
+    if (to > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (to - u).toFixed(1) + '" height="10" fill="' + (g.early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>')
+  }
+  // where Claude Code warns you and switches helpers: short neutral ticks that say so on hover
+  for (const [at, words] of [[g.warnAt, 'Warning at ' + g.warnAt + '%'], [g.cheaperAt, 'Helpers switch at ' + g.cheaperAt + '%']]) {
+    if (at > 0 && at < 100) parts.push('<line x1="' + x((at / 100) * total).toFixed(1) + '" x2="' + x((at / 100) * total).toFixed(1) + '" y1="' + T + '" y2="' + (T + 10) + '" stroke="#8E8E93" stroke-opacity="0.8" stroke-width="1.5"' + ns + '>' + title(words) + '</line>')
+  }
+  const flags = []
+  if (g.compactAt && g.compactAt < g.total) {
+    const cx = x(g.compactAt)
+    const stroke = g.early ? HEX.warning : '#AEAEB2'
+    parts.push('<line class="cmp" x1="' + cx.toFixed(1) + '" x2="' + cx.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 16) + '" stroke="' + stroke + '" stroke-width="3"' + ns + '/>')
+    // the compaction post sits just past "now" more often than not: its words run on to the right of it and
+    // now's run back to the left, so the two never need the same room
+    if (g.labels.compact) flags.push({ at: cx, text: g.labels.compact, fill: g.early ? HEX.warning : HEX.marker, weight: g.early ? 600 : 0, wide: g.labels.compact.length * 6.9, rank: 2, anchor: cx >= u ? 'start' : 'end' })
+  }
+  parts.push('<line x1="' + u.toFixed(1) + '" x2="' + u.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 16) + '" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
+  parts.push('<line class="at" x1="' + u.toFixed(1) + '" x2="' + u.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 16) + '" stroke="#F2F2F7" stroke-width="2"' + ns + '/>')
+  if (g.labels.now) flags.push({ at: u, text: g.labels.now, fill: '#F2F2F7', weight: 600, wide: g.labels.now.length * 6.9, rank: 3, anchor: g.compactAt && g.compactAt < g.total && x(g.compactAt) >= u && x(g.compactAt) - u < 150 ? 'end' : undefined })
+  parts.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="' + (T - 6) + '" y2="' + (T + 16) + '" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
+  if (g.labels.end) flags.push({ at: W, text: g.labels.end, fill: HEX.marker, wide: g.labels.end.length * 6.9, edge: 'end', rank: 1 })
+  const placed = []
+  for (const f of flags.sort((a, z) => z.rank - a.rank)) {
+    let anchor = f.anchor || f.edge || 'middle'
+    let from = anchor === 'end' ? f.at - f.wide : anchor === 'start' ? f.at : f.at - f.wide / 2
+    if (from < 0) {
+      anchor = 'start'
+      from = Math.max(0, f.at)
+    }
+    if (from + f.wide > W) {
+      anchor = 'end'
+      from = W - f.wide
+    }
+    if (placed.some(([a, b]) => from < b + 8 && from + f.wide > a - 8)) continue
+    placed.push([from, from + f.wide])
+    parts.push(label(anchor === 'start' ? from : anchor === 'end' ? from + f.wide : from + f.wide / 2, 13, f.text, anchor, f.fill, f.weight || undefined))
+  }
+  let css = ''
+  if (hasBars) {
+    const top = T + 10 + 14
+    const turns = g.turns
+    const ahead = g.per && g.ahead > 0 ? Math.min(g.ahead, Math.max(0, Math.ceil(((g.compactAt || g.total) - g.used) / g.per))) : 0
+    const slots = Math.max(turns.length + ahead, 12)
+    const slot = W / slots
+    const bw = Math.min(26, Math.max(4, slot * 0.64))
+    const y = (tokens) => BASE - Math.max(0, Math.min(1, tokens / total)) * BH
+    parts.push('<rect x="0" y="' + BASE + '" width="' + W + '" height="1" fill="#8E8E93" fill-opacity="0.35"/>')
+    if (g.compactAt && g.compactAt < g.total) parts.push('<line x1="0" x2="' + W + '" y1="' + y(g.compactAt).toFixed(1) + '" y2="' + y(g.compactAt).toFixed(1) + '" stroke="' + (g.early ? HEX.warning : HEX.marker) + '" stroke-width="1" stroke-dasharray="4 4"' + ns + '>' + title('Claude Code compacts at ' + fmtTokens(g.compactAt) + ' tokens') + '</line>')
+    const tips = []
+    turns.forEach((t, i) => {
+      const cx = (i + 0.5) * slot
+      const top2 = y(t.context)
+      parts.push('<g class="p c' + i + '"><rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + top2.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, BASE - top2).toFixed(1) + '" rx="2" fill="' + (t.hex || g.hex) + '"/><rect x="' + (cx - slot / 2).toFixed(1) + '" y="' + top + '" width="' + slot.toFixed(1) + '" height="' + (BASE - top) + '" fill="transparent"/></g>')
+      if (t.title) {
+        tips.push(tipLabel(cx, top2, t.title, W, H, 'tip t' + i))
+        css += '.c' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
+      }
+    })
+    for (let j = 0; j < ahead; j++) {
+      const cx = (turns.length + j + 0.5) * slot
+      const top2 = y(Math.min(g.compactAt || g.total, g.used + g.per * (j + 1)))
+      parts.push('<rect class="ahead" x="' + (cx - bw / 2).toFixed(1) + '" y="' + top2.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, BASE - top2).toFixed(1) + '" rx="2" fill="' + (g.early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>')
+    }
+    parts.push(...tips)
+    parts.push(label(0, H - 5, 'Context after each of the last ' + turns.length + ' turns', 'start'))
+    if (ahead > 0 && W - (turns.length * slot) > 96) parts.push(label(W, H - 5, 'at this pace', 'end'))
+  }
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + (hasBars ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>')
 }
 
 // Something working right now: a dot with a soft ring that widens and fades every 1.6 s, the way the
@@ -3160,7 +3337,7 @@ export function textRunway(g, cells = 20) {
 }
 
 export function svgForecast(f) {
-  const W = Math.max(280, Math.min(900, Math.round(f.width || 600)))
+  const W = Math.max(280, Math.min(1600, Math.round(f.width || 600)))
   const H = 168
   const L = 40
   const R = 14

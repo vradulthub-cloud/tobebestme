@@ -4,6 +4,10 @@
 
 **Keep several Claude Code projects going without losing track of what's waiting for you, what it costs, or how long your limits will last.**
 
+![The week by project on ToBeBestMe's Home pane: a day is pressed, then a project is picked out across the week. Sample data.](assets/demo.gif)
+
+[Landing page](https://vradulthub-cloud.github.io/tobebestme/) · [What it reads and sends](SECURITY.md) · Install: `/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme`
+
 A Claude Code **mod** for keeping several projects going at once. It answers the day's first questions, which chat is waiting for me and where did each project get to, lets you follow and steer every workflow Claude runs, and manages the three budgets every session spends:
 
 - **Usage limits:** the 5-hour and weekly limits on Claude plans.
@@ -104,7 +108,7 @@ A workflow is a script Claude writes to split a big job across many agents, usua
 - **How long you can keep going.** Each usage limit from its own pace (whether it lasts until it resets, or when it runs out), turns and tokens left before auto-compaction, and money left in each budget. Useful from the first minute; the first thing to run out is in bold.
 - **Wins this session.** What ToBeBestMe has actually saved: tokens freed by compaction, helpers that ran on the cheaper model, cache reuse, and notes and skills saved.
 - **Cheaper model.** Switch between Automatic, Always and Off right here.
-- **Save and shrink.** Write handoff note, Start fresh…, and Compact now…. Start fresh and Compact ask before they act.
+- **Make the conversation smaller.** Write handoff note, Start fresh…, and Compact now…. Start fresh and Compact ask before they act.
 
 ### Skills (6)
 
@@ -184,7 +188,7 @@ For the desktop app too, name the folder in `CLAUDE_CODE_PLUGIN_DIRS` in the `en
 
 ```bash
 claude plugin validate ./tobebestme   # static analysis: events hooked, API calls made, state used
-claude plugin test ./tobebestme       # 79 tests on the terminal and desktop surfaces, no sign-in or network needed
+claude plugin test ./tobebestme       # 86 tests on the terminal and desktop surfaces, no sign-in or network needed
 ```
 
 The end-to-end suite in `e2e/` uses Playwright. It draws every view in an empty session, a busy day (with long session titles and branch names) and with a workflow waiting for an answer, at 375, 768, 1280 and 1920 pixels wide. Boxes are sized as the app sizes them, so a long line that would push a column off the pane fails the check. Each view is checked in Chromium for:

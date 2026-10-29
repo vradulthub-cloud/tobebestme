@@ -410,7 +410,7 @@ test('a busy session leads with its most pressing problem, what fixing it saves,
     await ui.press({ key: 'tab-usage' })
     text = await shown(ui)
     expect(text).toContain('2m 14s')
-    expect(text).toContain('opus-5-5')
+    expect(text).toContain('Opus 5.5')
     expect(text).toContain('91%') // from cache: 9,000 of 9,900 input tokens
 
     await ui.press({ key: 'tab-skills' })
@@ -431,15 +431,18 @@ test('a usage limit on course to run out before it resets heads the dashboard, w
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'tab-overview' })
-  expect(await shown(ui)).toContain('5-hour limit runs out 2.5 hours early')
+  expect(await shown(ui)).toContain('5-hour limit runs out 2 h 30 min early')
   await ui.press({ key: 'tab-usage' })
   expect(await shown(ui)).toContain('At your pace in this window it runs out around')
-  // the runway says it first, as it does on Home; Show details adds the chart of the window so far
-  const runways = (await ui.findAll({ type: 'Svg' })).filter((s: any) => String(s.props.alt).startsWith('5-hour limit 60% used'))
-  expect(runways).toHaveLength(1)
+  // Usage opens on the forecast: the window so far, the line it is on and where that ends
+  const forecasts = async () => (await ui.findAll({ type: 'Svg' })).filter((s: any) => String(s.props.alt).startsWith('5-hour limit: 60% used'))
+  const text = await shown(ui)
+  expect(text).toContain('5-hour limit runs out') // the headline says when
+  expect(text).toContain('before it resets')
+  expect(await forecasts()).toHaveLength(1)
   await ui.press({ key: 'details' })
-  const charts = (await ui.findAll({ type: 'Svg' })).filter((s: any) => String(s.props.alt).startsWith('5-hour limit: 60% used'))
-  expect(charts).toHaveLength(1)
+  const charts = await forecasts()
+  expect(charts).toHaveLength(1) // Show details does not draw it twice
   expect(charts[0].props.isInteractive).toBe(true) // each point says what it is on hover
   await ui.unmount()
 })
@@ -458,14 +461,14 @@ test('a weekly limit running out a day early outranks a 5-hour limit that runs o
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'tab-overview' })
   let text = await shown(ui)
-  expect(text).toContain('Weekly limit runs out a day early')
+  expect(text).toContain('Weekly limit runs out 30 h 58 min early')
   expect(text).not.toContain('5-hour limit runs out')
-  expect((await ui.find({ type: 'Button', key: 'hero-action' }))?.props.label).toBe('Use Haiku for everything')
+  expect((await ui.find({ type: 'Button', key: 'hero-action' }))?.props.label).toBe('Use Haiku for helpers')
   // a desktop button draws its label alone, so tab names stay plain
   expect((await ui.find({ type: 'Button', key: 'tab-usage' }))?.props.label).toBe('Usage')
-  // the weekly widget says when it runs out and that it needs attention
+  // the verdict names what runs out first, and the weekly runway says when
+  expect(text).toContain('Weekly limit runs out around Sat')
   expect(text).toContain('runs out Sat')
-  expect(text).toContain('Needs attention')
 
   await ui.press({ key: 'tab-usage' })
   text = await shown(ui)
@@ -1061,6 +1064,113 @@ test('the week on Home is something to press: a day picks itself out and Project
   await ui.unmount()
 })
 
+test('the first day of the week on Home counts only what came after the window opened, not that morning', async ($, on) => {
+  // the weekly window opened on Sunday at 2 PM here; the same day held an answer at 9 AM and one at 4 PM
+  const opened = new Date(2026, 9, 18, 14, 0).getTime()
+  const at = (hour: number) => new Date(2026, 9, 18, hour, 0).toISOString()
+  stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: new Date(opened + 7 * 86_400_000).toISOString() }] })
+  const day = (hour: number, tokens: number) => [at(hour), 'claude-opus-5-5', 0, tokens, 0, 0] as Answer
+  transcripts(on, [
+    { path: '-Users-me-Projects-storefront/m1.jsonl', ageMs: 5 * 86_400_000, cwd: '/Users/me/Projects/storefront', answers: [day(9, 100_000), day(16, 100_000)] },
+    // a project that worked only before the window opened has nothing in it
+    { path: '-Users-me-Projects-notes/m2.jsonl', ageMs: 5 * 86_400_000, cwd: '/Users/me/Projects/notes', answers: [day(8, 400_000)] },
+  ])
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'usage-refresh' })
+  const byDay = (await ui.findAll({ type: 'Svg' })).map((x: any) => String(x.props.alt)).find((a: string) => a.includes('Use by day'))
+  expect(byDay).toBeTruthy()
+  // 100k Opus output tokens at $20 a million: the 4 PM answer alone, not both it and the 9 AM one
+  expect(byDay).toContain('Sunday $2.00')
+  expect(byDay).not.toContain('$4.00')
+  expect(byDay).not.toContain('$10.00')
+  await ui.unmount()
+})
+
+test('This session opens on its answer: what it cost, the window against where it compacts, and whether it will make it', async ($, on) => {
+  stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN } })
+  await $.command.run({ command: 'tobebestme', args: '' }) // reads the breakdown
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'tab-overview' })
+    const text = await shown(ui)
+    expect(text).toContain('$12.50')
+    expect(text).toContain('170k of 200k tokens (85%)')
+    expect(text).toContain('compacts at 180k')
+    expect(text).toMatch(/compacts this conversation|The window fills|Room for|Room to keep going/)
+    if (surface === 'desktop') {
+      const drawing = (await ui.findAll({ type: 'Svg' })).find((x: any) => String(x.props.alt).startsWith('Context window, 85% full'))
+      expect(drawing).toBeTruthy()
+      expect(drawing.props.width).toBeGreaterThan(200) // laid out at its own size, never the 300 by 150 default frame
+      expect(String(drawing.props.source)).toContain('class="cmp"') // the compaction post
+      expect(String(drawing.props.source)).toContain('Compacts at 180k')
+    }
+    await ui.unmount()
+  }
+})
+
+test('Usage opens on the forecast and where the week went, and Skills and Settings on their own answers', async ($, on) => {
+  stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN }, rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-10-25T21:00:00Z' }] })
+  transcripts(on, WEEK)
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'usage-refresh' })
+  await ui.press({ key: 'tab-usage' })
+  let text = await shown(ui)
+  expect(text).toMatch(/On pace to end the week at about \d+%/)
+  expect(text).toContain('Projects, past 7 days')
+  expect(text).toContain('Models, past 7 days')
+  expect(text).toContain('storefront')
+  const alts = (await ui.findAll({ type: 'Svg' })).map((x: any) => String(x.props.alt))
+  expect(alts.some((a: string) => a.startsWith('Weekly limit: 30% used'))).toBe(true) // the forecast
+  expect(alts.some((a: string) => a.startsWith('Use each day over the past 7 days'))).toBe(true) // the days, stacked by project
+  await ui.press({ key: 'tab-skills' })
+  text = await shown(ui)
+  expect(text).toContain('Claude sees only the name of one skill')
+  expect(text).toContain('of the listing’s room')
+  expect(alts.length).toBeGreaterThan(0)
+  expect((await ui.findAll({ type: 'Svg' })).some((x: any) => String(x.props.alt).startsWith('Skill listing'))).toBe(true)
+  await ui.press({ key: 'tab-settings' })
+  text = await shown(ui)
+  expect(text).toMatch(/on autopilot/)
+  expect(text).toMatch(/\d of \d\non autopilot/)
+  await ui.unmount()
+})
+
+test('Workflows opens on what is running and what it has cost, or on what the month cost and could have saved', async ($, on) => {
+  stubs(on)
+  effects(on)
+  workflowTool(on, [], { questions: [], answers: [] })
+  workflowSpawns(on)
+  await $.tool.call({ tool: 'Workflow', script: SCRIPT } as any)
+  await spawnAgent($, 1, 'verify:a.ts')
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-workflows' })
+  const text = await shown(ui)
+  expect(text).toContain('One workflow is running')
+  expect(text).toMatch(/0 of 2 agents done|of \d+ agents? done/)
+  // the run is a runway: the cost against its limit or expectation, the work done under it
+  expect((await ui.findAll({ type: 'Svg' })).some((x: any) => /agents? done/.test(String(x.props.alt)) && String(x.props.source).includes('<rect')))
+    .toBe(true)
+  await ui.unmount()
+})
+
+test('a drawing’s words and marks have light-theme colours, so every view reads on a light pane', async ($, on) => {
+  stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN } })
+  await $.command.run({ command: 'tobebestme', args: '' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-overview' })
+  const source = String((await ui.findAll({ type: 'Svg' })).find((x: any) => String(x.props.alt).startsWith('Context window'))?.props.source)
+  expect(source).toContain('prefers-color-scheme:light')
+  // the white "Now" and the grey labels are not left white-on-white
+  expect(source).toContain('svg>text[fill="#F2F2F7"]{fill:#1C1C1E}')
+  expect(source).toContain('svg>text[fill="#8E8E93"]{fill:#636366}')
+  // the amber and red marks and words have darker variants
+  expect(source).toContain('[fill="#FF9F0A"]{fill:#D47000}')
+  expect(source).toContain('svg>text[fill="#FF9F0A"]{fill:#B34C00}')
+  await ui.unmount()
+})
+
 test('context is measured against the window compaction works to: 500k of a 700k autoCompactWindow on a 1M model is 71%, not 50%', async ($, on) => {
   // the engine's percent is against the model's window; the breakdown measures against the smaller one
   const { statuses } = stubs(on, { ...LOW(), context: { tokens: 500_000, window: 1_000_000, percent: 50, breakdown: { ...BREAKDOWN, totalTokens: 500_000, maxTokens: 700_000, rawMaxTokens: 700_000, percentage: 71, autoCompactThreshold: 667_000 } } })
@@ -1090,10 +1200,10 @@ test('on a plan, costs show as a share of the weekly limit everywhere, and Usage
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'usage-refresh' })
   let text = await shown(ui)
-  expect(text).toContain('30% of your weekly limit today across 1 project')
+  expect(text).toContain('30% of your weekly limit, across 1 project')
   expect(text).not.toContain('$30.00')
   const band = await $.ui.mount({ plugin: 'tobebestme', component: 'AbovePrompt', surface: 'terminal', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
-  expect(await shown(band)).toContain('of the week here')
+  expect(await shown(band)).toContain('This session 0.4% of the weekly limit')
   await band.unmount()
   await ui.press({ key: 'tab-usage' })
   text = await shown(ui)
@@ -1102,7 +1212,7 @@ test('on a plan, costs show as a share of the weekly limit everywhere, and Usage
   await ui.press({ key: 'opt-costUnit-usd' })
   expect(sets).toContainEqual({ key: 'tobebestme.costUnit', value: 'usd' })
   await ui.press({ key: 'tab-all' })
-  expect(await shown(ui)).toContain('$30.00 of work today across 1 project')
+  expect(await shown(ui)).toContain('$30.00 of work, across 1 project')
   await ui.unmount()
 })
 
@@ -1116,7 +1226,7 @@ test('All projects adds up every project from Claude Code’s own records, workt
     await ui.press({ key: 'usage-refresh' })
     let text = await shown(ui)
     expect(text).toContain('$8.30') // today, every project
-    expect(text).toContain('today across 1 project and 2 sessions')
+    expect(text).toContain('across 1 project and 2 sessions')
     expect(text).toContain('$9.30 in the past 7 days') // the month-old transcript is left out
     expect(text).toContain('storefront')
     expect(text).toContain('1 worktree')
@@ -1146,7 +1256,7 @@ test('All projects adds up every project from Claude Code’s own records, workt
   await ui.unmount()
 
   const band = await $.ui.mount({ plugin: 'tobebestme', component: 'AbovePrompt', surface: 'terminal', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
-  expect(await shown(band)).toContain('$8.30 today in 1 project')
+  expect(await shown(band)).toContain('Today, all sessions: $8.30 in 1 project')
   await band.unmount()
 })
 
@@ -1254,7 +1364,8 @@ test('Home lists the chats waiting for you across projects, answers one in a pre
   let text = await shown(ui)
   expect(text).toContain('4 chats are waiting for you') // the live one, the answer, the question, and the limit that has reset
   expect(text).toContain('Needs your permission')
-  expect(text).toContain('permission to run npm publish')
+  expect(text).toContain('Run npm publish')
+  expect(text).not.toContain('permission to run npm publish') // the label already says permission
   expect(text).toContain('Waiting for your answer')
   expect(text).toContain('Ship the new checkout to staging?')
   expect(text).toContain('Ready to carry on')
@@ -1323,13 +1434,21 @@ test('Pick up says where each project got to, with work left uncommitted or unpu
   expect(text).toContain('Nothing is waiting for you')
   expect(text).toContain('Pick up where you left off')
   expect(text).toContain('Docs search')
-  expect(text).toContain('Search works locally; nothing is committed yet.')
-  expect(text).toContain('3 files changed, not committed · 2 commits not pushed')
+  expect(text).toContain('3 files changed, not committed · 2 commits not pushed') // loose ends stay in view
   expect(text).not.toContain('Daily report')
   expect(text).toContain('working now') // the checkout session is running in another window
   expect(await ui.find({ type: 'Button', key: 'pick-0-copy' })).toBeFalsy() // so it isn't resumed a second time
+  // the latest project is drawn whole and the others are a line each, as Needs you does, until opened
+  expect(text).toContain('The new checkout passes its tests.')
+  expect(text).not.toContain('Search works locally; nothing is committed yet.')
+  expect(await ui.find({ type: 'Button', key: 'pick-1-copy' })).toBeFalsy()
+  await ui.press({ key: 'pick-1-open' })
+  const opened = await shown(ui)
+  expect(opened).toContain('Search works locally; nothing is committed yet.')
   expect(await ui.find({ type: 'Button', key: 'pick-1-type' })).toBeFalsy() // outside the app, nothing to send it to
   expect(await ui.find({ type: 'Button', key: 'pick-1-copy' })).toBeTruthy()
+  await ui.press({ key: 'pick-1-close' })
+  expect(await shown(ui)).not.toContain('Search works locally; nothing is committed yet.')
   await ui.unmount()
 })
 
@@ -1718,7 +1837,7 @@ test('a long run is planned against the limits, saved as a playbook skill, and s
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   let text = await shown(ui)
-  expect(text).toContain('On autopilot')
+  expect(text).toContain('on autopilot')
   expect(text).toContain('Helpers move to Haiku when context, a limit or a budget gets tight.')
   await ui.press({ key: 'tab-overview' })
   await ui.input({ key: 'run-goal', text: 'Move the API to v2 and update every caller' })
@@ -1962,12 +2081,14 @@ test('Workflows says how to spend less, from every project’s finished runs, an
   await ui.press({ key: 'tab-workflows' }) // a test's ui.invalidate draws nothing; a view change does
   let text = await shown(ui)
   expect(text).toContain('No workflows running')
-  expect(text).toContain('$240 on 2 workflow runs in the last 30 days') // the run from 60 days ago is left out
+  // the lead says what the month cost and what part of it could have been saved; the run from 60 days ago is left out
+  expect(text).toContain('$240\non workflows in 30 days')
+  expect(text).toContain('2 runs in the last 30 days')
+  expect(text).toContain('could have saved up to $36.00')
   expect(text).toContain('Costliest runs')
   expect(text).toContain('Ways to spend less')
   expect(text).toContain('Run checking stages on Sonnet')
   expect(text).toContain('Would have saved about $28.80–$36.00') // Verify: $40 on Opus, $22 on Sonnet, twice; Sonnet may take more steps
-  expect(text).toContain('Could save')
   expect(text).toContain('Give each agent a few items, not one')
   expect(text).toContain('Split the longest agents into smaller jobs')
   expect(text).toContain('fix:pr in portfolio-review cost $40.00 over 300 steps')
@@ -2491,4 +2612,38 @@ test('every button on every tab answers in a busy day: chats waiting, a workflow
   const { problems, presses } = await crawl($)
   expect(problems).toEqual([])
   expect(presses).toBeGreaterThan(80)
+})
+
+test('polish: an empty Workflows tab is one column with one primary, Skills explains itself with one, and today is never less than this session', async ($, on) => {
+  stubs(on)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'tab-workflows' })
+    const start = await ui.find({ type: 'Button', key: 'flow-start' })
+    expect(start?.props.variant).toBe('primary')
+    expect(await shown(ui)).toContain('A workflow is a script Claude writes')
+    await ui.press({ key: 'tab-skills' })
+    const first = await ui.find({ type: 'Button', key: 'skill-start' })
+    expect(first?.props.variant).toBe('primary')
+    expect(await shown(ui)).toContain('A skill is a saved prompt')
+    // no card of nothing: the empty Usage tab says one figure for today, the session's own included
+    await ui.press({ key: 'tab-usage' })
+    const text = await shown(ui)
+    expect(text).not.toContain('$0.00')
+    expect(text).toContain('$0.40')
+    await ui.unmount()
+  }
+})
+
+test('polish: every model reads as one name, spans as one format, and free space adds up', async ($, on) => {
+  stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN } })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-overview' })
+  const text = await shown(ui)
+  expect(text).not.toMatch(/opus-5-5|sonnet-5-5/)
+  expect(text).not.toMatch(/runs out (a day|about \d+ hours?) early/)
+  // free space is everything not in use (the part kept back for compaction is part of it)
+  expect(text).toContain('Free space')
+  expect(text).toContain('Of that, kept for compaction')
+  await ui.unmount()
 })

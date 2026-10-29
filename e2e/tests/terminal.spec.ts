@@ -57,7 +57,7 @@ test.describe('a wide terminal', () => {
       expect(Date.now() - t0, 'the tab took too long to open').toBeLessThan(2000)
       const screen = await s.settle(500)
       if (tab === 'This session') expect(screen).toContain('How long you can keep going')
-      if (tab === 'Settings') expect(screen).toContain('On autopilot')
+      if (tab === 'Settings') expect(screen).toMatch(/on autopilot/)
       if (tab === 'Workflows') expect(screen).toMatch(/workflows? running|Running now/)
       await shot(page, s, 'terminal-' + tab.toLowerCase().replace(/ /g, '-'))
     })

@@ -22,7 +22,7 @@ ToBeBestMe runs inside Claude Code, on your computer, with the permissions Claud
 | Writes | `.claude/tobebestme/handoff.md` in the project, with a `.gitignore` of `*` beside it | The handoff note before compaction |
 | Writes | `~/.claude/tobebestme/reports/` | Reports you save |
 | Writes | Claude Code's store for mods (at most 4 MiB, capped) | Usage totals, workflow digests, settings it remembers |
-| Sends | Prompts to Claude, through your own Claude Code account: to your cheaper model when you press a button that says so ("Suggest more", "Ask Claude to improve it"); a five-token check ("Reply with the word ok.") when a request sent to the cheaper model came back empty, at most once in ten minutes; and the handoff note before a compaction, written by Claude from this conversation (Settings › Handoff note before compacting turns it off) | Skill ideas, skill drafts, whether the cheaper model is there, handoff notes. Requests it puts in the prompt box (fixes, rules) go only when you send them |
+| Sends | Prompts to Claude, through your own Claude Code account: to your cheaper model when you press a button that says so ("Suggest more", "Ask Claude to improve it"); a five-token check ("Reply with the word ok.") when a request sent to the cheaper model came back empty, at most once in ten minutes; and the handoff note before a compaction, written by Claude from this conversation (Settings › Handoff note before compacting turns it off). It also adds lines to a prompt you send: with *Tell Claude where the budget stands* on (the default), once context passes its warning, a budget is reached, or helpers always use the cheaper model, the session's context, cost and limit percentages and what to do about them; and, at the first prompt after a compaction, where the handoff note is | Skill ideas, skill drafts, whether the cheaper model is there, handoff notes, keeping Claude's steps small when a limit is close. Requests it puts in the prompt box (fixes, rules) go only when you send them |
 | Sends | A notification's title and text to the web address you set (only `https://`) | Notifications on your phone, if you set one up |
 | Runs | `osascript` (macOS) or `notify-send` (Linux), with the words passed as arguments | System notifications |
 
@@ -39,7 +39,7 @@ ToBeBestMe also checks itself once a day against `.claude-plugin/integrity.json`
 
 ## Tests
 
-`claude plugin test .` runs 79 tests in Claude Code's own mod test kit. Among them:
+`claude plugin test .` runs 86 tests in Claude Code's own mod test kit. Among them:
 
 - one presses every button on every tab, on both surfaces;
 - others try the security guards: names from records that could reach an object's prototype (`__proto__`, `constructor`, `toString`), web addresses that aren't `https://`, notification words passed as arguments where they can't run, and the release self-check (a changed file, an added module, a missing manifest).

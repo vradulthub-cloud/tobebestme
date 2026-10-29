@@ -8,12 +8,19 @@
 const STEP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 }
 const CELL_X = 8.4
 const CELL_Y = 18
-const THEME = { success: '#4CC38A', warning: '#E8A33D', error: '#F2555A', suggestion: '#5AA9FF', inactive: '#8a8a8a', subtle: '#555', text: '#ececec' }
+// The app's colours on a dark pane and on a light one: the theme's own names resolve to one or the
+// other, and the mod's own hex colours are drawn as they are.
+const SCHEMES = {
+  dark: { theme: { success: '#4CC38A', warning: '#E8A33D', error: '#F2555A', suggestion: '#5AA9FF', inactive: '#8a8a8a', subtle: '#555', text: '#ececec' }, dim: '#9b9b9b', dimButton: '#a0a0a0', text: '#ececec', bg: '#1e1e1e', button: '#353535', buttonText: '#ececec', primary: '#f2f2f2', primaryText: '#111', border: '#3b3b3b', field: '#1e1e1e', fieldBorder: '#444', link: '#5AA9FF' },
+  light: { theme: { success: '#1B7A34', warning: '#B34C00', error: '#D70015', suggestion: '#0040DD', inactive: '#636366', subtle: '#b0b0b6', text: '#1d1d1f' }, dim: '#636366', dimButton: '#636366', text: '#1d1d1f', bg: '#ffffff', button: '#e3e3e8', buttonText: '#1d1d1f', primary: '#1d1d1f', primaryText: '#ffffff', border: '#b4b4ba', field: '#ffffff', fieldBorder: '#a8a8ae', link: '#0040DD' },
+}
+let S = SCHEMES.dark
+const THEME = SCHEMES.dark.theme
 const SIZE = { caption: 11, footnote: 12, body: 14, heading: 15, title: 22 }
 const WEIGHT = { regular: 400, medium: 500, semibold: 600, bold: 700 }
 
 const sp = (v, axis) => (v === undefined ? undefined : typeof v === 'number' ? v * (axis === 'x' ? CELL_X : CELL_Y) : STEP[v])
-const col = (c) => (c ? THEME[c] || c : undefined)
+const col = (c) => (c ? S.theme[c] || c : undefined)
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 const textOf = (n) => (typeof n === 'string' ? n : (n.children || []).map(textOf).join(''))
 
@@ -51,7 +58,7 @@ function node(n) {
         'padding-bottom': sp(p.paddingBottom ?? p.paddingY ?? p.padding, 'y'),
         'margin-top': sp(p.marginTop ?? p.marginY, 'y'),
         'margin-bottom': sp(p.marginBottom ?? p.marginY, 'y'),
-        border: p.borderStyle ? '1px solid ' + (p.borderColor ? col(p.borderColor) : '#3b3b3b') : undefined,
+        border: p.borderStyle ? '1px solid ' + (p.borderColor ? col(p.borderColor) : S.border) : undefined,
         'border-radius': p.borderStyle ? 10 : undefined,
         background: p.backgroundColor,
         // every box is a positioning parent, as the surface places an absolute box against its parent
@@ -71,7 +78,7 @@ function node(n) {
     case 'Text': {
       const isTruncated = p.wrap && p.wrap.startsWith('truncate')
       const st = {
-        color: col(p.color) || (p.dimColor ? '#9b9b9b' : undefined),
+        color: col(p.color) || (p.dimColor ? S.dim : undefined),
         'font-size': SIZE[p.size],
         'font-weight': WEIGHT[p.weight],
         'font-variant-numeric': p.tabular ? 'tabular-nums' : undefined,
@@ -86,8 +93,8 @@ function node(n) {
     case 'Button': {
       const label = p.label ?? textOf(n)
       const st = p.plain
-        ? { color: p.dimColor ? '#9b9b9b' : '#ececec', 'font-size': 13, background: 'none', border: 0, padding: 0 }
-        : { background: p.variant === 'primary' ? '#f2f2f2' : '#353535', color: p.variant === 'primary' ? '#111' : p.dimColor ? '#a0a0a0' : '#ececec', 'border-radius': 7, padding: '3px 10px', 'font-size': 13, 'white-space': 'nowrap', border: 0 }
+        ? { color: p.dimColor ? S.dim : S.text, 'font-size': 13, background: 'none', border: 0, padding: 0 }
+        : { background: p.variant === 'primary' ? S.primary : S.button, color: p.variant === 'primary' ? S.primaryText : p.dimColor ? S.dimButton : S.buttonText, 'border-radius': 7, padding: '3px 10px', 'font-size': 13, 'white-space': 'nowrap', border: 0 }
       return '<button type="button" data-key="' + esc(p.key || '') + '" data-variant="' + esc(p.variant || '') + '" aria-label="' + esc(label) + '" style="' + style(st) + '">' + esc(label) + '</button>'
     }
     case 'Svg': {
@@ -102,14 +109,15 @@ function node(n) {
         src = src.replace('<svg ', '<svg style="display:block;width:100%;height:100%" ')
         return '<div role="img" aria-label="' + esc(p.alt || '') + '" data-svg="1" data-frame="default" style="' + style({ width: 300, height: 150, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'
       }
-      const width = p.width ?? (own ? Number(own[1]) : undefined)
+      // with no width and no width of its own, the browser falls back to its default 300px (seen in the app)
+      const width = p.width ?? (own ? Number(own[1]) : 300)
       src = src.replace('<svg ', '<svg style="display:block;width:100%;height:' + (p.height ? p.height + 'px' : 'auto') + '" ')
       return '<div role="img" aria-label="' + esc(p.alt || '') + '" data-svg="1" style="' + style({ width: width ?? '100%', 'max-width': '100%', height: p.height, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'
     }
     case 'Input':
-      return '<div data-input="' + esc(p.key || '') + '" style="display:flex;gap:8px;align-items:flex-start;width:100%"><input aria-label="' + esc(p.placeholder || p.key || '') + '" placeholder="' + esc(p.placeholder || '') + '" value="' + esc(p.value || '') + '" style="flex:1;min-width:0;border:1px solid #444;border-radius:8px;padding:6px 10px;background:#1e1e1e;color:#ececec;font-size:13px"><button type="button" aria-label="' + esc(p.submitLabel || 'Submit') + '" style="background:#353535;color:#ececec;border:0;border-radius:7px;padding:3px 10px;font-size:13px">' + esc(p.submitLabel || 'Submit') + '</button></div>'
+      return '<div data-input="' + esc(p.key || '') + '" style="display:flex;gap:8px;align-items:flex-start;width:100%"><input aria-label="' + esc(p.placeholder || p.key || '') + '" placeholder="' + esc(p.placeholder || '') + '" value="' + esc(p.value || '') + '" style="flex:1;min-width:0;border:1px solid ' + S.fieldBorder + ';border-radius:8px;padding:6px 10px;background:' + S.field + ';color:' + S.text + ';font-size:13px"><button type="button" aria-label="' + esc(p.submitLabel || 'Submit') + '" style="background:' + S.button + ';color:' + S.buttonText + ';border:0;border-radius:7px;padding:3px 10px;font-size:13px">' + esc(p.submitLabel || 'Submit') + '</button></div>'
     case 'Link':
-      return '<a href="' + esc(p.href || '#') + '" style="color:#5AA9FF;font-size:13px;white-space:nowrap">' + esc(p.label || p.href) + '</a>'
+      return '<a href="' + esc(p.href || '#') + '" style="color:' + S.link + ';font-size:13px;white-space:nowrap">' + esc(p.label || p.href) + '</a>'
     case 'Markdown':
       return '<pre style="white-space:pre-wrap;font-size:12px">' + esc(p.text) + '</pre>'
     default:
@@ -140,11 +148,13 @@ const CSS = `
 button:focus-visible { outline: 2px solid #5AA9FF; outline-offset: 2px; }
 `
 
-export function renderPage(tree, { width = 720, title = 'ToBeBestMe' } = {}) {
+export function renderPage(tree, { width = 720, title = 'ToBeBestMe', scheme = 'dark' } = {}) {
+  S = SCHEMES[scheme] || SCHEMES.dark
+  const body = node(tree)
   return (
-    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + esc(title) + '</title><style>' + CSS + '</style></head>' +
-    '<body style="margin:0;background:#1e1e1e;color:#ececec;font:14px -apple-system,BlinkMacSystemFont,system-ui,sans-serif;">' +
-    '<main id="pane" style="width:' + width + 'px;max-width:100%;box-sizing:border-box;padding:14px">' + node(tree) + '</main>' +
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="' + scheme + '"><title>' + esc(title) + '</title><style>' + CSS + '</style></head>' +
+    '<body style="margin:0;background:' + S.bg + ';color:' + S.text + ';font:14px -apple-system,BlinkMacSystemFont,system-ui,sans-serif;">' +
+    '<main id="pane" style="width:' + width + 'px;max-width:100%;box-sizing:border-box;padding:14px">' + body + '</main>' +
     '<script>' + SCRIPT + '</script></body></html>'
   )
 }
