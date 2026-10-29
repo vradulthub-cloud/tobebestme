@@ -424,14 +424,36 @@ export function drawDashboard(k, d, act) {
     paddingX: k.isTerminal ? 0 : 'md',
     paddingY: k.isTerminal ? 0 : 'sm',
     rowGap: k.isTerminal ? 'md' : 'lg',
-    children: [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', alignItems: 'center', children: [track, k.Box({ flexGrow: 1 }), details] }), ...body.filter(Boolean)],
+    children: [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', alignItems: 'center', children: [track, k.Box({ flexGrow: 1 }), details] }), changeCard(k, d, act, tab), ...body.filter(Boolean)],
   })
+}
+
+// A change the pane is making itself, on the tab it belongs to: worked out in the background, shown
+// as what is there now and what it becomes, and written only when Save is pressed.
+function changeCard(k, d, act, tab) {
+  const c = d.change
+  if (!c || !c.status || c.tab !== tab) return null
+  const block = (label, words, props = {}) => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text(label, { size: 'footnote', weight: 'semibold', dimColor: true }), ...String(words).split('\n').map((line) => k.text(line, { wrap: 'wrap', ...props }))] })
+  const body =
+    c.status === 'working'
+      ? [k.hang(k.live(HEX.bar, 'suggestion', 'Working'), k.text('Working it out with the helper model. Nothing is written until you save it.', { wrap: 'wrap' }))]
+      : c.status === 'error'
+        ? [k.hang(k.dot('warning'), k.text(c.error, { wrap: 'wrap' })), k.buttons([k.button('change-redo', 'Work it out again', act.redoChange), k.button('change-cancel', 'Close', act.cancelChange, { dimColor: true })])]
+        : [
+            block('Now', c.before, { dimColor: true }),
+            block('After', c.after),
+            ...(c.note ? [k.footnote(c.note)] : []),
+            k.buttons([k.button('change-save', 'Save change', act.saveChange, { variant: 'primary' }), k.button('change-cancel', 'Cancel', act.cancelChange, { dimColor: true })]),
+          ]
+  // the working state has its Cancel too, so a slow answer never holds the pane
+  if (c.status === 'working') body.push(k.buttons([k.button('change-cancel', 'Cancel', act.cancelChange, { dimColor: true })]))
+  // the file it changes is always said, not left to Show details
+  return k.card(c.title, c.shown, body, { gap: 'md', keepCaption: true })
 }
 
 // A runway for one item: an SVG on desktop, block characters on the terminal. Its words say the
 // same thing, so it never rests on colour alone.
-// Each tab has its own two colours, used for the soft field behind its head and the gradient of its big
-// figure: identity only. Amber and red are left to status, and take over a figure that has passed an alert.
+// Each tab has its own two colours, used for the gradient of its big figure and its bloom: identity only. Amber and red are left to status, and take over a figure that has passed an alert.
 const TAB_HUES = {
   all: ['#0A84FF', '#BF5AF2'],
   workflows: ['#BF5AF2', '#FF375F'],
@@ -1522,7 +1544,7 @@ function skillsTab(k, d, act) {
             children: [
               k.Text({ wrap: 'truncate-end', children: [k.text('/' + x.name, { weight: 'semibold' }), k.text('  ·  ' + [x.scope === 'project' ? 'this project' : 'yours', x.kind === 'command' ? 'command' : '', x.runs ? plural(x.runs, 'run', 'runs') + ' in ' + SCAN_DAYS + ' days' : ''].filter(Boolean).join(' · '), { size: 'footnote', dimColor: true })] }),
               ...x.issues.map((iss) => k.hang(k.dot(words[iss.level] === 'info' ? 'info' : iss.level), k.Box({ flexDirection: 'column', children: [k.text(iss.title, { weight: 'medium', wrap: 'wrap' }), k.footnote(iss.detail)] }))),
-              k.Box({ marginTop: 'xs', children: [k.buttons([k.button('fix-' + i, 'Fix with Claude…', () => act.fixSkill(x)), k.button('try-' + i, 'Try /' + x.name, () => act.trySkill(x.name), { dimColor: true }), k.button('path-' + i, 'Copy path', (ev) => act.copyText(x.path, ev && ev.surface, 'The path'), { dimColor: true })])] }),
+              k.Box({ marginTop: 'xs', children: [k.buttons([k.button('fix-' + i, 'Fix description…', () => act.fixSkill(x)), k.button('try-' + i, 'Try /' + x.name, () => act.trySkill(x.name), { dimColor: true }), k.button('path-' + i, 'Copy path', (ev) => act.copyText(x.path, ev && ev.surface, 'The path'), { dimColor: true })])] }),
             ],
           }),
         ),
@@ -1650,6 +1672,7 @@ function skillsTab(k, d, act) {
     builder.push(k.footnote('Drafting needs a surface with text fields: the terminal, desktop or VS Code.'))
   }
   if (busy === 'draft') builder.push(k.text('Drafting with Sonnet…', { dimColor: true }))
+  if (busy === 'improve') builder.push(k.text('Improving the draft with Sonnet…', { dimColor: true }))
   if (s.draft) {
     const checks = draftChecks(s.draft)
     builder.push(
@@ -1661,7 +1684,7 @@ function skillsTab(k, d, act) {
           k.Box({ flexDirection: 'column', rowGap: 'xs', children: checks.map(([ok, words]) => k.Box({ flexDirection: 'row', columnGap: 'sm', children: [k.text(ok ? '✓' : '●', ok ? { color: 'success' } : { color: 'warning' }), k.text(words, { size: 'footnote', wrap: 'wrap' })] })) }),
           k.Box({ borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, paddingX: k.isTerminal ? 0 : 'md', children: [k.Markdown({ key: 'skill-draft', text: s.draft.text })] }),
           k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Save it for', { size: 'footnote', weight: 'semibold', dimColor: true }), k.segmented('skill-scope', [{ value: 'project', label: 'This project' }, { value: 'user', label: 'All my projects' }], s.scope, act.setSkillScope), k.footnote('Saves to ' + d.skillPath)] }),
-          k.buttons([k.button('skill-save', 'Save skill', act.saveSkill, { variant: 'primary' }), k.button('skill-claude', 'Ask Claude to improve it', act.askClaudeSkill), k.button('skill-discard', 'Discard draft', act.discardSkill, { dimColor: true })]),
+          k.buttons([k.button('skill-save', 'Save skill', act.saveSkill, { variant: 'primary' }), ...(s.previous ? [k.button('skill-undo', 'Undo improvement', act.undoImprove, { dimColor: true })] : []), k.button('skill-improve', 'Improve it', act.improveDraft), k.button('skill-discard', 'Discard draft', act.discardSkill, { dimColor: true })]),
         ],
       }),
     )
@@ -2591,7 +2614,7 @@ function savingRow(k, act, f, key, runId, share, isLead = false) {
       ...(share && f.high >= 1 ? [k.footnote('In dollars, about ' + range + ' at list prices; an estimate.')] : []),
       ...(since ? [k.hang(k.text(since.level === 'good' ? '✓' : since.level === 'warn' ? '●' : '○', since.level === 'good' ? { color: 'success' } : since.level === 'warn' ? { color: 'warning' } : { dimColor: true }), k.text(since.text, { size: 'footnote', wrap: 'wrap', weight: 'medium' }))] : []),
       k.buttons([
-        k.button(key + '-rule', f.adoptedAt ? 'Ask Claude again…' : 'Make it a rule…', () => act.adoptSaving(f.key, runId), f.adoptedAt ? { plain: true, dimColor: true } : isLead ? { variant: 'primary' } : { plain: true }),
+        k.button(key + '-rule', f.adoptedAt ? 'Add the rule again…' : 'Make it a rule…', () => act.adoptSaving(f.key, runId), f.adoptedAt ? { plain: true, dimColor: true } : isLead ? { variant: 'primary' } : { plain: true }),
         ...(runId
           ? []
           : f.isHidden

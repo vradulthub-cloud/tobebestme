@@ -68,6 +68,25 @@ export type BudgetSkill = {
   scope: 'project' | 'user'
   ideas: BudgetSkillIdea[]
   saved?: string // the skill saved last from the builder, offered to try
+  previous?: { name: string; description: string; text: string } // the draft before Improve it, for Undo
+}
+
+// A change the pane makes itself: worked out in the background, shown as now and after, written on Save.
+export type BudgetChange = {
+  id: string
+  tab: string
+  title: string
+  path: string
+  shown: string
+  status: '' | 'working' | 'ready' | 'error'
+  before: string
+  after: string
+  note: string
+  error: string
+  base: string // the whole file as it was read, checked again before writing
+  next: string // the whole file as it will be written
+  done: string // what the toast says once it is written
+  adopt: string // a saving idea counted as adopted once written
 }
 
 export type BudgetView = {
@@ -151,6 +170,7 @@ declare module 'claude-code' {
       view: BudgetView
       override: BudgetOverride
       flows: BudgetFlows
+      change: BudgetChange
     }
   }
 }

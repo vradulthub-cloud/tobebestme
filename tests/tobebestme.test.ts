@@ -819,6 +819,16 @@ test('Skills says what Claude can see, which skills ran in every project, what t
   })
   const RUNS: Transcript = { path: '-Users-me-Projects-shop/s9.jsonl', ageMs: 3_600_000, cwd: '/Users/me/Projects/shop', answers: [['2026-10-23T11:00:00Z', 'claude-opus-5-5', 0, 1_000, 0, 0]], skills: { deploy: [2, 1, '2026-10-23T11:00:00Z'], pdf: [0, 3, '2026-10-22T09:00:00Z'], model: [4, 0, '2026-10-23T10:00:00Z'] } }
   transcripts(on, [RUNS], true, [], {}, { files: SKILL_FILES, prompts: ['P\t4\t2\t0\tmerge and deploy once the checks are green'] })
+  const asked: string[] = []
+  on('model.complete', (_$: unknown, e: any) => {
+    asked.push(e.prompt)
+    return { value: { isAnswered: true, text: '"Keep running notes for a project: decisions, todos and links. Use when the user says note this, add a note or what did we decide."', usage: USAGE } }
+  })
+  const writes: { path: string; text: string }[] = []
+  on('fs.write', (_$: unknown, e: any) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
   await $.command.run({ command: 'tobebestme', args: 'skills' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'usage-refresh' }).catch(() => undefined) // Home's refresh isn't on this tab
@@ -850,14 +860,47 @@ test('Skills says what Claude can see, which skills ran in every project, what t
   expect(text).toContain('You asked this 4 times')
   expect(text).toContain('merge and deploy once the checks are green')
 
-  // each fix is a request you read and send
+  // each fix is made in the pane, never in the conversation: worked out in the background, shown as
+  // now and after on this tab, and written only on Save; Cancel leaves the file alone
   await ui.press({ key: 'fix-0' })
-  expect(filled[filled.length - 1]).toContain('Improve the Claude Code skill at ~/.claude/skills/notes/SKILL.md')
+  expect(filled).toHaveLength(0)
+  expect(asked[0]).toContain('Skill name: notes')
+  expect(asked[0]).toContain('No description')
+  text = await shown(ui)
+  expect(text).toContain('A new description for /notes')
+  expect(text).toContain('~/.claude/skills/notes/SKILL.md')
+  expect(text).toContain('(no description)')
+  expect(text).toContain('Keep running notes for a project')
+  expect(text).toContain('Its instructions stay as they are.')
+  expect(writes).toHaveLength(0) // shown, not written
+  await ui.press({ key: 'change-save' })
+  expect(writes).toHaveLength(1)
+  expect(writes[0]!.path).toBe('/Users/me/.claude/skills/notes/SKILL.md')
+  expect(writes[0]!.text).toBe('---\nname: notes\ndescription: Keep running notes for a project: decisions, todos and links. Use when the user says note this, add a note or what did we decide.\n---\nKeep notes.\n'.replace('description: Keep', 'description: "Keep').replace('decide.\n---', 'decide."\n---'))
+  expect(await shown(ui)).not.toContain('A new description for /notes')
+  // a setting: every other one kept; Cancel writes nothing
   await ui.press({ key: 'skills-manual' })
-  expect(filled[filled.length - 1]).toContain('"skillOverrides" to "user-invocable-only" for these skills')
-  expect(filled[filled.length - 1]).toContain('seo-audit')
+  text = await shown(ui)
+  expect(text).toContain('/seo-audit: runs when you type it (skillOverrides: user-invocable-only)')
+  expect(text).toContain('Every other setting stays as it is.')
+  await ui.press({ key: 'change-cancel' })
+  expect(writes).toHaveLength(1)
   await ui.press({ key: 'skills-budget' })
-  expect(filled[filled.length - 1]).toContain('"skillListingBudgetFraction" to 0.02')
+  expect(await shown(ui)).toContain('skillListingBudgetFraction: 0.02 (2% of the context window)')
+  await ui.press({ key: 'change-save' })
+  expect(writes[1]!.path).toBe('/Users/me/.claude/settings.json')
+  expect(JSON.parse(writes[1]!.text)).toEqual({ skillListingBudgetFraction: 0.02 })
+  // a file edited after its change was worked out is never written over
+  await ui.press({ key: 'fix-0' })
+  const notes = '/Users/me/.claude/skills/notes/SKILL.md'
+  const was = SKILL_FILES[notes]!
+  SKILL_FILES[notes] = was + 'Edited meanwhile.\n'
+  await ui.press({ key: 'change-save' })
+  SKILL_FILES[notes] = was
+  expect(writes).toHaveLength(2)
+  expect(await shown(ui)).toContain('changed after this was worked out, so nothing was written')
+  await ui.press({ key: 'change-cancel' })
+  expect(filled).toHaveLength(0)
   await ui.press({ key: 'try-0' })
   expect(filled[filled.length - 1]).toBe('/notes ')
   // with words typed in the box, a command leaves them be and says how to go on
@@ -2160,6 +2203,12 @@ function digest(over: any = {}) {
 test('Workflows says how to spend less, from every project’s finished runs, and turns an idea into a rule after you read it', async ($, on) => {
   const { toasts, store } = stubs(on)
   store['runs:v1'] = { wf_1: digest(), wf_2: digest({ runId: 'wf_2', name: 'docs-check', startedAt: NOW - 86_400_000 }), wf_old: digest({ runId: 'wf_old', startedAt: NOW - 60 * 86_400_000 }) }
+  const writes: { path: string; text: string }[] = []
+  on('fs.read', (_$: unknown, e: any) => (e.path === '/Users/me/.claude/CLAUDE.md' ? { value: '# Mine\n\nBe brief.\n' } : (() => { throw new Error('ENOENT') })()))
+  on('fs.write', (_$: unknown, e: any) => {
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
   const filled: string[] = []
   on('prompt.fill', (_$: unknown, e: any) => {
     filled.push(e.text)
@@ -2188,11 +2237,17 @@ test('Workflows says how to spend less, from every project’s finished runs, an
   expect(text).toContain('How workflows work')
   expect(text).toContain('Check each workflow before it runs')
 
+  // the rule is added in the pane: shown first, written to CLAUDE.md on Save, nothing in the prompt box
   await ui.press({ key: 'flow-save-0-rule' })
-  expect(filled[0]).toContain('~/.claude/CLAUDE.md')
-  expect(filled[0]).toContain("model: 'sonnet'")
-  expect(filled[0]).toContain('Show me the exact change before you save it.')
-  expect(toasts.some((t) => t.includes('Claude shows the change'))).toBe(true)
+  expect(filled).toHaveLength(0)
+  text = await shown(ui)
+  expect(text).toContain('A rule for every workflow you write')
+  expect(text).toContain('~/.claude/CLAUDE.md')
+  expect(text).toContain("model: 'sonnet'")
+  await ui.press({ key: 'change-save' })
+  expect(writes[0]!.path).toBe('/Users/me/.claude/CLAUDE.md')
+  expect(writes[0]!.text).toMatch(/^# Mine\n\nBe brief\.\n\n## Workflow rules \(from ToBeBestMe\)\n\n- .*model: 'sonnet'/)
+  expect(toasts.some((t) => t.includes('Added the rule to ~/.claude/CLAUDE.md'))).toBe(true)
 
   await ui.press({ key: 'flow-save-0-hide' })
   await ui.press({ key: 'tab-workflows' })

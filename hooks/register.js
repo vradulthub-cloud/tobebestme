@@ -43,9 +43,15 @@ import {
   parseSkillFile,
   skillListing,
   skillCheckup,
-  skillFixPrompt,
-  manualOnlyPrompt,
-  budgetPrompt,
+  setSkillFront,
+  skillDescriptionAsk,
+  cleanDescription,
+  withManualOnly,
+  withListingBudget,
+  nextListingBudget,
+  withRule,
+  RULES_HEADING,
+  improveDraftAsk,
   PROMPTS_SH,
   PROMPTS_AWK,
   parsePromptIdeas,
@@ -70,7 +76,6 @@ import {
   runDigest,
   workflowSavings,
   scriptTips,
-  savingRulePrompt,
   suggestWorkflows,
   workflowRequest,
   DIGEST_V,
@@ -152,6 +157,10 @@ const override = atom({ plugin: 'tobebestme', key: 'override' }, { main: '', hel
 // This session's workflow runs, by run id: what each is for, its controls (paused, how many
 // agents at once, a model for the rest), and each agent's state, model, tokens and cost.
 const flows = atom({ plugin: 'tobebestme', key: 'flows' }, { runs: {} })
+// A change the pane is making itself (a skill's description, a setting, a rule): worked out in the
+// background, shown on its tab as now and after, written only on Save.
+const NO_CHANGE = { id: '', tab: '', title: '', path: '', shown: '', status: '', before: '', after: '', note: '', error: '', base: '', next: '', done: '', adopt: '' }
+const change = atom({ plugin: 'tobebestme', key: 'change' }, NO_CHANGE)
 
 // Not state: the engine's own figures, fetched again before each use, and caches of them.
 let snap = { startedAt: 0, context: { window: 0 }, rateLimits: [], cost: { usd: 0 } }
@@ -1757,13 +1766,124 @@ async function trySkill($, name) {
   await fillPrompt($, '/' + name + ' ', '/' + name)
 }
 
-async function askClaude($, text, what) {
+// ---- changes the pane makes itself ----------------------------------------------------------------
+// A fix pressed in the pane never goes through the conversation: the change is worked out in the
+// background (the helper model writes words where words are needed), shown on its tab as what is
+// there now and what it becomes, and written on Save, after checking the file is as it was read.
+let redoChange = null
+
+async function readText($, path) {
   try {
-    await $.prompt.fill({ text, mode: 'append' })
-    $.ui.toast(what + ' is in the prompt box. Read it, then press Return to send it to Claude.')
+    return String(await $.fs.read(path))
   } catch {
-    $.ui.toast("Couldn't fill the prompt box here.")
+    return null
   }
+}
+
+async function proposeChange($, start, work) {
+  await update($, change, () => ({ ...NO_CHANGE, ...start, status: 'working' }))
+  await update($, view, (v) => ({ ...v, tab: start.tab, confirm: '', editing: '' }))
+  scrollPane($, { key: 'change-cancel' }, 'center')
+  let r
+  try {
+    r = await work()
+  } catch (err) {
+    r = { error: 'Something went wrong working it out: ' + String((err && err.message) || err).slice(0, 160) }
+  }
+  if ((await read($, change)).id !== start.id) return // cancelled, or another took its place
+  await update($, change, (c) => (r.error ? { ...c, status: 'error', error: r.error } : { ...c, ...r, status: 'ready' }))
+  scrollPane($, { key: r.error ? 'change-cancel' : 'change-save' }, 'center')
+}
+
+async function saveChange($) {
+  const c = await read($, change)
+  if (c.status !== 'ready') return
+  const now = (await readText($, c.path)) ?? ''
+  if (now !== c.base) {
+    await update($, change, (x) => ({ ...x, status: 'error', error: c.shown + ' changed after this was worked out, so nothing was written. Work it out again to start from what is there now.' }))
+    return
+  }
+  try {
+    await $.fs.write(c.path, c.next)
+  } catch (err) {
+    await update($, change, (x) => ({ ...x, status: 'error', error: "Couldn't write " + c.shown + ': ' + String((err && err.message) || err).slice(0, 120) }))
+    return
+  }
+  await update($, change, () => NO_CHANGE)
+  if (c.adopt) {
+    const at = await $.clock.now()
+    adoptedSavings = await changeShared($, ADOPTED_KEY, adoptedSavings, (all) => ({ ...all, [c.adopt]: at }))
+  }
+  if (c.tab === 'skills') ownSkills = { ...ownSkills, at: 0 } // read the skills and their settings again
+  await logActivity($, 'success', c.done)
+  $.ui.toast(c.done)
+  $.ui.invalidate('ui.render')
+}
+
+async function homePath($, rest) {
+  const home = await $.env.get('HOME')
+  return home ? { path: home + '/' + rest, shown: '~/' + rest } : null
+}
+
+// A skill's description, rewritten by the helper model from the skill and what the check-up found;
+// a front-matter name that differs from its folder is put right too. Its instructions stay.
+async function fixSkill($, x) {
+  redoChange = () => fixSkill($, x)
+  await proposeChange($, { id: 'skill:' + x.name, tab: 'skills', title: 'A new description for /' + x.name, path: x.path, shown: x.shown }, async () => {
+    const base = await readText($, x.path)
+    if (base === null) return { error: "Couldn't read " + x.shown + '.' }
+    const ask = skillDescriptionAsk(x, base)
+    const r = await completeWith($, DRAFT_MODEL, ask.system, ask.prompt, 400)
+    const description = r && r.isAnswered ? cleanDescription(r.text) : ''
+    if (!description) return { error: "The helper model didn't answer, so nothing changed. Work it out again in a moment." }
+    const f = parseSkillFile(base)
+    const name = f.name && f.name !== x.name && x.kind === 'skill' ? x.name : undefined
+    const notes = [
+      ...(f.whenToUse ? ['Its when_to_use is folded into the description.'] : []),
+      ...(name ? ['Its name is set to match its folder, ' + x.name + '.'] : []),
+      (x.issues || []).some((i) => i.key === 'long') ? 'Its instructions stay as they are: splitting a long skill into reference files is a bigger edit, one to ask Claude for.' : 'Its instructions stay as they are.',
+    ]
+    return {
+      base,
+      next: setSkillFront(base, { description, name }),
+      before: [f.description || '(no description)', ...(f.whenToUse ? ['when_to_use: ' + f.whenToUse] : []), ...(name ? ['name: ' + f.name] : [])].join('\n'),
+      after: [description, ...(name ? ['name: ' + name] : [])].join('\n'),
+      note: notes.join(' '),
+      done: 'Saved the new description of /' + x.name + '. New sessions read it.',
+    }
+  })
+}
+
+// A setting in your user settings.json, every other setting kept as it is.
+async function changeSetting($, id, title, edit, describe, done) {
+  redoChange = () => changeSetting($, id, title, edit, describe, done)
+  const where = await homePath($, '.claude/settings.json')
+  if (!where) {
+    $.ui.toast("Couldn't find your home folder, so settings.json can't be changed from here.")
+    return
+  }
+  await proposeChange($, { id, tab: 'skills', title, path: where.path, shown: where.shown }, async () => {
+    const base = (await readText($, where.path)) ?? ''
+    const next = edit(base)
+    if (next === null) return { error: where.shown + " isn't plain JSON, so it was left alone. Change it in /config or by hand." }
+    return { base, next, ...describe(base), note: 'Every other setting stays as it is.', done }
+  })
+}
+
+// A workflow rule, added to your user CLAUDE.md under ToBeBestMe's heading.
+async function addRule($, f, adopt) {
+  redoChange = () => addRule($, f, adopt)
+  const where = await homePath($, '.claude/CLAUDE.md')
+  if (!where) {
+    $.ui.toast("Couldn't find your home folder, so CLAUDE.md can't be changed from here.")
+    return
+  }
+  await proposeChange($, { id: 'rule:' + f.key, tab: 'workflows', title: 'A rule for every workflow you write', path: where.path, shown: where.shown, adopt: adopt || '' }, async () => {
+    const base = (await readText($, where.path)) ?? ''
+    const next = withRule(base, f.rule)
+    if (next === base) return { error: 'This rule is in ' + where.shown + ' already.' }
+    return { base, next, before: base.includes(RULES_HEADING) ? 'The rules under “' + RULES_HEADING.replace(/^#+ /, '') + '”' : '(no ToBeBestMe rules yet)', after: '- ' + f.rule, note: 'Added under “' + RULES_HEADING.replace(/^#+ /, '') + '”; the rest of the file stays as it is.', done: 'Added the rule to ' + where.shown + '. Workflows Claude writes from now on follow it.' }
+  })
 }
 
 async function copyText($, text, surface, what) {
@@ -2232,7 +2352,7 @@ async function saveSkill($) {
   const where = await skillPathFor($, s.scope, s.draft.name)
   try {
     if (await $.fs.exists(where.path)) {
-      $.ui.toast('A skill called ' + s.draft.name + ' already exists there. Ask Claude to improve the draft and give it another name.')
+      $.ui.toast('A skill called ' + s.draft.name + ' already exists there. Fix it from the check-up instead, or discard this draft.')
       return
     }
     await $.fs.write(where.path, s.draft.text)
@@ -2240,22 +2360,41 @@ async function saveSkill($) {
     $.ui.toast("Couldn't save the skill to " + where.shown + '.')
     return
   }
-  await update($, skill, (x) => ({ ...x, draft: null, describe: '', saved: s.draft.name }))
+  await update($, skill, (x) => ({ ...x, draft: null, previous: undefined, describe: '', saved: s.draft.name }))
   ownSkills = { ...ownSkills, at: 0 } // read the folders again, with the new skill
   await logActivity($, 'success', 'Skill /' + s.draft.name + ' saved to ' + where.shown + '.')
   await update($, wins, (w) => ({ ...w, skills: (w.skills || 0) + 1 }))
   $.ui.toast('Saved /' + s.draft.name + '. New sessions list it, and Claude uses it when it fits.')
 }
 
-async function askClaudeSkill($) {
+// The draft, made better by the helper model where you are reading it; Undo puts the last one back.
+async function improveDraft($) {
   const s = await read($, skill)
   if (!s.draft) return
-  const where = await skillPathFor($, s.scope, s.draft.name)
+  await update($, view, (v) => ({ ...v, busy: 'improve' }))
   try {
-    await $.prompt.fill({ text: 'Create a Claude Code skill at ' + where.shown + ' from this draft. Improve it where it helps, and keep it short:\n\n' + s.draft.text, mode: 'append' })
-    $.ui.toast('The draft is in the prompt box. Press Return to send it to Claude.')
+    const ask = improveDraftAsk(s.draft)
+    const r = await completeWith($, DRAFT_MODEL, ask.system, ask.prompt, 2000)
+    if (!r || !r.isAnswered) {
+      $.ui.toast("Couldn't improve the draft: the helper model didn't answer. Try again in a moment.")
+      return
+    }
+    const draft = parseSkillDraft(r.text, s.draft.name)
+    await update($, skill, (x) => ({ ...x, draft: { ...draft, name: s.draft.name }, previous: s.draft }))
+    $.ui.toast('Improved the draft. Read it, then Save skill, or Undo to go back.')
+  } finally {
+    await update($, view, (v) => ({ ...v, busy: '' }))
+  }
+}
+
+// Opens one of Claude Code's own screens by running its command, as typing it would: nothing is sent
+// to Claude. Where the command can't run from here, it goes in the prompt box instead.
+async function openScreen($, command, what) {
+  try {
+    const r = await $.command.run({ command })
+    if (r && r.deny) throw new Error(r.deny)
   } catch {
-    $.ui.toast("Couldn't fill the prompt box here.")
+    await fillPrompt($, '/' + command, what)
   }
 }
 
@@ -2338,6 +2477,7 @@ async function gather($) {
     view: v,
     wins: w,
     skill: sk,
+    change: await read($, change),
     skillUse: su,
     skillIdeas: ideaCache.ideas,
     skillIdeaCount: ideaCache.ideas.length + sk.ideas.length,
@@ -2468,7 +2608,11 @@ function actions($, d) {
     draftSkill: (text) => draftSkill($, text),
     draftIdea: (idea) => draftSkill($, idea.seed, idea.name),
     saveSkill: () => saveSkill($),
-    askClaudeSkill: () => askClaudeSkill($),
+    improveDraft: () => improveDraft($),
+    undoImprove: () => update($, skill, (x) => (x.previous ? { ...x, draft: x.previous, previous: undefined } : x)),
+    saveChange: () => saveChange($),
+    cancelChange: () => update($, change, () => NO_CHANGE),
+    redoChange: () => (redoChange ? redoChange() : update($, change, () => NO_CHANGE)),
     discardSkill: () => update($, skill, (s) => ({ ...s, draft: null })),
     setSkillScope: (scope) => update($, skill, (s) => ({ ...s, scope })),
     setDescribe: (describe) => update($, skill, (s) => ({ ...s, describe })),
@@ -2529,19 +2673,7 @@ function actions($, d) {
       const list = runId ? (digests.byId[runId] ? workflowSavings([digests.byId[runId]]).findings : []) : savingsNow(await $.clock.now()).findings
       const f = list.find((x) => x.key === key)
       if (!f) return
-      if (!runId) {
-        const at = await $.clock.now()
-        adoptedSavings = await changeShared($, ADOPTED_KEY, adoptedSavings, (all) => ({ ...all, [key]: at }))
-        $.ui.invalidate('ui.render')
-      }
-      let isFilled = false
-      try {
-        const r = await $.prompt.fill({ text: savingRulePrompt(f), mode: 'append' })
-        isFilled = !r || r.isFilled !== false
-      } catch {
-        // no prompt box here
-      }
-      $.ui.toast(isFilled ? 'The request is in the prompt box. Send it, and Claude shows the change to your CLAUDE.md before saving it.' : "Couldn't fill the prompt box here. Ask Claude to add this rule to your CLAUDE.md: " + f.rule)
+      await addRule($, f, runId ? '' : key)
     },
     hideSaving: async (key, isHiding, isForever = false) => {
       const now = await $.clock.now()
@@ -2604,9 +2736,15 @@ function actions($, d) {
     },
     askStopElsewhere: (item) => sendReply($, { key: 'stop:' + item.runId, title: item.title || item.project, deskId: item.deskId }, stopRequest(item.name, item.runId)),
     trySkill: (name) => trySkill($, name),
-    fixSkill: (x) => askClaude($, skillFixPrompt(x), 'A request to fix /' + x.name),
-    makeManual: (names) => askClaude($, manualOnlyPrompt(names), 'A request to make ' + plural(names.length, 'skill', 'skills') + ' manual-only'),
-    raiseBudget: (fraction) => askClaude($, budgetPrompt(fraction), 'A request to raise the listing’s budget'),
+    fixSkill: (x) => fixSkill($, x),
+    makeManual: (names) =>
+      changeSetting($, 'settings:manual', plural(names.length, 'skill', 'skills') + ' out of the listing, kept as /name', (t) => withManualOnly(t, names),
+        () => ({ before: names.map((n) => '/' + n + ': listed for Claude to pick').join('\n'), after: names.map((n) => '/' + n + ': runs when you type it (skillOverrides: user-invocable-only)').join('\n') }),
+        'Saved: ' + names.map((n) => '/' + n).join(', ') + (names.length === 1 ? ' runs' : ' run') + ' only when you type ' + (names.length === 1 ? 'it' : 'them') + '. New sessions leave ' + (names.length === 1 ? 'it' : 'them') + ' out of the listing.'),
+    raiseBudget: (fraction) =>
+      changeSetting($, 'settings:budget', 'More room for the skill listing', (t) => withListingBudget(t, fraction),
+        () => ({ before: 'skillListingBudgetFraction: ' + (fraction || 0.01) + ' (' + Math.round((fraction || 0.01) * 100) + '% of the context window)', after: 'skillListingBudgetFraction: ' + nextListingBudget(fraction) + ' (' + Math.round(nextListingBudget(fraction) * 100) + '% of the context window)' }),
+        'Saved: the skill listing gets ' + Math.round(nextListingBudget(fraction) * 100) + '% of the context window from the next session.'),
     copyText: (text, surface, what) => copyText($, text, surface, what),
     findIdeasEverywhere: () => refreshPromptIdeas($, true),
     setSkillsView: (patch) => setView(patch),
@@ -2631,10 +2769,10 @@ function actions($, d) {
       if (key === 'cheap-sonnet') return setOption($, 'cheapModel', 'sonnet')
       if (key === 'model-default') return chooseModel($, { main: '', helpers: '' }, 'Back to the usual models for this session.')
       if (key === 'workflow-start') return fillPrompt($, 'Use a workflow for this: ', 'a workflow request, after you finish the sentence')
-      if (key === 'mcp') return fillPrompt($, '/mcp', 'your MCP servers')
-      if (key === 'memory') return fillPrompt($, '/memory', 'your memory files')
-      if (key === 'plugins') return fillPrompt($, '/plugin', 'your plugins')
-      if (key === 'skills-screen') return fillPrompt($, '/skills', 'your skills')
+      if (key === 'mcp') return openScreen($, 'mcp', 'your MCP servers')
+      if (key === 'memory') return openScreen($, 'memory', 'your memory files')
+      if (key === 'plugins') return openScreen($, 'plugin', 'your plugins')
+      if (key === 'skills-screen') return openScreen($, 'skills', 'your skills')
       if (key === 'spending' || key === 'limits') return setView({ tab: 'usage', confirm: '', editing: '' })
       if (key === 'context') return setView({ tab: 'overview', confirm: '', editing: '', focus: 'handoff' }) // to Save and shrink
       if (key === 'adviser') return setView({ tab: 'overview', confirm: '', editing: '', focus: 'model-advice' })

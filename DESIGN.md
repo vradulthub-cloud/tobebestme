@@ -83,6 +83,7 @@ So the Workflows tab explains, shows and steers, in that order:
 - **A pace, not an alarm.** For the weekly limit, a day's share that lasts until the reset, and whether today is within it.
 - **The right model, suggested.** Opus for planning and review, Sonnet for code, the cheaper model for reading; one press switches this session when the limits call for it.
 - **Told once, not nagged.** A notification goes out once per computer, whichever session notices first. There are at most four in ten minutes, and a sound never holds up the pane. Claude Code's own notifications are unreliable outside three terminals, so ToBeBestMe also uses the notification centre, a sound and, if you like, your phone.
+- **A button does its job where you pressed it.** A fix, a setting or a rule is worked out in the background and shown in the pane as it is now and as it will be, then written on Save; it never goes through the conversation or the prompt box. Only buttons that hand Claude a job (start a workflow, resume one, a long run, try a skill) go to the conversation, because that is where Claude works and where you read its plan.
 - **The right tool, suggested.** When a request looks like a job for a workflow, it says so once and offers a shape with a model per stage. The request goes into the prompt box for you to read first.
 - **Long runs planned up front.** The /long-run playbook breaks big work into checked stages on the right models and stops cleanly before a limit, so a run doesn't die mid-task.
 
