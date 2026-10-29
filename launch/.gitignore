@@ -1,0 +1,9 @@
+# Private: the launch plan and the case-study draft stay on this computer.
+STRATEGY.md
+case-study.md
+.claude/
+.pages/
+video/.sheet/
+# Full-quality videos are for uploading to social platforms; the web copies are kept.
+out/video/*.mp4
+!out/video/*-web.mp4

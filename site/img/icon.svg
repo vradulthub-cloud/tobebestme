@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>ToBeBestMe</title>
+  <rect width="1024" height="1024" rx="228" fill="#1C1C1E"/>
+  <!-- three runways: context, the 5-hour limit and the weekly limit, which runs out early -->
+  <g transform="translate(512 514) scale(1.16) translate(-348 -225)">
+    <!-- context: fill with its warning and compaction ticks -->
+    <rect x="0" y="0" width="696" height="76" rx="10" fill="#8E8E93" fill-opacity="0.26"/>
+    <rect x="0" y="0" width="236" height="76" rx="10" fill="#64D2FF"/>
+    <rect x="410" y="-12" width="12" height="100" fill="#AEAEB2"/>
+    <rect x="576" y="-12" width="12" height="100" fill="#AEAEB2"/>
+    <!-- 5-hour: fill short of its playhead -->
+    <rect x="0" y="156" width="696" height="76" rx="10" fill="#8E8E93" fill-opacity="0.26"/>
+    <rect x="0" y="156" width="206" height="76" rx="10" fill="#BF5AF2"/>
+    <rect x="298" y="144" width="14" height="100" fill="#F2F2F7" stroke="#1C1C1E" stroke-width="8" paint-order="stroke"/>
+    <!-- weekly: fill past its playhead (orange), then the run-out stop and the dry line to the reset -->
+    <rect x="0" y="312" width="696" height="76" rx="10" fill="#8E8E93" fill-opacity="0.26"/>
+    <rect x="0" y="312" width="598" height="76" rx="10" fill="#0A84FF"/>
+    <rect x="478" y="312" width="120" height="76" fill="#FF9F0A"/>
+    <rect x="0" y="412" width="478" height="26" fill="#AEAEB2"/>
+    <rect x="566" y="424" width="130" height="10" fill="#FF9F0A"/>
+    <rect x="552" y="396" width="26" height="62" fill="#FF9F0A"/>
+    <rect x="478" y="300" width="14" height="100" fill="#F2F2F7" stroke="#1C1C1E" stroke-width="8" paint-order="stroke"/>
+  </g>
+</svg>
