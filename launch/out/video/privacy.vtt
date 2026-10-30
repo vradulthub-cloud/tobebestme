@@ -1,0 +1,26 @@
+WEBVTT
+
+1
+00:00:00.300 --> 00:00:03.950
+What it reads, and what it sends.
+ToBeBestMe runs inside Claude Code, on your computer.
+
+2
+00:00:03.950 --> 00:00:11.200
+It reads Claude Code’s own records.
+All of it on your computer.
+
+3
+00:00:11.200 --> 00:00:18.450
+It sends only to Claude, through your account.
+And to your phone, only if you set that up.
+
+4
+00:00:18.450 --> 00:00:22.100
+It never opens .env or key files.
+No analytics, no tracking, no server of ours. SECURITY.md lists everything it reads and writes.
+
+5
+00:00:22.100 --> 00:00:25.000
+ToBeBestMe
+github.com/vradulthub-cloud/tobebestme

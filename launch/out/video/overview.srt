@@ -28,7 +28,7 @@ Ease off to a quarter of today’s pace, and it lasts the week.
 
 7
 00:00:37,550 --> 00:00:46,200
-Answer every waiting chat from one place. Permission prompts, questions and plans from every session, most pressing first. The pane counts 4 chats waiting.
+The chat that needs you most comes first, as a Now card. The rest of the waiting chats follow, from every session. The pane counts 4 more waiting.
 
 8
 00:00:46,200 --> 00:00:53,350
@@ -40,12 +40,22 @@ Context and limits above where you type. Amber when one runs low, red when it’
 See what a change would buy back. Half the Opus work on Sonnet moves the run-out from 5:21 AM to 1:15 PM: 7 h 54 min more.
 
 10
-00:01:00,800 --> 00:01:10,450
-All of it, in one pane beside the chat.
-Everything on one screen, beside your chat.
+00:01:00,800 --> 00:01:05,800
+Fix it in the pane, not in the chat.
+The pane works out the change itself and shows what’s there now, and what it becomes after.
 
 11
-00:01:10,450 --> 00:01:18,150
+00:01:05,800 --> 00:01:10,450
+Fix it in the pane, not in the chat.
+Nothing is written until you press Save change. Nothing goes through the conversation.
+
+12
+00:01:10,450 --> 00:01:20,100
+All of it, in one pane beside the chat.
+The week, the chat that needs you, savings and fixes, beside your chat.
+
+13
+00:01:20,100 --> 00:01:27,800
 See where your week went.
 /plugin install tobebestme --marketplace vradulthub-cloud/tobebestme
 github.com/vradulthub-cloud/tobebestme

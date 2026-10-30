@@ -91,83 +91,120 @@ const rise = (el, p, d = 40, b = 12) => { const q = eo5(clamp(p)); el.style.opac
 const XF = 0.35
 const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;')
 
+// ---- the week drawing: day bars on the hour axis, the line of use, the dashed pace to the run-out, and the hatched stretch without Claude ----
+const HRS = DAYS.map((d) => d[1]), STARTS = HRS.map((_, i) => HRS.slice(0, i).reduce((a, b) => a + b, 0))
+const CUM = (() => { const pts = [[0, 0]]; let c = 0; WEEK.forEach((d, i) => { if (d && i < 5) { c += sum(d); pts.push([STARTS[i] + HRS[i], c]) } }); pts.push([NOW, USED]); return pts })()
+const yAt = (h) => { for (let i = 1; i < CUM.length; i++) if (h <= CUM[i][0]) { const a = CUM[i - 1], b = CUM[i]; return lerp(a[1], b[1], (h - a[0]) / (b[0] - a[0])) } return USED }
+const AMBER = '#FF9F0A', GREEN = '#30D158'
+let PLN = 0
+function plot({ h = null, faint = 1 } = {}) {
+  const id = 'plg' + PLN++
+  const X = (hr) => ((hr / TOTAL) * 1000).toFixed(1), Y = (p) => (100 - p).toFixed(2)
+  const el = $('div', 'pl'); if (h) el.style.height = h + 'px'
+  const area = $('div', 'pl-a')
+  area.innerHTML = `<span class="cap">100% of the limit</span><div class="vls"></div><span class="tl now">Now</span><span class="tl rst" style="right:0;color:var(--fg-2);font-weight:500">Resets Sun 2:00 PM</span>
+    <div class="dryz"><div class="pill num"></div></div>
+    <svg class="pl-svg a" viewBox="0 0 1000 100" preserveAspectRatio="none"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF9F0A" stop-opacity=".40"/><stop offset="1" stop-color="#FF9F0A" stop-opacity="0"/></linearGradient></defs><path fill="url(#${id})"/><path class="ln"/></svg>
+    <svg class="pl-svg b" viewBox="0 0 1000 100" preserveAspectRatio="none"><path class="pj"/></svg>
+    <i class="nowl"></i><i class="hd"></i><i class="ed"><b></b></i>`
+  const q = (s) => area.querySelector(s)
+  const vls = q('.vls'); STARTS.slice(1).forEach((hr) => { const v = $('i', 'vl'); v.style.left = pos(hr) + '%'; vls.appendChild(v) })
+  const line = CUM.map((p, i) => (i ? 'L' : 'M') + X(p[0]) + ' ' + Y(p[1])).join(' ')
+  area.querySelector('.pl-svg.a path').setAttribute('d', line + ' L' + X(NOW) + ' 100 L0 100 Z'); q('.ln').setAttribute('d', line)
+  q('.tl.now').style.left = pos(NOW) + '%'; q('.tl.now').style.transform = 'translateX(-50%)'
+  q('.nowl').style.left = pos(NOW) + '%'
+  const barsEl = $('div', 'pl-b')
+  el.append(area, barsEl)
+  const cols = WEEK.map((v, i) => {
+    const col = $('div', 'pcol'), pc = $('span', 'p num'), st = $('div', 'stack'), lb = $('span', 'l', DAYS[i][0]), segs = {}
+    col.style.left = pos(STARTS[i]) + '%'; col.style.width = pos(HRS[i]) + '%'
+    if (v) P.forEach(([k, c]) => { if (v[k]) { const s = $('i'); s.style.background = c; s.style.flex = `${v[k]} 0 0`; st.appendChild(s); segs[k] = s } })
+    col.append(pc, st, lb); barsEl.appendChild(col)
+    return { col, pc, st, lb, segs, v }
+  })
+  return {
+    el, cols, area,
+    // one call draws everything: bars (grow, perDay, day, project), then the marks in order (line, proj, dot, dry, pill)
+    set({ grow = 1, perDay = null, day = -1, dayP = 0, project = '', projP = 0, barOp = 1, pcts = true, daysP = 1, nowP = 1, line: lp = 0, proj = 0, pe = [RUN, 100], dot = 0, dry = 0, pill = 0, pillText = '', ok = 0, t = 0, resetP = 1 } = {}) {
+      const avail = (h || el.clientHeight || 300) - 40 - 36
+      cols.forEach((c, i) => {
+        c.lb.style.opacity = daysP; c.lb.classList.toggle('on', day === i && dayP > 0.3)
+        if (!c.v) { c.st.style.display = 'none'; c.pc.textContent = ''; return }
+        const g = perDay ? perDay[i] : back(clamp((grow - i * 0.11) / 0.42)), tot = sum(c.v)
+        c.st.style.height = Math.max(0, (tot / 100) * 2.3 * avail * g) + 'px'
+        c.pc.style.opacity = pcts ? clamp(g * 1.4 - 0.3) * barOp : 0
+        c.pc.textContent = project && projP > 0.5 ? (c.v[project] ? r1(c.v[project]) : '') : r1(tot)
+        c.st.style.opacity = (day >= 0 && day !== i ? lerp(1, 0.2, dayP) : 1) * barOp
+        for (const k in c.segs) c.segs[k].style.opacity = project && k !== project ? lerp(1, 0.18, projP) : 1
+      })
+      q('.vls').style.opacity = daysP
+      // the line of use, drawn left to right up to Now
+      const le = pos(NOW) * eo(lp)
+      area.querySelector('.pl-svg.a').style.clipPath = `inset(-40px ${100 - le}% -40px 0)`
+      area.querySelector('.pl-svg.a').style.opacity = lp > 0 ? 1 : 0
+      const hd = q('.hd'); hd.style.left = le + '%'; hd.style.top = (100 - yAt((le / 100) * TOTAL)) + '%'; hd.style.opacity = lp > 0 && lp < 1 ? 1 : 0
+      const nowOp = nowP * clamp(lp * 4 - 3 + (lp >= 1 ? 1 : 0)); q('.nowl').style.opacity = nowOp; q('.tl.now').style.opacity = nowOp
+      q('.tl.rst').style.opacity = resetP
+      // the dashed pace from Now to where it ends
+      const pj = q('.pj'), ex = pos(pe[0]), col = `rgb(${mix(hex(AMBER), hex(GREEN), ok)})`
+      pj.setAttribute('d', 'M' + X(NOW) + ' ' + Y(USED) + ' L' + X(pe[0]) + ' ' + Y(pe[1]))
+      pj.style.stroke = col
+      const sv = area.querySelector('.pl-svg.b'); sv.style.clipPath = `inset(-40px ${100 - (pos(NOW) + (ex - pos(NOW)) * eo(proj))}% -40px 0)`; sv.style.opacity = proj > 0 ? 1 : 0
+      const ed = q('.ed'); ed.style.left = ex + '%'; ed.style.top = (100 - pe[1]) + '%'; ed.style.color = col; ed.style.background = col
+      const pu = (t * 0.9) % 1; ed.style.opacity = dot; ed.style.transform = `scale(${lerp(0.5, 1, back(clamp(dot * 1.3)))})`
+      const ring = ed.firstChild; ring.style.transform = `scale(${1 + pu * 1.6})`; ring.style.opacity = (1 - pu) * 0.9 * dot
+      // the hatched stretch without Claude, after the run-out
+      const dz = q('.dryz'), runs = pe[1] >= 99.9
+      dz.style.left = ex + '%'; dz.style.opacity = runs ? dry : 0
+      const pl = q('.pill'); pl.textContent = pillText.replace(' without', '\nwithout'); pl.style.opacity = runs ? pill * clamp((90 - ex) / 4) : 0; pl.style.transform = `translateY(${(1 - eo(pill)) * 14}px)`
+    },
+  }
+}
+
 function weekChart() {
   const el = $('div', 'week card')
   const chips = $('div', 'chips')
   P.forEach(([k, c]) => { const ch = $('span', 'chip', `<i class="dot" style="background:${c}"></i>${k} <b class="num">${r1(TOT[k])}</b>`); ch.dataset.k = k; chips.appendChild(ch) })
-  const bars = $('div', 'bars')
-  const cols = WEEK.map((v, i) => {
-    const col = $('div', 'bar' + (v ? '' : ' f')), pc = $('span', 'p num'), st = $('div', 'stack'), lb = $('span', 'l', DAYS[i][0]), segs = {}
-    if (v) P.forEach(([k, c]) => { if (v[k]) { const s = $('i'); s.style.background = c; s.style.flex = `${v[k]} 0 0`; st.appendChild(s); segs[k] = s } })
-    col.append(pc, st, lb); bars.appendChild(col)
-    return { col, pc, st, lb, segs, v }
-  })
+  const pl = plot()
   const read = $('p', 'readout')
-  el.append(chips, bars, read)
-  const BAR = 250
+  el.append(chips, pl.el, read)
   return {
-    el, cols, chips, bars,
-    set({ grow = 1, perDay = null, day = -1, dayP = 0, project = '', projP = 0, text = '', textP = 1 } = {}) {
-      cols.forEach((c, i) => {
-        if (!c.v) { c.st.style.opacity = grow > 0.9 ? 1 : 0; return }
-        const g = perDay ? perDay[i] : back(clamp((grow - i * 0.11) / 0.42))
-        const tot = sum(c.v)
-        c.st.style.height = Math.max(0, (tot / MAXD) * BAR * g) + 'px'
-        c.pc.style.opacity = clamp(g * 1.4 - 0.3)
-        c.pc.textContent = project && projP > 0.5 ? (c.v[project] ? r1(c.v[project]) : '') : r1(tot)
-        c.st.style.opacity = day >= 0 && day !== i ? lerp(1, 0.2, dayP) : 1
-        for (const k in c.segs) c.segs[k].style.opacity = project && k !== project ? lerp(1, 0.18, projP) : 1
-        c.lb.classList.toggle('on', day === i && dayP > 0.3)
-      })
+    el, cols: pl.cols, chips, bars: pl.el, plot: pl,
+    // bars and marks as in plot.set; the chips and the readout line follow the picked day or project
+    set(o = {}) {
+      pl.set(o)
+      const { project = '', projP = 0, text = '', textP = 1 } = o
       ;[...chips.children].forEach((ch) => { ch.classList.toggle('on', !!project && ch.dataset.k === project && projP > 0.4); ch.style.opacity = project && ch.dataset.k !== project ? lerp(1, 0.4, projP) : 1 })
       read.innerHTML = text; rise(read, textP, 20, 8)
     },
   }
 }
 
-function calendar({ figure = true, brk = false } = {}) {
+// the weekly limit as the drawing: the same marks, with the figure above and the run-out words below
+function calendar({ figure = true, brk = false, pill = false } = {}) {
   const el = $('div', 'inst card')
-  el.innerHTML = `${figure ? '<div class="fig"><span class="n num">0%</span><span class="lb">of your weekly limit, with two days to go</span></div>' : ''}
-  <div class="rw"><span class="lab now">Now</span><span class="lab reset" style="right:0;color:var(--fg-2);font-weight:500">Resets Sun 2:00 PM</span>
-  <div class="track"><i class="fill"></i><i class="ghost"></i><i class="shine"></i><i class="dry"></i></div><div class="past"></div><div class="head"></div>
-  <div class="mk now" style="background:var(--fg)"></div><div class="mk run" style="background:var(--warn)"></div><div class="mk reset" style="left:calc(100% - 1.5px);background:var(--fg-2)"></div>
-  <div class="days">${DAYS.map(([d, h]) => `<span style="width:${pos(h)}%" class="${d === 'Today' ? 't' : ''}">${d}</span>`).join('')}</div>
-  <div class="runlab"><span class="num"></span><span class="num"></span></div>${brk ? '<div class="brk"><i class="b"></i><span class="t num"></span></div>' : ''}</div>`
+  el.innerHTML = `${figure ? '<div class="fig"><span class="n num">0%</span><span class="lb">of your weekly limit, with two days to go</span></div>' : ''}<div class="rw"><div class="runlab"><span class="num"></span><span class="num"></span></div></div>`
+  const pl = plot({ h: figure ? 220 : 190 })
+  const rw = el.querySelector('.rw'); rw.insertBefore(pl.el, rw.firstChild)
   const q = (s) => el.querySelector(s)
   return {
-    el,
-    // fill 0..1 of the way to Now; ghostTo in hours; run marker in hours (null hides); dry 0..1; brk 0..1 draws the bracket over the out zone
-    set({ fig = 0, fill = 0, ghostTo = NOW, ghostP = 0, run = null, runP = 0, runText = '', runText2 = '', swapP = 0, dry = 0, ok = 0, labels = 1, t = 0, resetP = 1, daysP = 1, brk: bp = 0, brkText = '' } = {}) {
+    el, plot: pl,
+    // fill 0..1 of the way to Now; ghostTo in hours and run (hours, null hides) place the pace's end; endPct is where it ends when it doesn't run out
+    set({ fig = 0, fill = 0, ghostTo = NOW, ghostP = 0, run = null, runP = 0, runText = '', runText2 = '', swapP = 0, dry = 0, ok = 0, labels = 1, t = 0, resetP = 1, daysP = 1, brk: bp = 0, brkText = '', endPct = 100, bars = 1 } = {}) {
       if (figure) { q('.n').textContent = Math.round(USED * eo(fig)) + '%'; q('.fig').style.opacity = clamp(fig * 3) }
-      const now = pos(NOW) * eo(fill)
-      q('.fill').style.width = now + '%'
-      q('.past').style.width = now + '%'
-      const head = q('.head'); head.style.left = now + '%'; head.style.opacity = fill > 0 && fill < 1 ? 1 : 0
-      const gEnd = lerp(pos(NOW), pos(ghostTo), eo(ghostP))
-      const gc = mix(hex('#FF9F0A'), hex('#30D158'), ok)
-      const gh = q('.ghost'); gh.style.left = pos(NOW) + '%'; gh.style.width = Math.max(0, gEnd - pos(NOW)) * (fill >= 1 ? 1 : 0) + '%'
-      gh.style.background = `linear-gradient(90deg,rgba(${gc},.42),rgba(${gc},.2))`
-      const sh = q('.shine'); sh.style.left = `calc(${pos(NOW) + ((t * 22) % Math.max(1, gEnd - pos(NOW)))}% - 80px)`; sh.style.opacity = ghostP > 0.9 ? 0.8 : 0
-      const dr = q('.dry'); const rp = run == null ? 100 : pos(run); dr.style.left = rp + '%'; dr.style.width = (100 - rp) + '%'; dr.style.opacity = dry
-      ;['now', 'reset'].forEach((k) => { q('.mk.' + k).style.opacity = k === 'now' ? clamp(fill * 4 - 3) : resetP; q('.lab.' + k).style.opacity = (k === 'now' ? clamp(fill * 4 - 3) : resetP) * labels })
-      q('.lab.now').style.left = pos(NOW) + '%'; q('.lab.now').style.transform = 'translateX(-50%)'
-      const mk = q('.mk.run'), [l1, l2] = el.querySelectorAll('.runlab span')
-      if (run == null) { mk.style.opacity = 0; l1.style.opacity = l2.style.opacity = 0 } else {
-        const b = back(runP)
-        mk.style.left = pos(run) + '%'; mk.style.opacity = clamp(runP * 3); mk.style.transform = `translateX(-1.5px) translateY(${(1 - b) * -60}px)`
-        mk.style.background = `rgb(${gc})`
-        const lp = Math.min(Math.max(pos(run), 9), 91) + '%'
+      const runs = run != null && run < TOTAL - 0.05
+      const end = runs ? [run, 100] : [Math.min(TOTAL, ghostTo), endPct]
+      const showPill = brk ? bp : pill ? dry : 0
+      const ptext = brk ? brkText : dur(TOTAL - (run == null ? RUN : run)) + ' without Claude'
+      pl.set({ grow: bars, barOp: 0.5 * bars, pcts: false, daysP, nowP: labels, resetP, line: fill, proj: ghostP, pe: end, dot: runP, dry, pill: showPill, pillText: ptext, ok, t })
+      const [l1, l2] = el.querySelectorAll('.runlab span')
+      if (run == null) { l1.style.opacity = l2.style.opacity = 0 } else {
+        const lp = Math.min(Math.max(pos(run), 14), 86) + '%'
         l1.style.left = l2.style.left = lp
         l1.textContent = runText; l2.textContent = runText2
         l1.style.color = l2.style.color = ok > 0.5 ? 'var(--ok)' : 'var(--warn-text)'
         l1.style.opacity = clamp(runP * 2 - 0.4) * (1 - swapP); l1.style.transform = `translateX(-50%) translateY(${-swapP * 30}px)`; l1.style.filter = `blur(${swapP * 8}px)`
         l2.style.opacity = swapP; l2.style.transform = `translateX(-50%) translateY(${(1 - swapP) * 30}px)`; l2.style.filter = `blur(${(1 - swapP) * 8}px)`
-      }
-      q('.days').style.opacity = daysP
-      if (brk) {
-        const b = q('.brk .b'), tx = q('.brk .t'), l = run == null ? 86 : pos(run)
-        b.style.left = l + '%'; b.style.width = (100 - l) + '%'; b.style.clipPath = `inset(0 ${(1 - eo(bp)) * 100}% 0 0)`
-        tx.style.left = (l + 100) / 2 + '%'; tx.textContent = brkText; tx.style.opacity = clamp(bp * 2 - 0.8); tx.style.transform = `translateX(-50%) translateY(${(1 - eo(bp)) * 14}px)`
       }
     },
   }
@@ -283,8 +320,8 @@ function hero(kind, vis) {
     const wrap = $('div', 'p3d'); wrap.style.cssText = 'position:absolute;left:0;top:0;width:1680px;height:560px'
     vis.appendChild(wrap)
     let node, inner
-    if (kind === 'chart') { const ch = weekChart(); ch.el.style.height = '540px'; node = ch.el; inner = (t) => ch.set({ grow: prog(t, 0.1, 1.6) }) }
-    else if (kind === 'calendar') { const c = calendar(); node = c.el; inner = (t) => c.set({ t, fig: prog(t, 0.2, 1.6), fill: prog(t, 0.2, 1.8), ghostTo: RUN, ghostP: prog(t, 1.4, 2.6), run: RUN, runP: prog(t, 2.2, 3), runText: 'Runs out ' + at(RUN), dry: prog(t, 2.8, 3.6) }) }
+    if (kind === 'chart') { const ch = weekChart(); ch.el.style.height = '540px'; node = ch.el; inner = (t) => ch.set({ t, grow: prog(t, 0.1, 1.6), line: prog(t, 1.2, 2.6), proj: prog(t, 2.5, 3.2), dot: prog(t, 3.0, 3.5), dry: prog(t, 3.2, 3.9), pill: prog(t, 3.5, 4.0), pe: [RUN, 100], pillText: dur(TOTAL - RUN) + ' without Claude' }) }
+    else if (kind === 'calendar') { const c = calendar({ pill: true }); node = c.el; inner = (t) => c.set({ t, fig: prog(t, 0.2, 1.6), fill: prog(t, 0.2, 1.8), ghostTo: RUN, ghostP: prog(t, 1.4, 2.6), run: RUN, runP: prog(t, 2.2, 3), runText: 'Runs out ' + at(RUN), dry: prog(t, 2.8, 3.6) }) }
     else {
       node = $('div'); node.style.cssText = 'position:relative;width:900px;height:520px;margin:0 auto'
       SESS.forEach(([a, b, c], i) => { const e = sessCard(a, b, c); e.style.top = i * 98 + 'px'; node.appendChild(e) })
@@ -294,9 +331,9 @@ function hero(kind, vis) {
     return (t, s) => { const k = tilt(t); node.style.transform = `translateY(${k.ty}px) rotateX(${k.rx}deg) rotateY(${k.ry}deg)`; node.style.opacity = (0.25 + 0.75 * k.a) * visOut(t, s); inner(t) }
   }
   const spec = {
-    pane: ['pane.png', 1271, 1400, 1680, 560, { s: 1, cy: (t) => 212 + t * 22 }, true],
-    needs: ['needs.png', 715, 444, 1680, 560, { s: 1.9, cy: (t) => 112 + t * 4 }],
-    standout: ['standout.png', 715, 196, 1680, 450, { s: 1, cy: () => 96 }],
+    pane: ['pane.png', 1271, 1560, 1680, 560, { s: 1, cy: (t) => 212 + t * 22 }, true],
+    needs: ['needs.png', 715, 594, 1680, 560, { s: 2.45, cy: (t) => 136 + t * 12 }],
+    standout: ['standout.png', 715, 334, 1680, 450, { s: 1.7, cy: (t) => 100 + t * 10 }],
     band: ['band.png', 767, 83, 1680, 182, { s: 1, cy: () => 42 }],
   }[kind]
   const sh = shot(IMG + spec[0], spec[1], spec[2], spec[3], spec[4], [], !!spec[6]); sh.el.style.position = 'absolute'; sh.el.style.left = '0'; sh.el.style.top = kind === 'band' ? '170px' : '0'
@@ -394,7 +431,7 @@ S.flow = (title, sub, cap) => ({
       els.forEach((e, i) => rise(e, prog(t, 0.2 + i * 0.08, 1 + i * 0.08), 30))
       rise(ch.el, prog(t, 0.1, 0.9), 40)
       const lt = t - 0.6
-      ch.set({ perDay: f.perDay(lt), text: '<b class="num">82%</b> of the weekly limit so far, across 6 projects.', textP: prog(t, 8.4, 9.4) })
+      ch.set({ t, perDay: f.perDay(lt), line: prog(t, 8.0, 9.4), proj: prog(t, 9.3, 10.0), dot: prog(t, 9.8, 10.3), dry: prog(t, 10.0, 10.6), pe: [RUN, 100], text: '<b class="num">82%</b> of the weekly limit so far, across 6 projects.', textP: prog(t, 8.4, 9.4) })
       vis.style.opacity = visOut(t, s)
       f.draw(lt, visOut(t, s))
     }
@@ -414,8 +451,9 @@ S.focus = (title, sub, mode = 'project', cap) => ({
       ch.el.style.transform = `rotateX(${lerp(24, 0, tilt)}deg) translateY(${lerp(80, 0, tilt)}px) scale(${lerp(0.9, 1, tilt)})`
       ch.el.style.opacity = clamp(t * 2.5) * visOut(t, s)
       const fp = eo(prog(t, tp + 0.05, tp + 0.8))
-      if (mode === 'day') ch.set({ grow: 1, day: 3, dayP: fp, text: '<b>Wednesday</b> used <b class="num">21%</b> of the weekly limit: storefront 12%, ledger-api 5.6%, docs-site 3.3%.', textP: prog(t, tp + 0.5, tp + 1.3) })
-      else ch.set({ grow: 1, project: 'storefront', projP: fp, text: '<b>storefront</b> used <b class="num">49%</b> of this week’s limit, most of it on Wednesday.', textP: prog(t, tp + 0.5, tp + 1.3) })
+      const marks = { t, line: 1, proj: 1, dot: 1, dry: 1, pe: [RUN, 100] }
+      if (mode === 'day') ch.set({ ...marks, grow: 1, day: 3, dayP: fp, text: '<b>Wednesday</b> used <b class="num">21%</b> of the weekly limit: storefront 12%, ledger-api 5.6%, docs-site 3.3%.', textP: prog(t, tp + 0.5, tp + 1.3) })
+      else ch.set({ ...marks, grow: 1, project: 'storefront', projP: fp, text: '<b>storefront</b> used <b class="num">49%</b> of this week’s limit, most of it on Wednesday.', textP: prog(t, tp + 0.5, tp + 1.3) })
       if (!geo) {
         const keep = ch.el.style.transform; ch.el.style.transform = 'none'
         const vr = vis.getBoundingClientRect(), r = (mode === 'day' ? ch.cols[3].st : ch.chips.children[0]).getBoundingClientRect()
@@ -436,7 +474,7 @@ S.forecast = (o = {}) => {
     dur: o.dur || 11, mood: 'amber', sample: true, title: o.title || 'Know before you *run out.*', e: ['#FF9F0A', '#FF375F'], cap: o.cap,
     sub: o.sub || 'At this pace it runs out Saturday at 5:21 AM, 32 h 38 min before it resets.', sub2: o.sub2 === undefined ? 'Ease off to a quarter of today’s pace, and it lasts the week.' : o.sub2, sub2At: o.sub2At || 6.0,
     build(vis) {
-      const c = calendar(); vis.appendChild(c.el)
+      const c = calendar({ pill: true }); vis.appendChild(c.el)
       const pace = o.pace === undefined ? [6.3, 8.4] : o.pace
       return (t, s) => {
         rise(c.el, prog(t, 0.05, 0.8), 50); c.el.style.opacity = Math.min(+c.el.style.opacity, visOut(t, s))
@@ -446,7 +484,7 @@ S.forecast = (o = {}) => {
         const sw = pace ? eo(prog(t, pace[0] + 0.9, pace[0] + 1.6)) : 0
         const P_ = (k) => prog(t, T[k][0], T[k][1])
         c.set({ t, fig: P_('fig'), fill: P_('fill'), ghostTo: runs ? NOW + runH : TOTAL, ghostP: P_('ghost'), run: runs ? NOW + runH : TOTAL - 0.01, runP: P_('run'),
-          runText: 'Runs out ' + at(NOW + runH), runText2: 'Lasts the week, ending near ' + END + '%', swapP: runs ? 0 : sw, dry: runs ? eo(P_('dry')) : 0, ok })
+          runText: 'Runs out ' + at(NOW + runH), runText2: 'Lasts the week, ending near ' + END + '%', swapP: runs ? 0 : sw, dry: runs ? eo(P_('dry')) : 0, ok, endPct: USED + RATE * m * (TOTAL - NOW) })
       }
     },
   }
@@ -460,8 +498,8 @@ S.window = (o) => ({
     return (t, s) => {
       rise(c.el, prog(t, 0.05, 0.8), 40); c.el.style.opacity = Math.min(+c.el.style.opacity, visOut(t, s))
       const hasRun = v(t, 'ghost') > 0 || v(t, 'run') > 0
-      c.set({ t, daysP: v(t, 'days'), resetP: v(t, 'reset'), labels: 1, fig: v(t, 'fig'), fill: v(t, 'fill'), ghostTo: RUN, ghostP: v(t, 'ghost'), run: hasRun ? RUN : null, runP: v(t, 'run'),
-        runText: 'Runs out ' + at(RUN), dry: eo(v(t, 'dry')), brk: v(t, 'brk'), brkText: dur(TOTAL - RUN) })
+      c.set({ t, bars: v(t, 'days'), daysP: v(t, 'days'), resetP: v(t, 'reset'), labels: 1, fig: v(t, 'fig'), fill: v(t, 'fill'), ghostTo: RUN, ghostP: v(t, 'ghost'), run: hasRun ? RUN : null, runP: v(t, 'run'),
+        runText: 'Runs out ' + at(RUN), dry: eo(v(t, 'dry')), brk: v(t, 'brk'), brkText: dur(TOTAL - RUN) + ' without Claude' })
     }
   },
 })
@@ -473,7 +511,7 @@ S.colours = (title, sub) => ({
       const r = $('div', 'row', `<span>${n}</span><span class="t"><i style="background:${c};box-shadow:0 0 30px ${c}"></i></span><span class="pc num" style="color:${c === '#BF5AF2' ? 'var(--fg)' : c}">0%</span>`)
       box.appendChild(r); return [r, v]
     })
-    const sh = shot(IMG + 'band.png', 767, 83, 1680, 182, [[10, 43, 182, 28, 'ring', '#FF453A'], [387, 43, 184, 28, 'ring', '#FF9F0A']]); sh.el.style.marginTop = '26px'
+    const sh = shot(IMG + 'band.png', 767, 83, 1680, 182, [[10, 47, 182, 28, 'ring', '#FF453A'], [388, 47, 184, 28, 'ring', '#FF9F0A']]); sh.el.style.marginTop = '26px'
     vis.append(box, sh.el)
     return (t, s) => {
       rise(box, prog(t, 0.1, 0.9)); box.style.opacity = Math.min(+box.style.opacity, visOut(t, s))
@@ -486,8 +524,9 @@ S.colours = (title, sub) => ({
 })
 
 // one persistent needs shot serves every needs scene of a video; it lives above the scenes and moves between rows
-const NEEDS = ['needs.png', 715, 444, [[8, 36, 699, 100], [8, 140, 699, 156], [8, 296, 699, 142]]]
-const NROW = { red: 86, amber: 218, grey: 367 }, NIDX = { red: 0, amber: 1, grey: 2 }, NKS = 1.9
+// the Needs you section as drawn: the Now card (red), then Notes sync and Checkout redesign (amber), then Ledger import and Docs search (grey)
+const NEEDS = ['needs.png', 715, 594, [[13, 35, 689, 203], [14, 285, 700, 150], [14, 443, 700, 143]]]
+const NROW = { red: 136, amber: 360, grey: 478 }, NIDX = { red: 0, amber: 1, grey: 2 }, NKS = 2.45
 S.needs = (title, sub, focus = 'sweep', o = {}) => ({
   dur: o.dur || 9, needs: focus, mood: focus === 'red' ? 'red' : focus === 'amber' ? 'amber' : 'blue', sample: true, title, sub, cap: o.cap, e: focus === 'red' ? ['#FF453A', '#FF375F'] : focus === 'amber' ? ['#FF9F0A', '#FFB340'] : ['#64D2FF', '#0A84FF'],
   build() { return () => {} },
@@ -499,17 +538,17 @@ function needsState(T, list) {
   const cur = list[ci], t = T - cur.start
   if (t >= cur.s.dur) return null
   const m = cur.s.needs, prev = list[ci - 1], h = [0, 0, 0]
-  let cy = 224, s = 1, rx = 0, ry = 0, z = 0, sheen = 0
+  let cy = 297, s = 1, rx = 0, ry = 0, z = 0, sheen = 0
   if (m === 'sweep') {
     const e = eo(prog(t, 0, 1.7)); rx = lerp(32, 0, e); ry = lerp(-18, 0, e); z = lerp(-300, 0, e); sheen = prog(t, 0.6, 2.2)
     const A = [2.5, 4.3, 6.1]
     A.forEach((a, i) => (h[i] = prog(t, a, a + 0.4) * (1 - prog(t, a + 1.5, a + 1.9))))
     const zm = eio(prog(t, 1.5, 2.4)) * (1 - eio(prog(t, 7.9, 8.7)))
     const row = lerp(lerp(NROW.red, NROW.amber, eio(prog(t, A[1] - 0.4, A[1] + 0.3))), NROW.grey, eio(prog(t, A[2] - 0.4, A[2] + 0.3)))
-    s = lerp(1, NKS, zm); cy = lerp(224, row, zm)
+    s = lerp(1, NKS, zm); cy = lerp(297, row, zm)
   } else if (!prev) {
     const e = eo(prog(t, 0, 1.7)); rx = lerp(32, 0, e); ry = lerp(-18, 0, e); z = lerp(-300, 0, e); sheen = prog(t, 0.6, 2.2)
-    const zm = eio(prog(t, 1.3, 2.4)); s = lerp(1, NKS, zm); cy = lerp(224, NROW[m], zm); h[NIDX[m]] = prog(t, 1.8, 2.3)
+    const zm = eio(prog(t, 1.3, 2.4)); s = lerp(1, NKS, zm); cy = lerp(297, NROW[m], zm); h[NIDX[m]] = prog(t, 1.8, 2.3)
   } else {
     s = NKS; cy = lerp(NROW[prev.s.needs], NROW[m], eio(prog(t, 0, 1.1)))
     h[NIDX[m]] = prog(t, 0.7, 1.2); h[NIDX[prev.s.needs]] = Math.max(h[NIDX[prev.s.needs]], 1 - prog(t, 0, 0.5))
@@ -548,8 +587,8 @@ S.band = (title, sub, focus = 'dock', cap) => ({
   dur: focus === 'dock' ? 6.5 : focus === 'gauges' ? 7.5 : 7.2, mood: 'cyan', sample: true, title, sub, cap, e: ['#64D2FF', '#0A84FF'],
   build(vis) {
     const K = 1760 / 767, ox = -40
-    const rects = { dock: [[2, 2, 763, 78, 'ring', '#FFFFFF']], gauges: [[10, 43, 182, 28, 'ring', '#FF453A'], [199, 43, 181, 28, 'ring', '#BF5AF2'], [387, 43, 184, 28, 'ring', '#FF9F0A']], top: [[26, 14, 566, 31, 'ring', '#FFB340'], [622, 13, 134, 33, 'ring', '#FFFFFF']] }[focus]
-    const labels = { dock: [], gauges: [[100, 'Context 85%', '#FF453A', 1.4], [290, 'Five-hour 40%', '#BF5AF2', 2.7], [478, 'Weekly 82%', '#FF9F0A', 4.0]], top: [[300, 'Waiting chats and the forecast', '#FFB340', 1.4], [689, 'Opens what’s waiting', '#FFFFFF', 2.8]] }[focus]
+    const rects = { dock: [[2, 2, 763, 78, 'ring', '#FFFFFF']], gauges: [[10, 47, 182, 28, 'ring', '#FF453A'], [199, 47, 181, 28, 'ring', '#BF5AF2'], [388, 47, 184, 28, 'ring', '#FF9F0A']], top: [[10, 10, 462, 28, 'ring', '#FFB340'], [622, 15, 135, 31, 'ring', '#FFFFFF']] }[focus]
+    const labels = { dock: [], gauges: [[100, 'Context 85%', '#FF453A', 1.4], [290, 'Five-hour 40%', '#BF5AF2', 2.7], [480, 'Weekly 82%', '#FF9F0A', 4.0]], top: [[240, 'The forecast and what’s waiting', '#FFB340', 1.4], [689, 'Opens what’s waiting', '#FFFFFF', 2.8]] }[focus]
     const wrap = $('div'); wrap.style.cssText = `position:absolute;left:${ox}px;top:40px;width:1760px`
     const sh = shot(IMG + 'band.png', 767, 83, 1760, 190, rects)
     const pr = $('div', 'prompt', '<span style="color:var(--fg-2);font-family:var(--mono)">›</span>Ask Claude to keep going'); pr.style.marginTop = '34px'
@@ -557,7 +596,7 @@ S.band = (title, sub, focus = 'dock', cap) => ({
     wrap.append(sh.el, pr); vis.appendChild(wrap)
     const labs = labels.map(([cx, txt, col, at_]) => { const l = $('div', 'callout', txt); l.style.cssText = `left:${cx * K}px;top:14px;color:${col}`; l.style.setProperty('--c', col); wrap.appendChild(l); return [l, at_] })
     const ptr = focus === 'top' ? pointer(vis) : null
-    const bx = ox + 689 * K, by = 40 + 70 + 24 * K
+    const bx = ox + 689 * K, by = 40 + 70 + 31 * K
     return (t, s) => {
       const p = eo5(prog(t, 0.2, 1.5)), vo = visOut(t, s)
       pr.style.opacity = clamp(t * 2) * vo
@@ -575,7 +614,7 @@ S.savings = (title, sub, cap) => ({
     const sw = $('div', 'swap num', '<span style="color:var(--warn-text)">Sat 5:21 AM</span><span>Sat 1:15 PM</span>')
     const gain = $('div', 'gain num', '+7 h 54 min')
     top.append(sw, gain)
-    const c = calendar({ figure: false })
+    const c = calendar({ figure: false, pill: true })
     vis.append(top, c.el)
     return (t, s) => {
       const o = visOut(t, s)
@@ -595,27 +634,45 @@ S.savings = (title, sub, cap) => ({
   },
 })
 S.standout = (title, sub, cap) => ({
-  dur: 8.2, mood: 'green', sample: true, title, sub, cap, e: ['#30D158', '#64D2FF'],
+  dur: 8.6, mood: 'green', sample: true, title, sub, cap, e: ['#30D158', '#64D2FF'],
   build(vis) {
-    const sh = shot(IMG + 'standout.png', 715, 196, 1680, 450, [[15, 42, 128, 22, 'ring', '#30D158'], [180, 81, 304, 20, 'ring', '#30D158']]); sh.el.style.margin = '30px auto 0'
+    // standout.png is 715 × 334: the heading and the what-if sentence on top, the as-run and with-the-idea bars under them
+    const sh = shot(IMG + 'standout.png', 715, 334, 1680, 450, [[14, 38, 340, 26, 'ring', '#30D158'], [12, 100, 574, 140, 'ring', '#30D158']]); sh.el.style.margin = '30px auto 0'
     vis.appendChild(sh.el)
     return (t, s) => {
       const e = eo(prog(t, 0, 1.6))
-      const z1 = eio(prog(t, 2.0, 3.2)), z2 = eio(prog(t, 5.0, 6.2))
-      const cx = lerp(357, 300, z1), cy = lerp(lerp(98, 62, z1), 94, z2), sc = lerp(1, 1.18, z1)
-      sh.set({ rx: lerp(-28, 0, e), z: lerp(-260, 0, e), s: sc, cx, cy, op: clamp(t * 2) * visOut(t, s), sheen: prog(t, 0.8, 2.4), h: [prog(t, 3.0, 3.5) * (1 - prog(t, 4.8, 5.2)), prog(t, 6.0, 6.5)] })
+      const z1 = eio(prog(t, 2.0, 3.2)), z2 = eio(prog(t, 5.0, 6.4))
+      const cx = lerp(357, 300, z1), cy = lerp(lerp(167, 82, z1), 175, z2), sc = lerp(1, 1.7, z1)
+      sh.set({ rx: lerp(-28, 0, e), z: lerp(-260, 0, e), s: sc, cx, cy, op: clamp(t * 2) * visOut(t, s), sheen: prog(t, 0.8, 2.4), h: [prog(t, 3.0, 3.5) * (1 - prog(t, 4.8, 5.2)), prog(t, 6.2, 6.7)] })
+    }
+  },
+})
+// a fix made in the pane: now and after on the tab, written only on Save change
+S.fix = (title, sub, sub2, cap) => ({
+  dur: 10, mood: 'purple', sample: true, title, sub, sub2, sub2At: 5.0, cap, e: ['#BF5AF2', '#64D2FF'],
+  build(vis) {
+    // fix.png is 1255 × 218: the title, a Now block, an After block, and the Save change and Cancel buttons
+    const K = 1680 / 1255, Z = 1.35, CX = 470, top = 70 // zoomed to the left part of the card, where the words are
+    const sh = shot(IMG + 'fix.png', 1255, 218, 1680, 400, [[20, 58, 420, 52, 'ring', '#FF9F0A'], [20, 106, 860, 52, 'ring', '#30D158'], [24, 180, 112, 34, 'ring', '#FFFFFF']], true); sh.el.style.marginTop = top + 'px'
+    vis.appendChild(sh.el)
+    const ptr = pointer(vis)
+    const bx = 840 + (79 - CX) * K * Z, by = top + 200 + (197 - 109) * K * Z
+    return (t, s) => {
+      const e = eo5(prog(t, 0, 1.4)), vo = visOut(t, s)
+      sh.set({ s: Z, cx: CX, rx: lerp(36, 0, e), z: lerp(-300, 0, e), op: clamp(t * 2) * vo, sheen: prog(t, 0.8, 2.4), h: [prog(t, 1.8, 2.3) * (1 - prog(t, 3.4, 3.8)), prog(t, 3.8, 4.3) * (1 - prog(t, 5.4, 5.8)), prog(t, 6.4, 6.9)] })
+      const m = eio(prog(t, 5.6, 6.7)); ptr.set(lerp(bx + 520, bx, m), lerp(by + 260, by, m), prog(t, 5.6, 5.9) * (1 - prog(t, 8.3, 8.8)) * vo, prog(t, 7.0, 7.1) * (1 - prog(t, 7.1, 7.3)), prog(t, 7.0, 7.7))
     }
   },
 })
 S.pane = (title, sub, cap) => ({
   dur: 10, mood: 'blue', sample: true, title, sub, cap, e: ['#64D2FF', '#BF5AF2'],
   build(vis) {
-    const sh = shot(IMG + 'pane.png', 1271, 1400, 1680, 560, [[26, 84, 300, 36, 'ring', '#FF9F0A'], [1030, 90, 220, 50, 'ring', '#FF9F0A'], [24, 326, 712, 440, 'ring', '#64D2FF'], [749, 326, 497, 246, 'ring', '#BF5AF2']], true); vis.appendChild(sh.el)
+    const sh = shot(IMG + 'pane.png', 1271, 1560, 1680, 560, [[24, 60, 700, 160, 'ring', '#FF9F0A'], [24, 215, 1223, 245, 'ring', '#FF9F0A'], [30, 536, 696, 206, 'ring', '#FF453A'], [749, 500, 497, 262, 'ring', '#BF5AF2'], [24, 1212, 715, 336, 'ring', '#30D158']], true); vis.appendChild(sh.el)
     return (t, s) => {
       const e = eo(prog(t, 0, 1.8))
       // the whole pane, top to bottom: the hero, then Needs you and Projects, then the rest of the page
-      const cy = 212 + 325 * eio(prog(t, 3.0, 4.4)) + 263 * eio(prog(t, 5.8, 7.2)) + 384 * eio(prog(t, 7.8, 9.2))
-      const h = [prog(t, 1.4, 1.9) * (1 - prog(t, 2.8, 3.2)), prog(t, 1.6, 2.1) * (1 - prog(t, 2.8, 3.2)), prog(t, 4.3, 4.8) * (1 - prog(t, 5.7, 6.1)), prog(t, 4.6, 5.1) * (1 - prog(t, 5.7, 6.1))]
+      const cy = 212 + 430 * eio(prog(t, 3.0, 4.4)) + 280 * eio(prog(t, 5.8, 7.2)) + 420 * eio(prog(t, 7.6, 9.0))
+      const h = [prog(t, 1.2, 1.7) * (1 - prog(t, 2.0, 2.4)), prog(t, 1.9, 2.4) * (1 - prog(t, 2.9, 3.3)), prog(t, 4.3, 4.8) * (1 - prog(t, 5.7, 6.1)), prog(t, 4.8, 5.3) * (1 - prog(t, 5.7, 6.1)), prog(t, 8.4, 8.9)]
       sh.set({ rx: lerp(36, 3, e), ry: lerp(-8, 0, e), z: lerp(-500, 0, e), s: 1, cy, op: clamp(t * 2) * visOut(t, s), sheen: prog(t, 1, 3), h })
     }
   },
@@ -623,8 +680,9 @@ S.pane = (title, sub, cap) => ({
 S.frame = (title, sub, n, cap) => ({
   dur: 7, mood: 'projects', sample: true, title, sub, cap, e: ['#BF5AF2', '#00C7BE'],
   build(vis) {
-    const hgt = [268, 307, 312][n]
-    const sh = shot(SHOTS + 'frame-' + n + '.png', 1255, hgt, 1680, Math.round((1680 / 1255) * hgt)); sh.el.style.marginTop = '40px'
+    const hgt = [446, 485, 490][n] // the hero crops in shots/, 1255 wide
+    const dh = Math.min(520, Math.round((1680 / 1255) * hgt)), dw = Math.round((dh * 1255) / hgt)
+    const sh = shot(SHOTS + 'frame-' + n + '.png', 1255, hgt, dw, dh); sh.el.style.margin = '10px auto 0'
     vis.appendChild(sh.el)
     return (t, s) => { const e = eo(prog(t, 0, 1.8)); sh.set({ rx: lerp(30, 0, e), ry: lerp(14, 0, e), z: lerp(-300, 0, e), s: 1, op: clamp(t * 2) * visOut(t, s), sheen: prog(t, 0.8, 2.6) }) }
   },
@@ -656,7 +714,7 @@ S.term = (title, sub, lines, o = {}) => ({
   build(vis) {
     vis.style.display = 'flex'; vis.style.alignItems = 'center'; vis.style.justifyContent = 'center'
     const box = $('div', 'term card'); vis.appendChild(box)
-    const pane = o.pane ? shot(IMG + 'pane.png', 1271, 1400, 1680, 540, [], true) : null
+    const pane = o.pane ? shot(IMG + 'pane.png', 1271, 1560, 1680, 540, [], true) : null
     if (pane) { pane.el.style.position = 'absolute'; pane.el.style.left = '0'; pane.el.style.top = '0'; vis.appendChild(pane.el) }
     return (t, s) => {
       rise(box, prog(t, 0.1, 0.9)); box.style.opacity = Math.min(+box.style.opacity, visOut(t, s)) * (pane ? 1 - prog(t, o.pane, o.pane + 0.6) : 1)
@@ -686,7 +744,7 @@ S.end = (o = {}) => {
     cap: 'See where your week went.\n' + (cmd ? '/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme\n' : '') + 'github.com/vradulthub-cloud/tobebestme\nFree and open source. Not affiliated with Anthropic.',
     build(vis, sc) {
       vis.remove()
-      const bgp = shot(IMG + 'pane.png', 1271, 1400, 1680, 1000, [], true); bgp.el.style.cssText += ';position:absolute;left:120px;top:40px;z-index:0;filter:blur(2px)'
+      const bgp = shot(IMG + 'pane.png', 1271, 1560, 1680, 1000, [], true); bgp.el.style.cssText += ';position:absolute;left:120px;top:40px;z-index:0;filter:blur(2px)'
       sc.insertBefore(bgp.el, sc.firstChild)
       const ic = iconBlock(sc, 160, 70)
       const full = '/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme'
@@ -720,7 +778,7 @@ S.lockup = () => ({
 })
 
 const LR = [['#64D2FF', 'Your sessions’ records', 'in ~/.claude/projects, for usage, costs and waiting chats.'], ['#0A84FF', 'Session lists', 'from Claude Code and the Claude app, for what’s working or waiting.'], ['#00C7BE', 'git status', 'in recent sessions’ folders, for work left uncommitted.'], ['#5E5CE6', 'Your skill files', 'and two skill settings, for the skills check-up.']]
-const LS = [['#30D158', 'Prompts you ask for', 'when you press a button that says so.'], ['#30D158', 'A handoff note', 'before a compaction, written by Claude from the conversation.'], ['#30D158', 'A short line on your limits', 'once they run tight, so Claude keeps its steps small.'], ['#FF9F0A', 'Phone notifications', 'to the address you set, only if you set one.']]
+const LS = [['#30D158', 'Prompts you ask for', 'when you press a button that says so, like Fix description…, which sends that skill’s text.'], ['#30D158', 'A handoff note', 'before a compaction, written by Claude from the conversation.'], ['#30D158', 'A short line on your limits', 'once they run tight, so Claude keeps its steps small.'], ['#FF9F0A', 'Phone notifications', 'to the address you set, only if you set one.']]
 const V = {
   overview: { label: 'ToBeBestMe in {n} seconds', scenes: () => [
     S.cold(),
@@ -728,10 +786,11 @@ const V = {
     S.flow('Every day, stacked by the *project* that used it.', 'Read from Claude Code’s own records on your computer.', 'Every day, stacked by the project that used it. 82% of the weekly limit so far, across 6 projects.'),
     S.focus('*storefront* did more than half of it.', 'Press a project, and the rest of the week steps back.', 'project', 'storefront did more than half of it. It used 49% of this week’s limit.'),
     S.forecast({ cap: undefined }),
-    S.needs('Answer every *waiting* chat from one place.', 'Permission prompts, questions and plans from every session, most pressing first.', 'sweep', { dur: 9, cap: 'Answer every waiting chat from one place. Permission prompts, questions and plans from every session, most pressing first. The pane counts 4 chats waiting.' }),
+    S.needs('The chat that needs you *most, first.*', 'A Now card for the most urgent, then the rest of the waiting chats from every session.', 'sweep', { dur: 9, cap: 'The chat that needs you most comes first, as a Now card. The rest of the waiting chats follow, from every session. The pane counts 4 more waiting.' }),
     S.band('One line, always *in view.*', 'Context and limits above where you type. Amber when one runs low, red when it’s nearly gone.', 'gauges'),
     S.savings('See what a change would *buy back.*', 'Half the Opus work on Sonnet moves the run-out from 5:21 AM to 1:15 PM.', 'See what a change would buy back. Half the Opus work on Sonnet moves the run-out from 5:21 AM to 1:15 PM: 7 h 54 min more.'),
-    S.pane('All of it, in *one pane* beside the chat.', 'Everything on one screen, beside your chat.'),
+    S.fix('Fix it in the pane, *not in the chat.*', 'The pane works out the change itself and shows what’s there now, and what it becomes after.', 'Nothing is written until you press Save change. Nothing goes through the conversation.'),
+    S.pane('All of it, in *one pane* beside the chat.', 'The week, the chat that needs you, savings and fixes, beside your chat.'),
     S.end(),
   ] },
   week: { n: 1, label: 'Your week, by project', scenes: () => [
@@ -745,8 +804,8 @@ const V = {
   runway: { n: 2, label: 'Know before you run out', scenes: () => [
     S.intro('Know before you *run out.*', 'How to read the forecast on every limit.', 'amber', ['#FF9F0A', '#FF375F'], 'calendar'),
     S.window({ dur: 5, title: 'Your weekly limit, on a *calendar.*', sub: 'It opened Sunday at 2:00 PM, and it resets a week later.', at: { days: [0.7, 1.7], reset: [1.4, 2.2] } }),
-    S.window({ dur: 9.5, title: 'Solid is the week *so far.*', sub: 'You’re at 82%, and the line under it marks how much of the week has passed.', sub2: 'The glow ahead is where your pace lands: it runs out Saturday at 5:21 AM.', sub2At: 4.6, done: ['days', 'reset'], at: { fig: [0.8, 2.4], fill: [0.7, 2.8], ghost: [5.0, 6.4], run: [6.2, 7.0] } }),
-    S.window({ dur: 7, title: 'Then you *wait.*', sub: '32 h 38 min with nothing left, until it resets Sunday at 2:00 PM.', done: ['days', 'reset', 'fig', 'fill', 'ghost', 'run'], at: { dry: [0.7, 1.8], brk: [1.8, 2.9] } }),
+    S.window({ dur: 9.5, title: 'The line is the week *so far.*', sub: 'You’re at 82%. Each bar is a day’s work, and the orange line is your use climbing to Now.', sub2: 'The dashed line is where your pace leads: it runs out Saturday at 5:21 AM.', sub2At: 4.6, done: ['days', 'reset'], at: { fig: [0.8, 2.4], fill: [0.7, 2.8], ghost: [5.0, 6.4], run: [6.2, 7.0] } }),
+    S.window({ dur: 7, title: 'Then you *wait.*', sub: '32 h 38 min with nothing left, the hatched stretch, until it resets Sunday at 2:00 PM.', done: ['days', 'reset', 'fig', 'fill', 'ghost', 'run'], at: { dry: [0.7, 1.8], brk: [1.8, 2.9] } }),
     S.forecast({ fast: true, dur: 8.5, title: 'Change the pace, and the forecast *follows.*', sub: 'At today’s pace it runs out Saturday at 5:21 AM.', sub2: 'At a quarter of today’s pace it lasts the week, ending near 98%.', sub2At: 3.2, pace: [3.4, 5.6] }),
     S.colours('Colour tells you when to *act.*', 'Amber past your alert, red when it’s nearly gone, on every tab and the line above the prompt.'),
     S.lockup(),
@@ -754,8 +813,8 @@ const V = {
   waiting: { n: 3, label: 'Every waiting chat', scenes: () => [
     S.intro('Answer every *waiting* chat.', 'From one place, whichever session it’s in.', 'blue', undefined, 'needs'),
     S.sessions('Five sessions. Three are *waiting on you.*', 'ToBeBestMe gathers every chat that stopped for you in the last week.', 'Five sessions. Three are waiting on you: one needs permission, two asked a question. The other two are ready to carry on.'),
-    S.needs('*Red* needs your permission.', 'A session running right now is stopped on a permission prompt. Switch to it to allow or deny.', 'red', { dur: 7 }),
-    S.needs('*Amber* is waiting for your answer.', 'A question, a plan to approve or a choice, with the buttons the chat offered.', 'amber', { dur: 6.5 }),
+    S.needs('*Red* needs your permission.', 'It leads as the Now card: a session running right now, stopped on a prompt. Switch to it to allow or deny.', 'red', { dur: 7 }),
+    S.needs('*Amber* is waiting for your answer.', 'A question, a plan to approve or a choice, with the buttons the chat offered, like Ship it and Hold off.', 'amber', { dur: 6.5 }),
     S.needs('*Grey* can carry on when you’re ready.', 'Its limit has reset since, or its pull request is waiting for review.', 'grey', { dur: 6.5 }),
     S.lockup(),
   ] },
@@ -768,8 +827,9 @@ const V = {
   ] },
   savings: { n: 5, label: 'What a change would save', scenes: () => [
     S.intro('See what a change would *buy back.*', 'How the savings suggestions work.', 'green', ['#30D158', '#00C7BE'], 'standout'),
-    S.standout('It sees which models did the *work.*', 'This week Opus 5.5 did 98% of it, and storefront used 49% over 5 sessions.', 'It sees which models did the work. This week Opus 5.5 did 98% of it. If half ran on Sonnet, it runs out Saturday at 1:15 PM, 24 h 45 min before it resets.'),
+    S.standout('It sees which models did the *work.*', 'This week Opus 5.5 did 98% of it. Drawn as run, the week ends near 124%. With half on Sonnet, about 114%.', 'It sees which models did the work. This week Opus 5.5 did 98% of it. As run, the week ends at about 124% of the limit; with half on Sonnet, about 114%. That is about 10 points back.'),
     S.savings('Then it shows the change on your *week.*', 'Half the Opus work on Sonnet moves the run-out from Saturday 5:21 AM to 1:15 PM.', 'Then it shows the change on your week. Saturday 5:21 AM becomes 1:15 PM: 7 h 54 min more.'),
+    S.fix('Then make the change *here.*', 'Each idea has a button. The pane shows what’s there now and what it becomes after.', 'It writes the file only when you press Save change, and never over a file you edited meanwhile.'),
     S.intro('Estimates, and it *says so.*', 'From list prices and Claude Code’s own records.', 'green', ['#30D158', '#64D2FF'], 'calendar'),
     S.lockup(),
   ] },
@@ -818,7 +878,7 @@ function load(name) {
     NEEDS_EL.el.classList.add('nshared'); NEEDS_EL.el.style.cssText += ';position:absolute;left:120px;top:470px;z-index:3'
     stage.appendChild(NEEDS_EL.el)
   }
-  const label = VIDEO.label.replace('{n}', Math.ceil(DURATION / 10) * 10)
+  const label = VIDEO.label.replace('{n}', Math.round(DURATION))
   chromeEl = $('div', 'chrome', `<div class="brand"><img src="${IMG}icon.svg" alt="">ToBeBestMe</div><div class="right"><span class="sample" id="sampletag">Sample data</span><div class="chap">${VIDEO.n ? VIDEO.n + ' of 7 · ' : ''}${label}</div></div>`)
   stage.appendChild(chromeEl)
   window.DURATION = DURATION

@@ -308,6 +308,50 @@ footer a { color: var(--fg-2); }
 @media (max-width: 859px) { .tilt > .shot { transform: none !important; } }
 @media (max-width: 640px) { .glow { display: none; } }
 @media (prefers-reduced-motion: reduce) { .glow { display: none; } }
+
+/* The week as one drawing: each day by project, the line of use, the dashed pace to the run-out, and the hatched stretch without Claude */
+.wk { position: relative; }
+.wk-top { position: relative; height: 24px; font-size: var(--s-small); font-weight: 600; }
+.wk-top span { position: absolute; top: 0; white-space: nowrap; }
+.wk-top .now { transform: translateX(-50%); }
+.wk-top .runs { color: var(--warn-text); }
+.wk-plot { position: relative; height: 300px; }
+.wk-area { position: absolute; inset: 0 0 30px 0; border-top: 1px solid var(--line-2); z-index: 3; pointer-events: none; }
+.wk-area .cap { position: absolute; left: 0; top: 6px; font-size: var(--s-cap); color: var(--fg-3); }
+.wk-vl { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.wk-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.wk-now { position: absolute; top: -8px; bottom: -30px; width: 2px; background: var(--fg); transform: translateX(-1px); border-radius: 1px; }
+.wk-dry { position: absolute; top: 0; bottom: 0; right: 0; border-left: 1px dashed var(--warn); background: repeating-linear-gradient(135deg, rgba(255,159,10,.42) 0 2px, transparent 2px 9px); display: grid; place-items: end center; padding-bottom: 14px; }
+.wk-pill { background: var(--bg); border: 1px solid var(--warn); color: var(--warn-text); border-radius: 12px; padding: 6px 12px; font-size: 13px; font-weight: 600; text-align: center; line-height: 1.25; max-width: 92%; text-wrap: balance; }
+.wk-pill small { display: block; font-size: 12px; font-weight: 500; color: var(--fg-2); }
+.wk-dot { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px var(--bg); }
+.wk-dot::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--warn); animation: pulse 2.2s ease-out infinite; }
+@keyframes pulse { from { transform: scale(.5); opacity: .9; } to { transform: scale(1.9); opacity: 0; } }
+.wk-line { fill: none; stroke: var(--warn); stroke-width: 2.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.wk-proj { fill: none; stroke: var(--warn); stroke-width: 2.5; stroke-dasharray: 7 6; vector-effect: non-scaling-stroke; }
+.grow .wk-line { stroke-dasharray: 1; animation: wkdraw 1.6s cubic-bezier(.3,.7,.3,1) .35s both; }
+.grow .wk-proj, .grow .wk-dot, .grow .wk-dry, .grow .wk-pill { animation: vfade .6s ease 1.7s both; }
+.grow .wk-area-fill { animation: vfade 1s ease 1s both; }
+@keyframes wkdraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.hero-week .bars { display: block; position: absolute; inset: 0; height: auto; }
+.hero-week .day { position: absolute; top: 0; bottom: 0; gap: 8px; align-items: stretch; z-index: 1; white-space: nowrap; }
+.hero-week .day .stack { width: 62%; margin-inline: auto; height: calc(var(--v, 0) * (100% - 30px - 24px)); min-height: 2px; }
+.hero-week .day.future .stack { display: none; }
+.hero-week .day .lbl { height: 22px; line-height: 22px; }
+.hero-week .day[aria-pressed="true"] .lbl { background: var(--inset); border-radius: 8px; }
+.lbl .short { display: none; }
+@media (max-width: 640px) { .lbl .long { display: none; } .lbl .short { display: inline; } }
+.wk-note { display: none; font-size: var(--s-small); font-weight: 600; color: var(--warn-text); }
+.v-pct { background: linear-gradient(100deg, #FFC866, #FF9F0A 70%, #FF7A00); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 22px rgba(255,159,10,.35)); }
+.v-pct small { -webkit-text-fill-color: var(--fg-2); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .v-pct { background: none; color: var(--warn-text); filter: none; } }
+@media (max-width: 640px) { .wk-top .runs, .wk-pill { display: none; } .wk-note { display: block; } .wk-plot { height: 260px; } }
+@media (prefers-reduced-motion: reduce) { .wk-dot::after { animation: none; opacity: .5; transform: scale(1.4); } }
+.run-dry { background: repeating-linear-gradient(135deg, rgba(255,159,10,.5) 0 2px, transparent 2px 7px) !important; }
+.mark.run { box-shadow: 0 0 0 0 var(--warn); }
+.instrument .tag.dry { color: var(--warn-text); border-color: var(--warn-dim); }
+.shot.plain { background: transparent; }
+.stack-figs { display: grid; gap: clamp(20px, 3vw, 32px); }
 </style>
 </head>
 <body>
@@ -332,7 +376,7 @@ footer a { color: var(--fg-2); }
   <div class="wrap">
     <p class="eyebrow">A free mod for Claude Code</p>
     <h1 id="hero-title">See where your <span class="em">week</span> went.</h1>
-    <p class="lede">ToBeBestMe shows your Claude Code week by project, <strong>whether you’ll make it to the reset</strong>, and every chat waiting on you, right beside the chat. Press a day or a project below.</p>
+    <p class="lede">ToBeBestMe draws your Claude Code week as one picture: <strong>each day by project, the pace you’re on, and whether you’ll make it to the reset</strong>. The chat that needs you most sits right beside it. Press a day or a project below.</p>
     <div class="cta">
       <div class="cmd"><code id="cmd-hero">/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme</code><button class="btn btn-primary" type="button" data-copy="cmd-hero">Copy</button></div>
       <a class="btn btn-plain" href="https://github.com/vradulthub-cloud/tobebestme">View the source on GitHub</a>
@@ -343,10 +387,22 @@ footer a { color: var(--fg-2); }
     <div class="week hero-week">
       <div class="verdict" role="group" aria-label="The verdict on the weekly limit">
         <div class="v-row"><span class="v-pct num">82%<small>of your weekly limit</small></span><span class="v-run num">Runs out Sat 5:21 AM</span></div>
-        <div class="v-track" aria-hidden="true"><i class="v-fill"></i><i class="v-ghost"></i><i class="v-dry"></i></div>
       </div>
       <div class="chips" id="chips" role="group" aria-label="Projects"></div>
-      <div class="bars" id="bars" role="group" aria-label="Days of the week"></div>
+      <div class="wk">
+        <div class="wk-top" aria-hidden="true"><span class="now" id="wl-now">Now</span><span class="runs num" id="wl-run">Runs out Sat 5:21 AM</span></div>
+        <div class="wk-plot">
+          <div class="wk-area" aria-hidden="true">
+            <span class="cap">100% of the limit</span>
+            <div id="wk-vls"></div>
+            <div class="wk-dry" id="wk-dry"><div class="wk-pill num" id="wk-pill">32 h 38 min without Claude<small>Resets Sun 2:00 PM</small></div></div>
+            <svg class="wk-svg" viewBox="0 0 1000 100" preserveAspectRatio="none"><defs><linearGradient id="wkg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF9F0A" stop-opacity=".35"/><stop offset="1" stop-color="#FF9F0A" stop-opacity="0"/></linearGradient></defs><path class="wk-area-fill" id="wk-fill" fill="url(#wkg)"/><path class="wk-line" id="wk-line" pathLength="1"/><path class="wk-proj" id="wk-proj"/></svg>
+            <i class="wk-now" id="wk-now"></i><i class="wk-dot" id="wk-dot"></i>
+          </div>
+          <div class="bars" id="bars" role="group" aria-label="Days of the week"></div>
+        </div>
+        <p class="wk-note num">32 h 38 min without Claude before it resets, Sun 2:00 PM.</p>
+      </div>
       <div class="week-foot">
         <p class="readout" id="readout" aria-live="polite"></p>
         <span class="tag">Sample week</span>
@@ -360,10 +416,10 @@ footer a { color: var(--fg-2); }
   <div class="wrap">
     <div class="ch-head">
       <p class="eyebrow">The tour</p>
-      <h2 id="tour-title">The whole idea in 80 seconds.</h2>
-      <p class="lede">The problem, the week by project, the forecast, waiting chats, the line above the prompt, savings and how to install, with captions.</p>
+      <h2 id="tour-title">The whole idea in 88 seconds.</h2>
+      <p class="lede">The week as one drawing, the forecast and the stretch without Claude, the chat that needs you, the line above the prompt, savings and fixes made in the pane, and how to install, with captions.</p>
     </div>
-    <div class="film"><video src="img/overview.mp4" poster="img/overview-poster.png" width="1920" height="1080" controls muted playsinline preload="metadata" aria-label="ToBeBestMe in 80 seconds: an animated tour with captions."><track kind="captions" srclang="en" label="English" src="img/overview.vtt" default></video></div>
+    <div class="film"><video src="img/overview.mp4" poster="img/overview-poster.png" width="1920" height="1080" controls muted playsinline preload="metadata" aria-label="ToBeBestMe in 88 seconds: an animated tour with captions."><track kind="captions" srclang="en" label="English" src="img/overview.vtt" default></video></div>
   </div>
 </section>
 
@@ -372,11 +428,11 @@ footer a { color: var(--fg-2); }
     <div class="ch-head">
       <p class="eyebrow">Your limits</p>
       <h2 id="limits-title">Know before you run out.</h2>
-      <p class="lede">Every limit shows where your pace lands by the reset, and when it would run out if that’s early. You find out days ahead, while there’s still time to change course.</p>
+      <p class="lede">Every limit shows where your pace lands by the reset, and when it would run out if that’s early, with the hours you’d be without Claude drawn as a hatched stretch. You find out days ahead, while there’s still time to change course.</p>
     </div>
     <p class="moment" aria-hidden="true"><span class="moment-n num" id="moment-n">Sat 5:21 AM</span><span class="moment-l" id="moment-l">is when the weekly limit runs out at your recent pace.</span></p>
     <figure class="instrument" style="margin-top:0" aria-labelledby="fc-text">
-      <div class="inst-head"><span class="dot" style="background: var(--accent)"></span><span>Weekly limit</span></div>
+      <div class="inst-head"><span class="dot" style="background: var(--accent)"></span><span>Weekly limit</span><span class="tag dry num" id="dry-tag">32 h 38 min without Claude</span></div>
       <div class="inst-figure"><span class="big num">82%</span><span class="big-label">of your weekly limit, with two days to go</span></div>
       <p class="forecast" id="fc-text" aria-live="polite">At this pace it runs out <b class="warn num">Sat 5:21 AM</b>, 32 h 38 min before it resets.</p>
       <div class="runway" aria-hidden="true">
@@ -406,17 +462,21 @@ footer a { color: var(--fg-2); }
   <div class="wrap">
     <div class="ch-head">
       <p class="eyebrow">Home</p>
-      <h2 id="pane-title">The whole day, on one pane.</h2>
-      <p class="lede">Open it with <strong>/tobebestme</strong>. It reads every project and session on this computer, so it answers the first questions of the day: what’s waiting, what’s running, and how long your limits will last.</p>
+      <h2 id="pane-title">The whole week, in one drawing.</h2>
+      <p class="lede">Open it with <strong>/tobebestme</strong>. Home leads with the week: the figure, each day’s work by project, the line of use so far, and a dashed line to where your pace runs out. It reads every project and session on this computer.</p>
     </div>
+    <figure class="crop-wrap" style="max-width: none">
+      <div class="shot"><img src="img/week.png" width="3765" height="1338" alt="Home’s week drawing. 82% of your weekly limit, past your alert; at this pace it runs out Saturday at 5:21 AM, 32 hours 38 minutes before it resets. Each day from Sunday to today is a bar stacked by project, a solid orange line climbs to Now, a dashed line continues to a pulsing run-out point, and a hatched stretch to the reset reads 32 h 38 min without Claude. The 5-hour limit sits below at 40%."></div>
+      <figcaption>One drawing carries the weekly figure and the forecast. The hatched stretch is the time you’d spend without Claude before the reset.</figcaption>
+    </figure>
   </div>
   <div class="wrap wide">
     <figure class="tilt">
       <div class="shot window">
         <div class="titlebar"><i></i><i></i><i></i><span>ToBeBestMe</span></div>
-        <img src="img/pane.png" width="1271" height="1396" alt="The ToBeBestMe Home pane. At the top, 4 chats are waiting and the weekly limit is at 82%, forecast to run out Saturday at 5:21 AM, with a bar for each day stacked by project. Below are the waiting chats, a running workflow, what stands out this week, projects by share of the limit, and open sessions.">
+        <img src="img/pane.png" width="1271" height="1396" alt="The ToBeBestMe Home pane. At the top, 4 chats are waiting and the weekly limit is at 82%, drawn as one week with each day stacked by project and a dashed line to the run-out on Saturday at 5:21 AM. Below are the Now card for the chat that needs permission, the other waiting chats, a running workflow, savings drawn as bars, projects by share of the limit, and open sessions.">
       </div>
-      <figcaption>The real pane, drawn by the mod from the sample data its tests use.</figcaption>
+      <figcaption>The real pane, drawn by the mod from the sample data its tests use. Each drawing plays once when a tab opens, then holds still.</figcaption>
     </figure>
   </div>
 </section>
@@ -426,22 +486,23 @@ footer a { color: var(--fg-2); }
     <div class="ch-2">
       <div class="ch-head">
         <p class="eyebrow">Needs you</p>
-        <h2 id="wait-title">Answer every waiting chat from one place.</h2>
-        <p class="lede">Run five sessions and one of them is always stuck on you. ToBeBestMe lists them, most pressing first, with the reply buttons the chat offered.</p>
+        <h2 id="wait-title">The chat that needs you most, first.</h2>
+        <p class="lede">Run five sessions and one of them is always stuck on you. The most urgent is a card of its own, <strong>Now</strong>. The rest follow as a compact list, with the reply buttons the chat offered.</p>
       </div>
       <ul class="kinds">
-        <li><span class="dot" style="background: var(--bad)"></span><span><b>Needs your permission.</b> <span class="d">A running session stopped on a prompt, like Release here.</span></span></li>
+        <li><span class="dot" style="background: var(--bad)"></span><span><b>Needs your permission.</b> <span class="d">A running session stopped on a prompt. Release, here, leads as the Now card.</span></span></li>
         <li><span class="dot" style="background: var(--warn)"></span><span><b>Waiting for your answer.</b> <span class="d">A question or a choice of options, like Notes sync and Checkout redesign.</span></span></li>
         <li><span class="dot" style="background: var(--idle)"></span><span><b>Ready to carry on.</b> <span class="d">A limit that has since reset (Ledger import), or a pull request waiting for review (Docs search).</span></span></li>
       </ul>
     </div>
     <figure class="crop-wrap">
-      <div class="crop" role="img" aria-label="The Checkout redesign chat in the Needs you list: Waiting for your answer, 'Ship the new checkout to staging?', with Ship it, Hold off, Reply and Copy resume command buttons." style="--x:.01; --y:.469; --w:.64; --h:.179; --ar:5.76"><img src="img/needs.png" width="2145" height="1344" alt="" loading="lazy"></div>
-      <figcaption>Checkout redesign, up close. Ship it and Hold off answer the chat without switching to it.</figcaption>
+      <div class="shot"><img src="img/now.png" width="2067" height="609" alt="The Now card: Needs your permission. Release, in api, just now, wants to run npm publish. Switch to that session to allow or deny it." loading="lazy"></div>
+      <figcaption>The Now card. A permission prompt can’t be answered from here, so it says where to go.</figcaption>
     </figure>
     <figure class="tilt">
-      <p class="small full-label">All five chats in Needs you, three of them waiting on your answer.</p>
-      <div class="shot"><img src="img/needs.png" width="715" height="448" alt="The Needs you section: Release needs permission to run npm publish; Notes sync asked which database to use; Checkout redesign waits for an answer to 'Ship the new checkout to staging?' with Ship it, Hold off and Reply buttons; Ledger import is ready to carry on; Docs search has a pull request open."></div>
+      <p class="small full-label">The whole section: the Now card, then four more waiting, three of them with a question or a choice.</p>
+      <div class="shot"><img src="img/needs.png" width="2145" height="1782" alt="The Needs you section. The Now card for Release is on top. Four more are waiting: Notes sync asked which database to use; Checkout redesign waits for an answer to ‘Ship the new checkout to staging?’ with Ship it, Hold off and Reply buttons; Ledger import is ready to carry on; Docs search has a pull request open." loading="lazy"></div>
+      <figcaption>Ship it and Hold off answer Checkout redesign without switching to it.</figcaption>
     </figure>
   </div>
 </section>
@@ -451,10 +512,10 @@ footer a { color: var(--fg-2); }
     <div class="ch-head">
       <p class="eyebrow">Above the prompt</p>
       <h2 id="band-title">One line, always in view.</h2>
-      <p class="lede">Context, the 5-hour limit, the weekly limit and what’s waiting sit on one line above where you type. A limit turns amber when it runs low and red when it’s nearly gone, so you never have to open anything to know.</p>
+      <p class="lede">The headline and its cost on one line, then context, the 5-hour limit, the weekly limit and what’s running, each as a small runway whose ghost shows where your pace lands. A limit turns amber when it runs low and red when it’s nearly gone, so you never have to open anything to know.</p>
     </div>
     <figure>
-      <div class="shot"><img src="img/band.png" width="767" height="70" alt="The line above the prompt: chats waiting, then context, the 5-hour limit and the weekly limit, each with a small gauge and a percentage."></div>
+      <div class="shot"><img src="img/band.png" width="767" height="70" alt="The line above the prompt. The headline reads: Weekly limit runs out 32 h 38 min early, 4 chats are waiting for you, this session 15% of the weekly limit. Below it, runways for context at 85%, the 5-hour limit at 40% and the weekly limit at 82%, then a running workflow, review-changes, at 0 of 2."></div>
     </figure>
   </div>
 </section>
@@ -464,13 +525,27 @@ footer a { color: var(--fg-2); }
     <div class="ch-head">
         <p class="eyebrow">What stands out</p>
         <h2 id="save-title">Know what a change would save.</h2>
-        <p class="lede">It sees which models did the week’s work and what that did to your limit. Then it tells you what a change would buy you, in hours, before you make it.</p>
+        <p class="lede">It sees which models did the week’s work and what that did to your limit. Then it draws the week as you ran it against the week with the idea applied, and says how many points it would give back, before you make the change.</p>
         <p class="small">Two figures for storefront: it used 49% of the limit, which is 60% of the week’s work (47 of the 82% used so far). Estimates include helpers and workflow agents.</p>
     </div>
       <figure class="crop-wrap">
-        <div class="crop" role="img" aria-label="What stands out: if half of Opus 5.5's work ran on Sonnet, the limit would run out Saturday at 1:15 PM instead, 24 h 45 min before it resets. Storefront did 60% of this week's work, 49% over 5 sessions." style="--x:0; --y:.452; --w:.72; --h:.53; --ar:4.96"><img src="img/standout.png" width="2145" height="576" alt="" loading="lazy"></div>
-        <figcaption>The what-if: half the Opus work on Sonnet moves the run-out from Sat 5:21 AM to Sat 1:15 PM.</figcaption>
+        <div class="shot"><img src="img/savings.png" width="2121" height="660" alt="Opus 5.5 did 98% of this week’s work. Two bars: at this pace the week ends at about 124% of the limit; if half of that ran on Sonnet, about 114%, drawn as a shorter bar with a dashed green block for the difference. A green label reads about 10 points back." loading="lazy"></div>
+        <figcaption>As run against with the idea applied: half the Opus work on Sonnet gives about 10 points back, and moves the run-out from Sat 5:21 AM to Sat 1:15 PM.</figcaption>
       </figure>
+  </div>
+</section>
+
+<section class="ch" aria-labelledby="fix-title">
+  <div class="wrap">
+    <div class="ch-head">
+      <p class="eyebrow">Fixes</p>
+      <h2 id="fix-title">Fix it in the pane, not in the chat.</h2>
+      <p class="lede">Fix description…, Make skills manual-only…, Make it a rule… used to hand Claude a request. Now the pane works out the change itself, shows what’s there <strong>now</strong> and what it becomes <strong>after</strong>, and writes the file only when you press <strong>Save change</strong>. A file you edited meanwhile is never written over.</p>
+    </div>
+    <figure class="crop-wrap" style="max-width: none">
+      <div class="shot"><img src="img/fix.png" width="3765" height="654" alt="A new description for /notes, in ~/.claude/skills/notes/SKILL.md. Now: no description. After: Keep running notes for a project: decisions, todos and links. Use when the user says note this, add a note or what did we decide. Its instructions stay as they are. Buttons: Save change and Cancel." loading="lazy"></div>
+      <figcaption>A new description for a skill that had none. Cancel leaves the file alone.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -483,8 +558,8 @@ footer a { color: var(--fg-2); }
       <div><h3>Terminal and app</h3><p>The same pane and line in the terminal and the Claude desktop app, at any width from a phone-sized split to a wide screen.</p></div>
       <div><h3>Every project at once</h3><p>It reads every session on this computer, including ones that never ran the mod, so nothing waits unseen.</p></div>
       <div><h3>Workflows you can follow</h3><p>See each workflow Claude runs, its agents and what it has cost so far, and step in when one needs you.</p></div>
-      <div><h3>Keyboard first</h3><p>Number keys switch tabs. Every control works from the keyboard, with a visible focus and screen-reader labels.</p></div>
-      <div><h3>Tested where it draws</h3><p>86 behaviour tests, plus <span data-count="rendering-tests">150</span> rendering checks at four pane widths for overflow, contrast and text size.</p></div>
+      <div><h3>Keyboard first</h3><p>Number keys switch tabs. Every control works from the keyboard, with a visible focus and screen-reader labels. Drawings play once and stop entirely under reduced motion.</p></div>
+      <div><h3>Tested where it draws</h3><p>91 behaviour tests, plus <span data-count="rendering-tests">153</span> rendering checks at four pane widths for overflow, contrast and text size.</p></div>
       <div><h3>Open and checkable</h3><p>MIT licensed, with SHA-256 checksums for every release file and a daily check that warns if installed files change.</p></div>
     </div>
   </div>
@@ -510,7 +585,7 @@ footer a { color: var(--fg-2); }
       <div>
         <h3>It sends</h3>
         <ul>
-          <li><b>Prompts to Claude through your own account</b>: when you press a button that says so, a five-token check when the cheaper model came back empty, a handoff note before compaction, and lines added to a prompt when limits run tight (or a pointer to the handoff note after compaction).</li>
+          <li><b>Prompts to Claude through your own account</b>: when you press a button that says so (Fix description… sends the skill’s text to the helper model), a five-token check when the cheaper model came back empty, a handoff note before compaction, and lines added to a prompt when limits run tight (or a pointer to the handoff note after compaction).</li>
           <li><b>A notification’s title and text</b> to the web address you set, only if you set one up.</li>
           <li><b>Locally,</b> it also shows system notifications by running <code>osascript</code> or <code>notify-send</code>. Apart from the prompts above, nothing from your transcripts leaves your computer.</li>
         </ul>
@@ -544,7 +619,7 @@ footer a { color: var(--fg-2); }
       <details><summary>Which plans does it work with?</summary><p>On a Claude plan it shows the 5-hour and weekly limits. On an API key or team billing it shows what each request costs. Context size shows for everyone.</p></details>
       <details><summary>Does it cost anything?</summary><p>No. It’s free and MIT licensed. The few buttons that ask Claude something run through your own account and say so on the button.</p></details>
       <details><summary>Does it send my transcripts anywhere?</summary><p>No, not on its own. The one way text from your chats can leave is inside a prompt to Claude through your own account, such as a handoff note Claude writes before compaction. If you set a notification address, a notification’s title and text go there too. Everything else stays on your computer. The full list is in <a href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">SECURITY.md</a>.</p></details>
-      <details><summary>Does it change my settings?</summary><p>No. It reads Claude Code’s settings files for two skill settings and writes only its own store, the reports you save, and a handoff note in the project.</p></details>
+      <details><summary>Does it change my files or settings?</summary><p>Only when you press <b>Save change</b>, on a preview that shows what’s there now and what it becomes: a skill’s description, a skill setting, or a rule in your CLAUDE.md. Otherwise it writes only its own store, the reports you save, and a handoff note in the project.</p></details>
       <details><summary>Where do the forecasts come from?</summary><p>From the limits Claude Code reports and how fast you’ve been using them. The mod labels an estimate wherever it shows one.</p></details>
     </div>
   </div>
@@ -611,10 +686,12 @@ footer a { color: var(--fg-2); }
     var when = new Date(NOW.getTime() + runH * H);
     if (runs) {
       lr.textContent = lg.textContent = 'Runs out ' + fmt(when); lg.style.color = '';
+      $('dry-tag').textContent = dur(left - runH) + ' without Claude';
       $('fc-text').innerHTML = 'At this pace it runs out <b class="warn num">' + fmt(when) + '</b>, ' + dur(left - runH) + ' before it resets.';
     } else {
       var pct = Math.round(USED + rate * left);
       lg.textContent = 'Lasts the week'; lg.style.color = 'var(--ok)';
+      $('dry-tag').textContent = 'No stretch without Claude';
       $('fc-text').innerHTML = 'At this pace it lasts the week, ending at about <b class="ok num">' + pct + '%</b>.';
     }
     var mn = $('moment-n'), ml = $('moment-l');
@@ -644,8 +721,7 @@ footer a { color: var(--fg-2); }
   var r1 = function (x) { return x >= 10 ? Math.round(x) + '%' : (Math.round(x * 10) / 10) + '%' };
   var totals = {}; P.forEach(function (p) { totals[p.key] = 0 });
   W.forEach(function (d) { if (d.v) for (var k in d.v) totals[k] += d.v[k] });
-  var MAX = Math.max.apply(null, W.filter(function (d) { return d.v }).map(function (d) { return sum(d.v) }));
-  var state = { day: -1, project: '' };
+    var state = { day: -1, project: '' };
   var chips = $('chips'), bars = $('bars');
   P.forEach(function (p) {
     var b = document.createElement('button');
@@ -654,9 +730,12 @@ footer a { color: var(--fg-2); }
     b.addEventListener('click', function () { state.project = state.project === p.key ? '' : p.key; state.day = -1; draw() });
     chips.appendChild(b);
   });
+  var HRS = [10, 24, 24, 24, 24, 24, 24, 14], starts = [], acc = 0;
+  HRS.forEach(function (h) { starts.push(acc); acc += h });
   W.forEach(function (d, i) {
     var b = document.createElement('button');
     b.type = 'button'; b.className = 'day' + (d.v ? '' : ' future');
+    b.style.left = (starts[i] / TOTAL * 100) + '%'; b.style.width = (HRS[i] / TOTAL * 100) + '%';
     if (!d.v) { b.disabled = true; b.setAttribute('aria-label', d.n + ', still to come') }
     else {
       var parts = P.filter(function (p) { return d.v[p.key] }).map(function (p) { return p.key + ' ' + r1(d.v[p.key]) });
@@ -666,11 +745,11 @@ footer a { color: var(--fg-2); }
     }
     var st = document.createElement('div'); st.className = 'stack';
     if (d.v) {
-      st.style.height = (sum(d.v) / MAX * 190) + 'px';
+      st.style.setProperty('--v', (sum(d.v) / 100 * 2.3).toFixed(4));
       P.forEach(function (p) { var v = d.v[p.key]; if (!v) return; var seg = document.createElement('i'); seg.dataset.key = p.key; seg.style.background = p.c; seg.style.flex = v + ' 0 0'; st.appendChild(seg) });
     }
     var pct = document.createElement('span'); pct.className = 'pct num'; pct.textContent = d.v ? r1(sum(d.v)) : '';
-    var lb = document.createElement('span'); lb.className = 'lbl'; lb.textContent = d.s;
+    var lb = document.createElement('span'); lb.className = 'lbl'; lb.innerHTML = d.s === 'Today' ? 'Today' : '<span class="long">' + d.s + '</span><span class="short">' + d.s.slice(0, 2) + '</span>';
     b.appendChild(pct); b.appendChild(st); b.appendChild(lb);
     bars.appendChild(b);
   });
@@ -697,6 +776,24 @@ footer a { color: var(--fg-2); }
   }
   draw();
 
+  // The drawing's own marks: day lines, the line of use so far, the dashed pace to the run-out and the stretch without Claude.
+  (function () {
+    var X = function (h) { return (h / TOTAL * 1000).toFixed(1) }, Y = function (p) { return (100 - p).toFixed(2) };
+    var pts = [[0, 0]], cum = 0;
+    W.forEach(function (d, i) { if (d.v && i < 5) { cum += sum(d.v); pts.push([starts[i] + HRS[i], cum]) } });
+    pts.push([ELAPSED, USED]);
+    var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + X(p[0]) + ' ' + Y(p[1]) }).join(' ');
+    var runH = ELAPSED + (100 - USED) / RATE;
+    $('wk-line').setAttribute('d', line);
+    $('wk-fill').setAttribute('d', line + ' L' + X(ELAPSED) + ' 100 L0 100 Z');
+    $('wk-proj').setAttribute('d', 'M' + X(ELAPSED) + ' ' + Y(USED) + ' L' + X(runH) + ' 0');
+    var runPct = pos(runH);
+    $('wk-now').style.left = nowPct + '%'; $('wl-now').style.left = nowPct + '%';
+    var dot = $('wk-dot'); dot.style.left = runPct + '%'; dot.style.top = '0';
+    $('wk-dry').style.left = runPct + '%'; $('wl-run').style.left = 'calc(' + runPct + '% - 8px)';
+    var vls = $('wk-vls');
+    starts.slice(1).forEach(function (h) { var v = document.createElement('i'); v.className = 'wk-vl'; v.style.left = pos(h) + '%'; vls.appendChild(v) });
+  })();
 
   // Launch energy: bars spring up once, product shots tilt up as they scroll in. Skipped for reduced motion.
   var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;

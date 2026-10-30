@@ -62,16 +62,22 @@ def fig(path, key, cap):
     return (f'<figure class="asset"><a href="{p}" target="_blank" rel="noopener"><img src="{p}" loading="lazy" alt="{html.escape(alt.get(key, cap))}"></a>'
             f'<figcaption><b>{cap}</b><span>{facts(p)}</span><a href="{p}" target="_blank" rel="noopener" aria-label="Open {html.escape(cap)} full size">Open full size</a></figcaption></figure>')
 imgs = fig('launch-hero.png', 'launch-hero.png', 'Launch image') + fig('social-card.png', 'social-card.png', 'GitHub social card')
-car = ''.join(fig(f'carousel/0{i}.png', f'carousel/0{i}.png', f'Carousel slide {i} of 6') for i in range(1, 7))
+car = ''.join(fig(f'carousel/0{i}.png', f'carousel/0{i}.png', f'Carousel slide {i} of 7') for i in range(1, 8))
 demo = (f'<figure class="asset wide"><video src="out/demo.mp4" poster="out/demo-frame-0.png" controls muted loop playsinline preload="none" aria-label="{html.escape(alt.get("demo", "Demo"))}"></video>'
         f'<figcaption><b>Demo loop, 9 seconds</b><span>{facts("out/demo.mp4")} · GIF {facts("out/demo.gif")}</span>'
         '<span>launch/out/demo.mp4 · demo.gif</span></figcaption></figure>')
-VIDS = [('overview', 'ToBeBestMe in 80 seconds', 'The launch video: the problem, the week by project, the forecast, waiting chats, the line above the prompt, savings and install.'),
-  ('week', '1 · Your week, by project', 'Tokens flow from each project into the day that used them; press a day, pick a project, then the real pane.'),
-  ('runway', '2 · Know before you run out', 'How to read the forecast: the window, the week so far, where your pace lands, the wait, and changing the pace.'),
-  ('waiting', '3 · Every waiting chat', 'Sessions gather into one list; red, amber and grey explained on the real list.'),
-  ('band', '4 · The line above the prompt', 'Where it sits, what its gauges say, and what needs you.'),
-  ('savings', '5 · What a change would save', 'Which models did the work, and what moving some of it does to the week.'),
+def length(k):  # its length in seconds
+    p = f'out/video/{k}-web.mp4'
+    if shutil.which('ffprobe') and os.path.exists(p):
+        try: return round(float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', p], capture_output=True, text=True).stdout.strip()))
+        except Exception: pass
+    return None
+VIDS = [('overview', f'ToBeBestMe in {length("overview") or 90} seconds', 'The launch video: the week as one drawing, the forecast and the stretch without Claude, the chat that needs you, the line above the prompt, savings, fixes made in the pane, and install.'),
+  ('week', '1 · Your week, by project', 'Tokens flow from each project into the day that used them, the line of use and the pace follow; press a day, pick a project, then the real pane.'),
+  ('runway', '2 · Know before you run out', 'How to read the forecast: the window, the line of use, the dashed pace to the run-out, the stretch without Claude, and changing the pace.'),
+  ('waiting', '3 · Every waiting chat', 'Sessions gather into one list; the Now card and the red, amber and grey rows explained on the real list.'),
+  ('band', '4 · The line above the prompt', 'Where it sits, what its runways say, and what needs you.'),
+  ('savings', '5 · What a change would save', 'Which models did the work, as run against with the idea applied, and how a fix is made in the pane: now, after, Save change.'),
   ('privacy', '6 · What it reads and sends', 'Every source it reads, everything it sends, and what it never opens.'),
   ('install', '7 · Install in a minute', 'Check the version, install, open it.')]
 vids = ''.join(
@@ -181,7 +187,7 @@ footer p { font-size: 13px; color: var(--fg-2); }
 <section aria-labelledby="img"><h2 id="img">Images and video</h2>
 <div class="grid2">@@IMGS@@</div>
 @@DEMO@@
-<h3 class="sub">Carousel, six slides</h3>
+<h3 class="sub">Carousel, seven slides</h3>
 <div class="grid3">@@CAR@@</div></section>
 <section aria-labelledby="vid"><h2 id="vid">Explainer videos</h2><p class="muted" style="margin-bottom:20px">1920 × 1080 at 30 frames a second, captions burned in for muted autoplay, with a subtitle file beside each one. Upload the .srt where a platform takes captions.</p><div class="grid2">@@VIDS@@</div></section>
 <section aria-labelledby="brand"><h2 id="brand">Brand</h2>

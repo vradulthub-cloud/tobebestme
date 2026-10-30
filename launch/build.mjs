@@ -1,13 +1,14 @@
 // The launch assets, laid out as pages at their exact sizes and photographed. They share the landing
-// page's type, colours and components (site/index.html): the forecast instrument, the week by project,
-// and the mod's own rendered views from site/img (run site/tools/shots.mjs first).
-// Out: out/social-card.png, out/launch-hero.png, out/carousel/01-06.png, out/demo-frame-0..2.png.
-import { chromium } from '../e2e/node_modules/playwright-core/index.mjs'
+// page's type, colours and components (site/index.html): the week drawing and the mod's own rendered views
+// from site/img (run site/tools/shots.mjs first) and launch/shots (launch/shots.mjs).
+// Out: out/social-card.png, out/launch-hero.png, out/carousel/01-07.png, out/demo-frame-0..2.png.
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+// Playwright comes from the main checkout's e2e/node_modules (TBBM_MAIN), as in shots.mjs
+const { chromium } = await import(pathToFileURL(join(process.env.TBBM_MAIN || join(HERE, '..'), 'e2e', 'node_modules', 'playwright-core', 'index.mjs')).href)
 const OUT = join(HERE, 'out')
 mkdirSync(join(OUT, 'carousel'), { recursive: true })
 mkdirSync(join(HERE, '.pages'), { recursive: true })
@@ -85,43 +86,46 @@ const WEEK = [{ 'docs-site': 2.3 }, { storefront: 6.4, 'ledger-api': 4 }, { stor
   { storefront: 6.4, 'ledger-api': 4.2, reports: 5.2, notes: 2.2 }, { storefront: 15.4, 'ledger-api': 0.2, notes: 0.2, wiki: 0.1 }, null, null]
 const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0)
 
-// the forecast instrument; s scales every size
-function instrument(s = 1, { head = true, days = true } = {}) {
+// The week as one drawing, as Home draws it: each day stacked by project on the window's hour axis, the line of use,
+// the dashed pace to the run-out, and the hatched stretch without Claude. s scales every size.
+const HRS = DAYS.map((d) => d[1]), STARTS = HRS.map((_, i) => HRS.slice(0, i).reduce((a, b) => a + b, 0))
+const CUM = (() => { const pts = [[0, 0]]; let c = 0; WEEK.forEach((v, i) => { if (v && i < 5) { c += sum(v); pts.push([STARTS[i] + HRS[i], c]) } }); pts.push([NOW, 82]); return pts })()
+function drawing(s = 1, { height = 300, figure = true, sentence = true, chips = false, readout = false } = {}) {
   const px = (n) => Math.round(n * s) + 'px'
-  const top = 34 * s, th = 16 * s
-  return `<div class="inst" style="padding:${px(40)};gap:${px(30)}">
-  ${head ? `<div class="head" style="font-size:${px(18)}"><span class="dot" style="background:var(--accent);width:${px(12)};height:${px(12)}"></span>Weekly limit<span class="tag" style="font-size:${px(15)}">Sample week</span></div>` : ''}
-  <div class="fig"><span class="big num" style="font-size:${px(104)}">82%</span><span class="lab" style="font-size:${px(21)}">of your weekly limit, with two days to go</span></div>
-  <p class="fc" style="font-size:${px(34)}">At this pace it runs out <b class="num">Sat 5:21 AM</b>, 32 h 38 min before it resets.</p>
-  <div class="runway" style="padding-top:${px(34)};padding-bottom:${px(days ? 0 : 6)}">
-    <span class="ml" style="top:0;left:${pct(NOW)}%;transform:translateX(-50%);font-size:${px(16)}">Now</span>
-    <span class="ml" style="top:0;right:0;color:var(--fg-2);font-weight:500;font-size:${px(16)}">Resets Sun 2:00 PM</span>
-    <div class="track" style="height:${px(16)}"><i style="left:0;width:${pct(NOW)}%;background:var(--warn)"></i><i style="left:${pct(NOW)}%;width:${pct(RUN) - pct(NOW)}%;background:var(--warn-dim)"></i></div>
-    <div style="position:absolute;left:0;top:${top + th + 6 * s}px;width:${pct(NOW)}%;height:${px(3)};background:var(--past);border-radius:2px"></div>
-    <div class="mk" style="left:${pct(NOW)}%;top:${top - 8 * s}px;height:${th + 16 * s}px;background:var(--fg)"></div>
-    <div class="mk" style="left:${pct(RUN)}%;top:${top - 8 * s}px;height:${th + 16 * s}px;background:var(--warn)"></div>
-    <div class="mk" style="left:calc(100% - 1.5px);top:${top - 8 * s}px;height:${th + 16 * s}px;background:var(--fg-2)"></div>
-    ${days ? `<div class="days" style="margin-top:${px(16)};font-size:${px(15)}">${DAYS.map(([d, h]) => `<span class="${d === 'Today' ? 't' : ''}" style="width:${pct(h)}%">${d}</span>`).join('')}</div>` : ''}
-    <div style="position:relative;height:${px(30)};margin-top:${px(10)}"><span class="ml num" style="left:${pct(RUN)}%;transform:translateX(-50%);color:var(--warn-text);font-size:${px(17)}">Runs out Sat 5:21 AM</span></div>
-  </div>
-</div>`
-}
-
-// the week by project
-function week(s = 1, { chips = true, height = 300 } = {}) {
-  const px = (n) => Math.round(n * s) + 'px'
-  const max = Math.max(...WEEK.filter(Boolean).map(sum))
-  return `<div class="inst" style="padding:${px(40)};gap:${px(34)}">
+  const X = (h) => ((h / TOTAL) * 1000).toFixed(1), Y = (p) => (100 - p).toFixed(2)
+  const line = CUM.map((p, i) => (i ? 'L' : 'M') + X(p[0]) + ' ' + Y(p[1])).join(' ')
+  const lbl = 38 * s, plotH = height * s
+  const avail = plotH - lbl - 34 * s
+  const cols = WEEK.map((v, i) => {
+    const t = v ? sum(v) : 0
+    const stack = v ? `<div class="stack" style="width:62%;margin:0 auto;height:${(t / 100) * 2.3 * avail}px">${P.filter(([k]) => v[k]).map(([k, c]) => `<i style="flex:${v[k]} 0 0;background:var(--${c})"></i>`).join('')}</div>` : ''
+    const pc = v ? `<span class="num" style="font-weight:600;font-size:${px(17)};text-align:center;height:${px(26)}">${t >= 10 ? Math.round(t) : Math.round(t * 10) / 10}%</span>` : ''
+    return `<div style="position:absolute;top:0;bottom:0;left:${pct(STARTS[i])}%;width:${pct(HRS[i])}%;display:flex;flex-direction:column;justify-content:flex-end;gap:${px(8)};white-space:nowrap">${pc}${stack}<span style="height:${px(30)};line-height:${px(30)};text-align:center;font-size:${px(16)};color:${DAYS[i][0] === 'Today' ? 'var(--fg)' : 'var(--fg-2)'};font-weight:${DAYS[i][0] === 'Today' ? 700 : 400}">${DAYS[i][0]}</span></div>`
+  }).join('')
+  const vls = STARTS.slice(1).map((h) => `<i style="position:absolute;top:0;bottom:0;left:${pct(h)}%;width:1px;background:rgba(255,255,255,.07)"></i>`).join('')
+  return `<div class="inst" style="padding:${px(40)};gap:${px(24)}">
+  ${figure ? `<div class="fig" style="margin-bottom:${px(-6)}"><span class="big num" style="font-size:${px(104)};background:linear-gradient(100deg,#FFC866,#FF9F0A 70%,#FF7A00);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 ${px(26)} rgba(255,159,10,.35))">82%</span><span class="lab" style="font-size:${px(21)}">of your weekly limit${sentence ? ', with two days to go' : ''}</span></div>` : ''}
+  ${sentence ? `<p class="fc" style="font-size:${px(32)}">At this pace it runs out <b class="num">Sat 5:21 AM</b>, 32 h 38 min before it resets.</p>` : ''}
   ${chips ? `<div class="chips">${P.map(([k, c]) => `<span class="chip" style="font-size:${px(17)};padding:${px(9)} ${px(16)}"><span class="dot" style="background:var(--${c})"></span>${k} <span class="num">${TOT[k]}</span></span>`).join('')}</div>` : ''}
-  <div class="bars" style="gap:${px(18)};height:${px(height)}">${WEEK.map((v, i) => {
-    const d = DAYS[i][0]
-    if (!v) return `<div class="bar f" style="gap:${px(10)}"><div class="stack" style="height:${px(56)}"></div><span class="l" style="font-size:${px(15)}">${d}</span></div>`
-    const t = sum(v)
-    return `<div class="bar" style="gap:${px(10)}"><span class="p num" style="font-size:${px(16)}">${t >= 10 ? Math.round(t) : Math.round(t * 10) / 10}%</span><div class="stack" style="height:${(t / max) * (height - 70) * s}px">${P.filter(([k]) => v[k]).map(([k, c]) => `<i style="flex:${v[k]} 0 0;background:var(--${c})"></i>`).join('')}</div><span class="l" style="font-size:${px(15)}${d === 'Today' ? ';color:var(--fg);font-weight:700' : ''}">${d}</span></div>`
-  }).join('')}</div>
-  <p style="font-size:${px(24)};line-height:1.35"><b class="num">82%</b> of the weekly limit so far, across 6 projects. <b>storefront</b> did more than half of it.</p>
+  <div style="position:relative;height:${plotH}px;margin-top:${px(36)}">
+    <span class="ml" style="top:${px(-34)};left:${pct(NOW)}%;transform:translateX(-50%);font-size:${px(16)}">Now</span>
+    <span class="ml" style="top:${px(-34)};right:0;color:var(--fg-2);font-weight:500;font-size:${px(16)}">Resets Sun 2:00 PM</span>
+    <div style="position:absolute;left:0;right:0;top:0;bottom:${lbl}px;border-top:1.5px solid var(--line-2)">
+      <span style="position:absolute;left:0;top:${px(6)};font-size:${px(14)};color:var(--fg-3)">100% of the limit</span>${vls}
+      <div style="position:absolute;top:0;bottom:0;right:0;left:${pct(RUN)}%;border-left:2px dashed var(--warn);background:repeating-linear-gradient(135deg,rgba(255,159,10,.46) 0 2px,transparent 2px 9px);display:flex;align-items:flex-end;justify-content:center;padding-bottom:${px(12)}"><div class="num" style="background:#0A0B0D;border:1.5px solid var(--warn);color:var(--warn-text);border-radius:${px(10)};padding:${px(5)} ${px(10)};font-size:${px(14)};font-weight:700;text-align:center;line-height:1.2;white-space:pre">32 h 38 min\nwithout Claude</div></div>
+      <svg viewBox="0 0 1000 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF9F0A" stop-opacity=".4"/><stop offset="1" stop-color="#FF9F0A" stop-opacity="0"/></linearGradient></defs>
+        <path d="${line} L${X(NOW)} 100 L0 100 Z" fill="url(#g)"/><path d="${line}" fill="none" stroke="#FF9F0A" stroke-width="${Math.max(2.5, 3.5 * s)}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+        <path d="M${X(NOW)} ${Y(82)} L${X(RUN)} 0" fill="none" stroke="#FF9F0A" stroke-width="${Math.max(2.5, 3.5 * s)}" stroke-dasharray="${Math.round(10 * s) + 3} ${Math.round(8 * s) + 3}" vector-effect="non-scaling-stroke"/></svg>
+      <i style="position:absolute;left:${pct(NOW)}%;top:${px(-8)};bottom:${px(-14)};width:${px(3)};margin-left:${px(-1.5)};background:#fff;border-radius:2px"></i>
+      <i style="position:absolute;left:${pct(RUN)}%;top:0;width:${px(18)};height:${px(18)};margin:${px(-9)} 0 0 ${px(-9)};border-radius:50%;background:var(--warn);box-shadow:0 0 0 ${px(5)} rgba(255,159,10,.28)"></i>
+    </div>
+    ${cols}
+  </div>
+  ${readout ? `<p style="font-size:${px(24)};line-height:1.35"><b class="num">82%</b> of the weekly limit so far, across 6 projects. <b>storefront</b> did more than half of it.</p>` : ''}
 </div>`
 }
+const instrument = (s = 1) => drawing(s, { figure: true, sentence: true, height: 250 })
+const week = (s = 1, { height = 300 } = {}) => drawing(s, { figure: false, sentence: false, chips: true, readout: true, height })
 
 const brand = (size = 28) => `<div class="brand" style="font-size:${size}px"><img src="${img('icon.svg')}" width="${Math.round(size * 1.7)}" height="${Math.round(size * 1.7)}" alt="">ToBeBestMe</div>`
 const win = (src, extra = '') => `<div class="shot"><div class="titlebar"><i></i><i></i><i></i><span>ToBeBestMe</span></div><img src="${src}" alt="" style="${extra}"></div>`
@@ -145,28 +149,29 @@ assets.push({ out: 'launch-hero.png', w: 1600, h: 900, dpr: 2, html: `
 // the carousel, 1080 × 1350 each
 const slide = (n, title, sub, visual, align = 'end') => ({ out: `carousel/0${n}.png`, w: 1080, h: 1350, dpr: 2, html: `
 <div style="padding:84px 88px 72px;display:flex;flex-direction:column;height:100%">
-  <div style="display:flex;align-items:center;justify-content:space-between">${brand(24)}<span class="foot num" style="font-size:22px">${n} / 6</span></div>
+  <div style="display:flex;align-items:center;justify-content:space-between">${brand(24)}<span class="foot num" style="font-size:22px">${n} / 7</span></div>
   <h2 style="font-size:88px;margin-top:84px">${title}</h2>
   <p class="sub" style="font-size:31px;margin-top:28px">${sub}</p>
   <div style="flex:1;display:flex;flex-direction:column;justify-content:${align};margin-top:48px;min-height:0">${visual}</div>
   <p class="foot" style="font-size:21px;margin-top:48px">${FOOT}</p>
 </div>` })
-assets.push(slide(1, 'See where your <span class="em">week</span> went.', 'Every day stacked by project, so you know which one spent your limit. Each project keeps its colour everywhere.', week(0.95, { height: 330 })))
-assets.push(slide(2, 'Know before you <span class="em warm">run out.</span>', 'It tells you days ahead when your limit will run out, while there’s still time to change course.', instrument(0.95)))
-assets.push(slide(3, 'Answer every <span class="em">waiting</span> chat from one place.', 'Permission prompts, questions and plans, most pressing first, with the buttons the chat offered.', frame(img('needs.png'))))
+assets.push(slide(1, 'See where your <span class="em">week</span> went.', 'One drawing: each day stacked by project, the line of use so far, and where your pace runs out.', week(0.95, { height: 330 })))
+assets.push(slide(2, 'Know before you <span class="em warm">run out.</span>', 'Days ahead, while there’s still time to change course. The hatched stretch is the time you’d spend without Claude.', instrument(0.95)))
+assets.push(slide(3, 'The chat that needs you <span class="em">most, first.</span>', 'The most urgent is a card of its own. The rest follow, with the buttons the chat offered.', `<div class="shot" style="height:600px"><img src="${img('needs.png')}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:top"></div>`))
 assets.push(slide(4, 'One line, always <span class="em">in view.</span>', 'Context, the 5-hour limit and the weekly limit above where you type. Amber when one runs low, red when it’s nearly gone.', `<div class="inst" style="padding:28px 28px 32px;gap:22px">${frame(img('band.png'))}<div style="display:flex;align-items:center;gap:14px;border:1.5px solid var(--line-2);border-radius:16px;padding:22px 24px;font-size:24px;color:var(--fg-3)"><span style="color:var(--fg-2);font-family:var(--mono)">›</span>Ask Claude to keep going</div></div>`, 'center'))
-assets.push(slide(5, 'Know what a change would <span class="em cool">save.</span>', 'It reads which models did the week’s work and tells you what a change would buy back, before you make it.', `<div style="display:flex;flex-direction:column;gap:36px">${frame(img('standout.png'))}<div class="inst" style="padding:36px 40px;gap:14px;font-size:27px;line-height:1.35"><p style="color:var(--fg-2)">Half the Opus work on Sonnet moves the run-out from</p><p style="font-size:44px;font-weight:700;letter-spacing:-.02em" class="num"><span style="color:var(--warn-text)">Sat 5:21 AM</span> <span style="color:var(--fg-3)">to</span> Sat 1:15 PM</p></div></div>`, 'center'))
-assets.push(slide(6, 'Free, open source, <span class="em">one line</span> to install.', 'Works in the terminal and the Claude desktop app. No analytics, no tracking, no server of ours.', `<div style="display:flex;flex-direction:column;gap:30px">
+assets.push(slide(5, 'Know what a change would <span class="em cool">save.</span>', 'The week as you ran it, against the week with the idea applied, and the points it gives back.', `<div style="display:flex;flex-direction:column;gap:36px">${frame(img('savings.png'))}<div class="inst" style="padding:36px 40px;gap:14px;font-size:27px;line-height:1.35"><p style="color:var(--fg-2)">Half the Opus work on Sonnet moves the run-out from</p><p style="font-size:44px;font-weight:700;letter-spacing:-.02em" class="num"><span style="color:var(--warn-text)">Sat 5:21 AM</span> <span style="color:var(--fg-3)">to</span> Sat 1:15 PM</p></div></div>`, 'center'))
+assets.push(slide(6, 'Fix it in the pane, <span class="em">not the chat.</span>', 'The pane shows what’s there now and what it becomes. Nothing is written until you press Save change.', `<div class="shot" style="overflow:hidden"><img src="${img('fix.png')}" alt="" style="width:142%;max-width:none"></div>`, 'center'))
+assets.push(slide(7, 'Free, open source, <span class="em">one line</span> to install.', 'Works in the terminal and the Claude desktop app. No analytics, no tracking, no server of ours.', `<div style="display:flex;flex-direction:column;gap:30px">
   <div class="cmd" style="padding:26px 22px 26px 30px;font-size:24px;line-height:1.45;flex-wrap:wrap"><span>/plugin install tobebestme<br>--marketplace vradulthub-cloud/tobebestme</span></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;font-size:24px">${[['Every project at once', 'It reads every session on this computer.'], ['Keyboard first', 'Tabs 1 to 7, full keyboard control.'], ['Tested where it draws', '86 behaviour tests, 150 rendering checks.'], ['MIT licensed', 'Checksums for every file.']].map(([a, b]) => `<div class="inst" style="padding:26px 28px;gap:8px"><b style="font-weight:600">${a}</b><span style="color:var(--fg-2);font-size:21px;line-height:1.35">${b}</span></div>`).join('')}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;font-size:24px">${[['Every project at once', 'It reads every session on this computer.'], ['Keyboard first', 'Six tabs, full keyboard control.'], ['Tested where it draws', '91 behaviour tests, 153 rendering checks.'], ['MIT licensed', 'Checksums for every file.']].map(([a, b]) => `<div class="inst" style="padding:26px 28px;gap:8px"><b style="font-weight:600">${a}</b><span style="color:var(--fg-2);font-size:21px;line-height:1.35">${b}</span></div>`).join('')}</div>
   <p style="font-size:24px;color:var(--fg-2)">github.com/vradulthub-cloud/tobebestme</p></div>`, 'center'))
 // demo frames, 1920 × 1080: the real pane's week, a day pressed, a project picked
-const CAP = [['Your week, by project', 'Each day stacked by the projects that used it.'], ['Press a day', 'See what that day used, project by project.'], ['Pick a project', 'Follow it through the week. The rest step back.']]
+const CAP = [['Your week, in one drawing', 'Each day by project, the line of use, and the pace to the run-out.'], ['Press a day', 'See what that day used, project by project.'], ['Pick a project', 'Follow it through the week. The rest step back.']]
 CAP.forEach(([t, s], i) => assets.push({ out: `demo-frame-${i}.png`, w: 1920, h: 1080, dpr: 1, html: `
 <div style="padding:96px 120px;display:flex;flex-direction:column;gap:20px;height:100%">
   <div style="display:flex;align-items:center;justify-content:space-between">${brand(26)}<span class="foot num" style="font-size:22px">${i + 1} / 3</span></div>
   <h2 style="font-size:88px;margin-top:48px">${t}</h2><p class="sub" style="font-size:32px">${s}</p>
-  <div style="flex:1;display:flex;align-items:center;margin-top:24px">${frame(shot('frame-' + i))}</div>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;margin-top:24px"><div style="width:1440px">${frame(shot('frame-' + i))}</div></div>
 </div>` }))
 
 const b = await chromium.launch()

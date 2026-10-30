@@ -10,18 +10,18 @@ It opened Sunday at 2:00 PM, and it resets a week later.
 
 3
 00:00:08,600 --> 00:00:13,200
-Solid is the week so far.
-You’re at 82%, and the line under it marks how much of the week has passed.
+The line is the week so far.
+You’re at 82%. Each bar is a day’s work, and the orange line is your use climbing to Now.
 
 4
 00:00:13,200 --> 00:00:17,750
-Solid is the week so far.
-The glow ahead is where your pace lands: it runs out Saturday at 5:21 AM.
+The line is the week so far.
+The dashed line is where your pace leads: it runs out Saturday at 5:21 AM.
 
 5
 00:00:17,750 --> 00:00:24,400
 Then you wait.
-32 h 38 min with nothing left, until it resets Sunday at 2:00 PM.
+32 h 38 min with nothing left, the hatched stretch, until it resets Sunday at 2:00 PM.
 
 6
 00:00:24,400 --> 00:00:27,600

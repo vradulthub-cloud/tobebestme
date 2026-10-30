@@ -1,0 +1,28 @@
+WEBVTT
+
+1
+00:00:00.300 --> 00:00:03.950
+Your week, by project.
+How the top of Home shows where your weekly limit went.
+
+2
+00:00:03.950 --> 00:00:15.400
+Each day is a bar, stacked by project. It reads Claude Code’s records for every session on this computer, helpers and workflow agents included. 82% of the weekly limit so far.
+
+3
+00:00:15.400 --> 00:00:22.550
+Press a day. Wednesday used 21% of the weekly limit: storefront 12%, ledger-api 5.6%, docs-site 3.3%.
+
+4
+00:00:22.550 --> 00:00:28.700
+Pick a project. storefront used 49% of this week’s limit, most of it on Wednesday.
+
+5
+00:00:28.700 --> 00:00:35.350
+The same, in the real pane.
+Each project keeps its colour everywhere, so you can follow it down the page.
+
+6
+00:00:35.350 --> 00:00:38.250
+ToBeBestMe
+github.com/vradulthub-cloud/tobebestme
