@@ -330,7 +330,7 @@ test('the run-out is hatched, its marker pulses, bars spring up and the figure i
   expect(await page.locator('svg rect[fill^="url(#mh"]').count(), 'the stretch after the run-out is not hatched').toBeGreaterThan(0)
   expect(await page.locator('svg line.ro.mpu').count(), 'the run-out marker does not pulse').toBeGreaterThan(0)
   expect(await page.locator('svg g.mbar').count(), 'the week’s bars do not spring up').toBeGreaterThan(0)
-  expect(await page.locator('svg[data-fig] text[fill^="url("]').count(), 'the lead figure is not a gradient').toBeGreaterThan(0)
+  expect(await page.locator('svg[data-fig] text[fill^="url("], svg.mwk text[fill^="url("]').count(), 'the lead figure is not a gradient').toBeGreaterThan(0)
   // with motion allowed the marker is animating; with reduced motion nothing is
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'no-preference' })
   const live = () => page.evaluate(() => [...document.querySelectorAll('#pane svg .mpu, #pane svg .msw, #pane svg .mbar, #pane svg .msh, #pane svg .mrise')].filter((e) => getComputedStyle(e).animationName !== 'none').length)
@@ -393,6 +393,6 @@ test('a drawing stretched to its slot fills it, and the lead figure’s glow is 
       return { alt: el.getAttribute('aria-label')!.slice(0, 50), width: Math.round(el.getBoundingClientRect().width), room: Math.round(room) }
     }).filter((x) => x.width < x.room - 2))
     expect(short, view + ': a stretched drawing short of its slot').toEqual([])
-    expect(await page.locator('svg[data-fig] .bloom text').count(), view + ': the lead figure has no glow').toBeGreaterThan(0)
+    expect(await page.locator('svg[data-fig] .bloom text, svg.mwk .bloom text').count(), view + ': the lead figure has no glow').toBeGreaterThan(0)
   }
 })

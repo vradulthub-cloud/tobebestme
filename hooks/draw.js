@@ -42,6 +42,9 @@ import {
   textRunway,
   svgForecast,
   svgWindow,
+  svgWeek,
+  svgSaving,
+  svgMiniBar,
   habitIdeas,
   sparkline,
   modelHex,
@@ -2019,6 +2022,7 @@ function windowOf(kind, runway, resetsAt, now) {
     unit: kind === 'five_hour' ? 'hour' : 'day',
     nowLabel: 'Now',
     runLabel: runway.runOut !== null && runway.runOut !== undefined ? 'Runs out ' + fmtClock(start + (runway.runOut / 100) * span, now) : '',
+    gap: runway.runOut !== null && runway.runOut !== undefined ? fmtSpan(resetsAt - (start + (runway.runOut / 100) * span)) : '',
     endLabel: 'Resets ' + fmtClock(resetsAt, now),
   }
 }
@@ -2075,7 +2079,9 @@ function homeHero(k, d, h, act) {
       ...(facts.length ? [factsTip ? k.hoverBox('all-facts', { flexDirection: 'column' }, [k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })], { ...factsTip, align: 'left' }) : k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
     ],
   })
-  const figure = item
+  // where the week is drawn whole, the figure and the forecast are in that drawing and not repeated
+  const weekDrawn = !!(item && item.days && k.hasSvg)
+  const figure = item && !weekDrawn
     ? k.Box({
         flexDirection: 'column',
         alignItems: isWide ? 'flex-end' : 'flex-start',
@@ -2100,7 +2106,7 @@ function homeHero(k, d, h, act) {
               rowGap: 'xs',
               marginTop: 'sm',
               children: [
-                ...(item.days && k.hasSvg ? heroCalendar(k, d, h, act) : [runwayBar(k, item, 'hero', k.px - 8)]),
+                ...(weekDrawn ? heroCalendar(k, d, h, act, { level, pace, early, tightest }) : [runwayBar(k, item, 'hero', k.px - 8)]),
                 // the limit's name, how much is used and the projects in the bars: one row, whose card
                 // rises above it, so the legend, wrapped on a narrow pane, never covers it
                 k.hoverBox(
@@ -2108,7 +2114,7 @@ function homeHero(k, d, h, act) {
                   { flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', rowGap: 'xs', alignItems: 'center' },
                   [
                     k.Button({ key: 'all-limits', plain: true, onPress: () => act.setView({ tab: 'usage', confirm: '' }), children: [tightest.label + ' ›'] }),
-                    ...(pace ? [k.Box({ flexShrink: 1, children: [k.text(pace, { size: 'footnote', wrap: 'wrap', ...(early ? { color: 'warning' } : { dimColor: true }) })] })] : []),
+                    ...(pace && !weekDrawn ? [k.Box({ flexShrink: 1, children: [k.text(pace, { size: 'footnote', wrap: 'wrap', ...(early ? { color: 'warning' } : { dimColor: true }) })] })] : []),
                     k.Box({ flexGrow: 1 }),
                     ...(k.hasSvg && item.window ? [] : [k.footnote(tightest.resetsAt ? 'resets in ' + fmtSpan(tightest.resetsAt - d.now) : '', { tabular: true, wrap: 'truncate-end' })]),
                     ...(legend.length ? [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'xs', flexShrink: 1, children: legend.map(legendItem) })] : []),
@@ -2140,16 +2146,18 @@ function limitPhrase(label) {
 // day, laid out by the same fractions of the window so each sits under its column. A day pressed is
 // picked out (the others step back), its words show below, and Projects shows that day. Days to
 // come, and a sliver of a day too narrow for its name, are not pressable.
-function heroCalendar(k, d, h, act) {
+function heroCalendar(k, d, h, act, say) {
   const it = h.item
   const r = it.runway
   // the app draws an interactive drawing at the width it is given in pixels (none means the browser's
   // 300px default), so the calendar names its width and the day buttons share one box with it
   const W = Math.round(k.px - 8)
   const picked = it.days.findIndex((x) => x.key === d.view.day)
-  const src = svgWindow({ ...r, hex: it.hex, ...it.window, days: it.days, picked }, { width: W, isFluid: true })
+  const { level, pace, early, tightest } = say
+  const label = 'of your ' + limitPhrase(tightest.label) + (level === 'error' ? ' · nearly out' : level === 'warning' ? ' · past your alert' : '')
+  const src = svgWeek({ ...r, hex: it.hex, ...it.window, days: it.days, picked, label, sentence: pace, level, early, figHexes: level === 'warning' || level === 'error' ? STATUS_HUES[level] : TAB_HUES.all }, { width: W })
   const H = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(src)[1])
-  const words = it.label + ' ' + it.valueText + (r.runOut !== null && r.runOut !== undefined ? ', runs out before it resets' : '') + (it.daysAlt || '')
+  const words = 'The week: ' + it.valueText + ' ' + label + '. ' + (pace || '') + ' ' + it.window.endLabel + '.' + (it.daysAlt || '') + ' The line is what has been used so far, the dashed line where this pace leads' + (r.runOut !== null && r.runOut !== undefined ? ', and the hatched stretch is the time without Claude' : '') + '.'
   const span = Math.max(1, it.window.endMs - it.window.startMs)
   const columns = it.days.map((x) => {
     const frac = (x.endMs - x.startMs) / span
@@ -2227,7 +2235,7 @@ function canAnswer(w, x) {
 
 // One waiting chat: what it is, its words, and the ways to answer it. The first chat you can
 // answer from here carries the view's one primary button.
-function needRow(k, d, act, w, x, i, isFirst, isOpen = true) {
+function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
   const [label, level] = needWords(x)
   const c = d.view.confirm || ''
   const asking = c.startsWith('reply:' + x.key + ':') ? Number(c.slice(('reply:' + x.key + ':').length)) : -1
@@ -2252,7 +2260,7 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true) {
   // the label already says "permission"; its words start at what is being asked
   const needText = x.kind === 'permission' && x.text ? x.text.replace(/^(needs )?(your )?permission to /i, '').replace(/^./, (c) => c.toUpperCase()) : x.text || ''
   const dotLevel = level === 'info' ? { dimColor: true } : { color: level }
-  const column = [
+  const head = [
     // who it is, with where and when beside it; on a narrow pane the where and when drop below
     k.Box({
       flexDirection: 'row',
@@ -2265,6 +2273,8 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true) {
     ...(isWide || !needText
       ? [k.Text({ wrap: 'wrap', children: [k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) }), ...(needText ? [k.text('   ' + needText)] : [])] })]
       : [k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) }), k.text(needText, { wrap: 'wrap' })]),
+  ]
+  const tail = [
     ...(x.hasReset && x.said ? [k.footnote('It said: ' + x.said)] : []),
     ...(x.recap ? [k.footnote('Last: ' + x.recap)] : []),
     ...(how ? [k.guide(how)] : []),
@@ -2297,6 +2307,35 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true) {
       : []),
     ...(buttons.length ? [k.Box({ marginTop: 'xs', children: [k.buttons(buttons)] })] : []),
   ]
+  // the most urgent chat is one large card: a flat tint of its status colour (about a tenth of it, over the
+  // group's own grey), its title at heading size, what it asks set apart, and its own answers under it
+  if (isLead && !k.isTerminal) {
+    const tintHex = level === 'error' ? HEX.error : level === 'warning' ? HEX.warning : HEX.marker
+    return k.hoverBox(
+      'need-' + i,
+      { flexDirection: 'column', width: '100%' },
+      [
+        k.Box({
+          flexDirection: 'column',
+          rowGap: 'sm',
+          paddingX: 'md',
+          paddingY: 'md',
+          backgroundColor: tintHex + '1A',
+          borderStyle: 'round',
+          borderDimColor: true,
+          children: [
+            k.Text({ wrap: 'wrap', children: [k.text('●  ', dotLevel), k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) })] }),
+            k.text(x.title, { size: 'title', weight: 'semibold', wrap: 'wrap' }),
+            ...(meta ? [k.footnote(meta, { wrap: 'wrap' })] : []),
+            ...(needText ? [k.Box({ paddingX: 'md', paddingY: 'sm', borderStyle: 'round', borderDimColor: true, children: [k.text(needText, { weight: 'medium', wrap: 'wrap' })] })] : []),
+            ...tail,
+          ],
+        }),
+      ],
+      { title: x.title, lines: [x.cwd ? String(x.cwd).replace(/^\/Users\/[^/]+/, '~') : '', x.sid ? 'Copy resume command carries it on in any terminal, from its own folder.' : ''] },
+    )
+  }
+  const column = [...head, ...tail]
   // the most pressing chat is drawn whole; the others are one line each until opened
   if (!isOpen && asking < 0 && !isTyping) {
     const brief = [column[0], ...(!isWide && meta ? [column[1]] : []), k.Text({ wrap: isWide ? 'truncate-end' : 'wrap', children: [k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) }), ...(needText ? [k.text('   ' + needText, { dimColor: true })] : [])] })]
@@ -2315,11 +2354,16 @@ function needsCard(k, d, act, w) {
   const shown = d.view.showAllNeeds ? w.needs : w.needs.slice(0, 5)
   const more = w.needs.length - shown.length
   const first = shown.find((x) => canAnswer(w, x))
+  // the most urgent chat is the one large card on desktop: a permission, then a question, then one waiting for an answer
+  const rank = (x) => (x.kind === 'permission' ? 0 : x.kind === 'question' ? 1 : x.kind === 'ask' ? 2 : x.kind === 'plan' ? 3 : x.kind === 'error' && !x.hasReset ? 4 : x.kind === 'error' ? 5 : 6)
+  const leadAt = k.isTerminal ? -1 : shown.reduce((best, x, i) => (best < 0 || rank(x) < rank(shown[best]) ? i : best), -1)
   return k.card(
     'Needs you',
     'Chats that stopped for you, the most pressing first.' + (w.canReply ? ' Answers go straight to that session.' : ''),
     [
-      ...shown.map((x, i) => needRow(k, d, act, w, x, i, x === first, i === 0 || x === first || d.view.openNeed === x.key)),
+      ...(leadAt >= 0 ? [needRow(k, d, act, w, shown[leadAt], leadAt, shown[leadAt] === first, true, true)] : []),
+      ...(leadAt >= 0 && shown.length > 1 ? [k.Box({ flexDirection: 'row', alignItems: 'center', columnGap: 'sm', paddingTop: 'xs', children: [k.text(plural(shown.length - 1, 'more waiting', 'more waiting').replace(/^1 /, '1 '), { weight: 'semibold' }), k.footnote('Show options on a row for its answers.')] })] : []),
+      ...shown.map((x, i) => (i === leadAt ? null : needRow(k, d, act, w, x, i, x === first, (leadAt < 0 && i === 0) || x === first || d.view.openNeed === x.key))).filter(Boolean),
       ...(w.needs.length > 5 ? [k.buttons([k.button('needs-more', more > 0 ? 'Show ' + more + ' more' : 'Show fewer', act.toggleNeeds, { dimColor: true })])] : []),
     ],
     { gap: 'lg' },
@@ -2596,7 +2640,7 @@ function liveRunCard(k, d, act, r, i) {
 
 // What could be better next time, for one finished run or across all of them: what it saw, a
 // range for what it would have saved, what has happened since it became a rule, and the choices.
-function savingRow(k, act, f, key, runId, share, isLead = false) {
+function savingRow(k, act, f, key, runId, share, isLead = false, maxHigh = 0) {
   const range = f.high >= 1 ? (f.high - f.low >= 1 ? fmtUsd(f.low) + '–' + fmtUsd(f.high) : fmtUsd(f.high)) : ''
   // the share of the limit first, dollars second, whenever the plan has a limit to take a share of
   const value = range ? (share ? 'Could have saved up to ' + shareWords(f.high, share).replace(/^about /, '') : 'Would have saved about ' + range) : f.minutes ? 'About ' + fmtSpan(f.minutes * 60_000) + ' less waiting' : ''
@@ -2608,7 +2652,7 @@ function savingRow(k, act, f, key, runId, share, isLead = false) {
     children: [
       k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'flex-start', children: [
         k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(f.title, { weight: 'semibold', wrap: 'wrap' })] }),
-        ...(value ? [k.Box({ flexShrink: 0, children: [k.text(value, { tabular: true, color: range ? 'success' : undefined, size: 'footnote', weight: 'medium' })] })] : []),
+        ...(value ? [k.Box({ flexShrink: 0, flexDirection: 'column', alignItems: 'flex-end', rowGap: 'xs', children: [k.text(value, { tabular: true, color: range ? 'success' : undefined, size: 'footnote', weight: 'medium' }), ...(k.hasSvg && range && maxHigh > 0 ? [k.drawing(svgMiniBar(f.high / maxHigh), 'This idea’s share of the largest saving: up to ' + range + ' of up to ' + fmtUsd(maxHigh) + ', an estimate')] : [])] })] : []),
       ] }),
       k.text(f.detail, { wrap: 'wrap' }),
       ...(share && f.high >= 1 ? [k.footnote('In dollars, about ' + range + ' at list prices; an estimate.')] : []),
@@ -2623,6 +2667,36 @@ function savingRow(k, act, f, key, runId, share, isLead = false) {
       ]),
     ],
   })
+}
+
+// The savings as two bars: the workflows as they ran, and with the ideas applied (that less the estimated
+// saving), a green bracket for what comes back, and the same in plain words under it. In shares of the weekly
+// limit when that is the unit and workflows used some this week, else in dollars over the period. Every
+// figure is an estimate and says so.
+function savingsPicture(k, fl, sv, list) {
+  if (!k.hasSvg) return []
+  const real = list.filter((f) => f.high >= 1)
+  if (!real.length || !(sv.usd > 0)) return []
+  // the ideas can overlap on one stage, so the total is the most they could give back, held below the whole
+  const back = Math.min(real.reduce((n, f) => n + f.high, 0), sv.usd * 0.9)
+  const frac = back / sv.usd
+  const W = Math.max(240, Math.min(640, Math.round(k.px - 36)))
+  const run = SHARE && fl.weekUsd > 0 ? fl.weekUsd * SHARE.pctPerUsd : 0
+  let g
+  let words
+  if (run >= 1) {
+    const points = run * frac
+    const after = run - points
+    const pts = points >= 100 ? 'about ' + fmtShare(points) + ' back' : points >= 1 ? 'about ' + plural(Math.round(points), 'point', 'points') + ' back' : 'under 1 point back'
+    g = { a: { label: 'As run: ' + fmtShare(run) + ' of your weekly limit', value: run }, b: { label: 'With the ideas applied: about ' + fmtShare(after), value: after }, back: pts }
+    words = 'Workflows took ' + fmtShare(run) + ' of your weekly limit this week. With these ideas applied they would take about ' + fmtShare(after) + ', ' + pts.replace(/ back$/, '') + (points >= 100 ? '' : ' of the limit') + ' given back. An estimate, scaled from the last ' + sv.days + ' days of runs.'
+  } else {
+    g = { a: { label: 'As run: ' + fmtUsd(sv.usd) + ' in the last ' + sv.days + ' days', value: sv.usd }, b: { label: 'With the ideas applied: about ' + fmtUsd(sv.usd - back), value: sv.usd - back }, back: 'about ' + fmtUsd(back) + ' back' }
+    words = 'Workflows cost ' + fmtUsd(sv.usd) + ' at list prices in the last ' + sv.days + ' days. With these ideas applied they would have cost about ' + fmtUsd(sv.usd - back) + ', about ' + fmtUsd(back) + ' less. An estimate.'
+  }
+  return [
+    k.Box({ flexDirection: 'column', rowGap: 'xs', width: '100%', children: [k.drawing(svgSaving(g, { width: W }), words), k.guide(words, { size: 'footnote' })] }),
+  ]
 }
 
 function finishedRunRow(k, d, act, r, i) {
@@ -2878,7 +2952,8 @@ function workflowsTab(k, d, act) {
       'Worked out from ' + plural(sv.runs, 'workflow run', 'workflow runs') + ' in every project over the last ' + sv.days + ' days' + (sv.isPartial ? ', with older runs still being read' : '') + '. Each range is an estimate of what the change would have saved on those runs; where two fit the same stage, they overlap.',
       shownSavings.length
         ? [
-            ...shownSavings.map((f, i) => savingRow(k, act, f, 'flow-save-' + i, '', fl.share, i === 0)),
+            ...savingsPicture(k, fl, sv, shownSavings),
+            ...shownSavings.map((f, i) => savingRow(k, act, f, 'flow-save-' + i, '', fl.share, i === 0, Math.max(0, ...shownSavings.map((y) => y.high || 0)))),
             ...(setAside ? [k.buttons([k.button('flow-save-shown', d.view.showSetAside ? 'Hide set-aside ideas' : 'Show ' + plural(setAside, 'set-aside idea', 'set-aside ideas'), () => act.setView({ showSetAside: !d.view.showSetAside }), { dimColor: true })])] : []),
             k.footnote('Make it a rule… puts a request in the prompt box to add the rule to your CLAUDE.md; Claude shows the change before saving it.'),
           ]
@@ -3156,7 +3231,24 @@ function whatIfItem(k, d, h, w) {
   const after = paceWords('seven_day', runway, resetsAt, d.now)
   const item = { runway, hex: tint(it.hex, runway.runOut !== null ? 'warning' : 'success'), label: it.label, valueText: Math.round(r.used) + '%' }
   const drop = Math.round(w.factor * 100)
+  // where the week ends, uncapped, at this pace and with the idea: two bars with the points between them
+  const endsAt = (r.used / r.elapsed) * 100
+  const pointsBack = endsAt - landing
+  const picture =
+    k.hasSvg && pointsBack >= 1
+      ? k.Box({
+          flexDirection: 'column',
+          rowGap: 'xs',
+          children: [
+            k.drawing(
+              svgSaving({ a: { label: 'At this pace: the week ends at about ' + Math.round(endsAt) + '%', value: endsAt }, b: { label: w.title + ': about ' + Math.round(landing) + '%', value: landing }, mark: 100, back: 'about ' + Math.round(pointsBack) + ' points back' }, { width: Math.max(240, Math.min(560, Math.round(k.px - 36))) }),
+              'At this pace the week ends at about ' + Math.round(endsAt) + '% of your weekly limit. ' + w.title + ', it ends at about ' + Math.round(landing) + '%, about ' + Math.round(pointsBack) + ' points back. An estimate at list prices.',
+            ),
+          ],
+        })
+      : null
   return {
+    picture,
     line: w.title + ': ' + after.replace(/^At this pace it/, 'it').replace(/^On pace/, 'on pace').replace(/^Used up/, 'used up'),
     tip: { title: w.title, lines: ['This week’s pace would drop about ' + drop + '%, at list prices.', before ? 'Now: ' + before.charAt(0).toLowerCase() + before.slice(1) : '', after ? 'Then: ' + after.charAt(0).toLowerCase() + after.slice(1) : ''], el: runwayBar(k, item, 'tile'), align: 'left' },
   }
@@ -3174,7 +3266,7 @@ function homeInsights(k, d, act, h) {
           k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
           k.guide(x.detail),
           // what the saving would do to the week, in a line; point at it for the runway it would have
-          ...(w ? [k.text(w.line, { size: 'footnote', weight: 'medium', wrap: 'wrap' })] : []),
+          ...(w ? [k.text(w.line, { size: 'footnote', weight: 'medium', wrap: 'wrap' }), ...(w.picture ? [w.picture] : [])] : []),
           ...(x.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('insight-' + i, x.action.label, () => act.run(x.action.key))])] })] : []),
         ]
         return w ? k.hoverBox('insight-' + i + '-row', { flexDirection: 'column', rowGap: 'xs' }, body, w.tip) : k.Box({ flexDirection: 'column', rowGap: 'xs', children: body })

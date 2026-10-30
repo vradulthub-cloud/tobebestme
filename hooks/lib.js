@@ -3402,6 +3402,261 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
   return withLight(svg)
 }
 
+// The week as one drawing: the limit's big figure and its forecast top left, then the week's days
+// as columns, each day's work stacked by project behind a line of what has been used so far (the
+// bars' own shape, scaled so it ends at the limit's reading), a dashed projection from Now to the
+// limit ending at a pulsing run-out dot, the reset at the right edge, and the stretch between the
+// run-out and the reset hatched and named. No day names: buttons laid out by the same fractions sit
+// under the columns. g: svgWindow's, plus { label, sentence, level, early, gap, figHexes }.
+export function svgWeek(g, { width = 600 } = {}) {
+  const W = Math.max(240, Math.round(width))
+  const days = (g.days || []).filter(Boolean)
+  const span = Math.max(1, g.endMs - g.startMs)
+  const xMs = (ms) => Math.max(0, Math.min(W, ((ms - g.startMs) / span) * W))
+  const pctX = (p) => (Math.max(0, Math.min(100, p || 0)) / 100) * W
+  const ns = ' vector-effect="non-scaling-stroke"'
+  const isWide = W >= 480
+  const S = W >= 640 ? 68 : W >= 480 ? 60 : W >= 340 ? 52 : 44
+  const hasClock = g.elapsed !== null && g.elapsed !== undefined
+  const early = hasClock && g.runOut !== null && g.runOut !== undefined
+  const text = (x, y, size, str, anchor, fill, weight) => '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" font-size="' + size + '" fill="' + fill + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
+  const wrap = (str, room) => {
+    const per = Math.max(12, Math.floor(room / 6.6))
+    const lines = []
+    let line = ''
+    for (const word of String(str || '').split(/\s+/).filter(Boolean)) {
+      if (line && (line + ' ' + word).length > per) {
+        lines.push(line)
+        line = word
+      } else line = line ? line + ' ' + word : word
+    }
+    if (line) lines.push(line)
+    return lines
+  }
+  // the header: the figure, and beside it (under it, when narrow) what it is and where it is heading
+  const figure = Math.round(g.used) + '%'
+  const figW = Math.ceil([...figure].reduce((n, c) => n + (/[0-9]/.test(c) ? 0.62 : 0.94) * S, 0)) + 4
+  const beside = W - figW - 18 >= 190
+  const y0 = Math.round(S * 0.86)
+  const room = beside ? W - figW - 18 : W
+  const sentenceLines = wrap(g.sentence, room)
+  const labelLines = wrap(g.label, room).slice(0, 2)
+  const block = [...labelLines.map((t) => ({ t, size: 13, fill: g.level === 'success' || !g.level ? HEX.marker : g.level === 'error' ? HEX.error : HEX.warning, weight: 600 })), ...sentenceLines.map((t) => ({ t, size: 13, fill: g.early ? HEX.warning : '#F2F2F7' }))]
+  const parts = []
+  const dark = (g.figHexes || ['#0A84FF', '#BF5AF2']).map((h) => toneFor(h, true))
+  const light = (g.figHexes || ['#0A84FF', '#BF5AF2']).map((h) => toneFor(h, false))
+  const id = 'mw' + dark.map((h) => h.slice(1)).join('')
+  // the gradient's ends are custom properties on the drawing, so a light pane's pair replaces them; the
+  // app strips data attributes from an interactive frame, so the drawing's own class says it as well
+  const vars = (c) => '{--a:' + c[0] + ';--b:' + c[1] + '}'
+  const css0 = 'svg[data-fig="' + id + '"]' + vars(dark) + 'svg.mwk' + vars(dark) + 'svg.mwk .bloom{opacity:.75}@media (prefers-color-scheme:light){svg[data-fig="' + id + '"]' + vars(light) + 'svg.mwk' + vars(light) + 'svg.mwk .bloom{opacity:.3}}'
+  parts.push('<defs><linearGradient id="' + id + '" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--a)"/><stop offset="1" style="stop-color:var(--b)"/></linearGradient></defs>')
+  parts.push('<defs><filter id="' + id + 'b" x="-10%" y="-25%" width="120%" height="150%"><feGaussianBlur stdDeviation="' + (S * 0.035).toFixed(1) + '"/></filter></defs>')
+  const glyphs = '<text class="mrise" x="2" y="' + y0 + '" font-size="' + S + '" font-weight="800" fill="url(#' + id + ')" style="font-variant-numeric:tabular-nums;letter-spacing:-0.02em"' + FONT + '>' + escapeXml(figure) + '</text>'
+  parts.push('<g class="bloom" filter="url(#' + id + 'b)">' + glyphs + '</g>' + glyphs)
+  let headEnd
+  if (beside) {
+    const top = y0 - (block.length - 1) * 18
+    block.forEach((b, i) => parts.push(text(figW + 18, top + i * 18, b.size, b.t, 'start', b.fill, b.weight)))
+    headEnd = y0 + 8
+  } else {
+    block.forEach((b, i) => parts.push(text(2, y0 + 24 + i * 18, b.size, b.t, 'start', b.fill, b.weight)))
+    headEnd = y0 + 24 + (block.length - 1) * 18 + 8
+  }
+  // the plot
+  const PT = Math.max(headEnd, 40) + 30
+  const PH = isWide ? 168 : 138
+  const BY = PT + PH
+  const H = BY + 6
+  const yAt = (p) => BY - (Math.max(0, Math.min(100, p || 0)) / 100) * PH
+  const xNow = hasClock ? pctX(g.elapsed) : W
+  const nowMs = g.startMs + ((hasClock ? g.elapsed : 100) / 100) * span
+  // 100% of the limit, and the days' own hairlines
+  parts.push('<rect x="0" y="' + PT + '" width="' + W + '" height="1" fill="#8E8E93" fill-opacity="0.45"/>')
+  parts.push(text(2, PT + 15, 12, '100% of the limit', 'start', HEX.marker))
+  days.forEach((d, i) => {
+    if (i > 0) parts.push('<line x1="' + xMs(d.startMs).toFixed(1) + '" x2="' + xMs(d.startMs).toFixed(1) + '" y1="' + (PT + 18) + '" y2="' + BY + '" stroke="#8E8E93" stroke-opacity="0.22" stroke-width="1"' + ns + '/>')
+  })
+  parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="1" fill="#8E8E93" fill-opacity="0.45"/>')
+  // the stretch after the run-out: hatched, and named
+  const period = 7
+  const xro = early ? pctX(g.runOut) : null
+  if (early) {
+    parts.push(hatchDefs(period))
+    parts.push('<g opacity="0.4"><rect x="' + xro.toFixed(1) + '" y="' + PT + '" width="' + (W - xro).toFixed(1) + '" height="' + PH + '" fill="url(#mh' + period + ')"/></g>')
+  }
+  // each day's bar, stacked by project and held back so the line leads; a column per day for hover
+  const top = PT + 22
+  const maxDay = Math.max(...days.map((x) => x.parts.reduce((n, p) => n + p.value, 0)), 0.0001)
+  const hovers = []
+  const tips = []
+  let css = ''
+  days.forEach((day, i) => {
+    const a = xMs(day.startMs)
+    const b = xMs(day.endMs)
+    if (b - a < 4) return
+    const bw = Math.min(34, Math.max(6, (b - a) * 0.5))
+    const cx = (a + b) / 2
+    const total = day.parts.reduce((n, p) => n + p.value, 0)
+    const height = total > 0 ? Math.max(3, (total / maxDay) * (BY - top) * 0.52) : 0
+    let y = BY
+    const shown = day.parts.filter((p) => p.value > 0)
+    const rects = shown.map((p, j) => {
+      const h = j === shown.length - 1 ? y - (BY - height) : (p.value / total) * height
+      y -= h
+      return '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(0.5, h).toFixed(1) + '" fill="' + p.hex + '" fill-opacity="' + (p.isDim ? 0.2 : 0.6) + '"/>'
+    })
+    const isBack = g.picked !== undefined && g.picked !== null && g.picked >= 0 && g.picked !== i
+    if (g.picked === i) parts.push('<rect class="pick" x="' + (cx - bw / 2 - 3).toFixed(1) + '" y="' + (BY + 1) + '" width="' + (bw + 6).toFixed(1) + '" height="2" rx="1" fill="#AEAEB2"/>')
+    const grains = height > 0 && !isBack ? [0, 1, 2].map((n) => '<circle class="mpt" cx="' + (cx + (n - 1) * bw * 0.28).toFixed(1) + '" cy="' + (BY - height - 2).toFixed(1) + '" r="1.8" fill="' + shown[shown.length - 1].hex + '" fill-opacity="0.85" style="animation-delay:' + (300 + i * 70 + n * 330) + 'ms;animation-iteration-count:' + (day.isToday ? 'infinite' : 2) + '"/>').join('') : ''
+    hovers.push('<g class="p d' + i + '"' + (isBack ? ' opacity="0.35"' : '') + '><g class="mbar" style="animation-delay:' + i * 70 + 'ms">' + rects.join('') + '</g>' + grains + '<rect x="' + a.toFixed(1) + '" y="' + PT + '" width="' + (b - a).toFixed(1) + '" height="' + PH + '" fill="transparent"/></g>')
+    if (day.tip) tips.push(tipLabel(cx, BY - height, day.tip, W, H, 'tip t' + i))
+    if (day.tip) css += '.d' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
+  })
+  parts.push(...hovers)
+  // everything over the columns lets the pointer through to them
+  const over = []
+  // used so far: the days' cumulative cost, scaled to end at the limit's reading
+  if (hasClock && g.used > 0) {
+    let cum = 0
+    const pts = [[0, 0]]
+    const sum = days.filter((d) => d.startMs < nowMs).reduce((n, d) => n + d.total, 0)
+    for (const d of days) {
+      if (d.startMs >= nowMs) break
+      cum += d.total
+      pts.push([xMs(Math.min(d.endMs, nowMs)), sum > 0 ? (cum / sum) * g.used : (xMs(Math.min(d.endMs, nowMs)) / Math.max(1, xNow)) * g.used])
+    }
+    const last = pts[pts.length - 1]
+    if (last[0] < xNow - 0.5) pts.push([xNow, g.used])
+    const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + yAt(p[1]).toFixed(1)).join('')
+    const grad = 'mwa' + id.slice(2)
+    over.push('<defs><linearGradient id="' + grad + '" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="' + g.hex + '" stop-opacity="0.34"/><stop offset="1" stop-color="' + g.hex + '" stop-opacity="0"/></linearGradient></defs>')
+    over.push('<g class="msw"><path d="' + line + 'L' + pts[pts.length - 1][0].toFixed(1) + ' ' + BY + 'L0 ' + BY + 'Z" fill="url(#' + grad + ')"/><path d="' + line + '" fill="none" stroke="' + g.hex + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"' + ns + '/></g>')
+    // the pace from now: dashed to the limit at the run-out, or to where the week ends
+    const x1 = xNow
+    const y1 = yAt(g.used)
+    const hasEnd = early || (g.projected !== null && g.projected !== undefined)
+    if (hasEnd) {
+      const x2 = early ? xro : W
+      const y2 = early ? PT : yAt(g.projected)
+      over.push('<line class="mrise" x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="' + (early ? HEX.warning : g.hex) + '" stroke-width="2.5" stroke-dasharray="6 5" stroke-linecap="round"' + ns + '/>')
+    }
+  }
+  if (hasClock) {
+    over.push('<line x1="' + xNow.toFixed(1) + '" x2="' + xNow.toFixed(1) + '" y1="' + (PT - 6) + '" y2="' + BY + '" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
+    over.push('<line class="now" x1="' + xNow.toFixed(1) + '" x2="' + xNow.toFixed(1) + '" y1="' + (PT - 6) + '" y2="' + BY + '" stroke="#F2F2F7" stroke-width="2"' + ns + '/>')
+    if (g.used > 0) over.push('<circle cx="' + xNow.toFixed(1) + '" cy="' + yAt(g.used).toFixed(1) + '" r="4.5" fill="' + g.hex + '" stroke="#1C1C1E" stroke-width="2"/>')
+  }
+  over.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="' + (PT - 6) + '" y2="' + BY + '" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
+  if (early) {
+    over.push('<line class="ro mpu" x1="' + xro.toFixed(1) + '" x2="' + xro.toFixed(1) + '" y1="' + (PT + 6) + '" y2="' + BY + '" stroke="' + HEX.warning + '" stroke-width="2" stroke-opacity="0.7"' + ns + '/>')
+    over.push('<circle class="mhalo" cx="' + xro.toFixed(1) + '" cy="' + PT + '" r="9" fill="' + HEX.warning + '" fill-opacity="0.45"/>')
+    over.push('<circle class="mpu" cx="' + xro.toFixed(1) + '" cy="' + PT + '" r="5.5" fill="' + HEX.warning + '" stroke="#1C1C1E" stroke-width="2"/>')
+    // the gap, in a label of its own so it reads over the hatching
+    const gapText = g.gap ? g.gap + ' without Claude' : ''
+    const zone = W - xro
+    if (gapText) {
+      const one = gapText.length * 6.8 + 22
+      const two = Math.max(g.gap.length, 14) * 6.8 + 22
+      const lines = zone - 8 >= one ? [gapText] : [g.gap, 'without Claude']
+      const w = lines.length === 1 ? one : two
+      const h = lines.length * 17 + 10
+      // centred on the hatched stretch; where the stretch is narrower than its label, in the plot's
+      // top-left corner under its 100% line, where the week starts low and nothing else is drawn
+      const fits = zone >= w + 8
+      const cx = fits ? xro + zone / 2 : 6 + w / 2
+      const y = fits ? BY - h - 14 : PT + 26
+      over.push('<g><rect x="' + (cx - w / 2).toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '" rx="8" class="gp" fill-opacity="0.94"/>' + lines.map((l, i) => '<text class="gl" x="' + cx.toFixed(1) + '" y="' + (y + 18 + i * 17) + '" font-size="13" font-weight="600" text-anchor="middle"' + FONT + '>' + escapeXml(l) + '</text>').join('') + '</g>')
+    }
+  }
+  // the app's scrub drops the attribute, so a class (whose rule is in the drawing's style) lets the pointer through
+  parts.push(...over.map((x) => (/^<\w+[^>]*class="/.test(x) ? x.replace(/^(<\w+[^>]*?class="[^"]*)"/, '$1 po"') : x.replace(/^<(\w+)/, '<$1 class="po"'))))
+  // flags over the plot: run-out, now and reset, each kept inside and dropped when it would run into another
+  const flags = []
+  if (early && g.runLabel) flags.push({ at: xro, text: g.runLabel, fill: HEX.warning, weight: 600, wide: g.runLabel.length * 7.2 })
+  if (hasClock && g.nowLabel) flags.push({ at: xNow, text: g.nowLabel, fill: '#F2F2F7', weight: 600, wide: g.nowLabel.length * 7.2 })
+  if (g.endLabel) flags.push({ at: W, text: g.endLabel, fill: HEX.marker, wide: g.endLabel.length * 7, edge: 'end' })
+  const placed = []
+  for (const f of flags) {
+    let anchor = f.edge || 'middle'
+    let from = anchor === 'end' ? f.at - f.wide : f.at - f.wide / 2
+    if (from < 0) {
+      anchor = 'start'
+      from = Math.max(0, f.at)
+    }
+    if (from + f.wide > W) {
+      anchor = 'end'
+      from = W - f.wide
+    }
+    if (placed.some(([a, z]) => from < z + 8 && from + f.wide > a - 8)) continue
+    placed.push([from, from + f.wide])
+    parts.push(text(anchor === 'start' ? from : anchor === 'end' ? from + f.wide : from + f.wide / 2, PT - 12, 12, f.text, anchor, f.fill, f.weight))
+  }
+  parts.push(...tips)
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" class="mwk" overflow="visible">' + MOTION_CSS + HOVER_CSS + '<style>.po{pointer-events:none}.gp{fill:#1C1C1E;stroke:#48484A}.gl{fill:#FFA424}@media (prefers-color-scheme:light){.gp{fill:#FFFFFF;stroke:#C7C7CC}.gl{fill:#B34C00}}' + css0 + css + '</style>' + parts.join('') + '</svg>'
+  return withLight(svg)
+}
+
+// What the ideas would give back, as two bars: the work as it ran, and the work with the ideas
+// applied, which is that less the estimated saving. A green bracket spans the difference, named in
+// big bold green; the part saved is drawn after the shorter bar as an outline. Both bars share one
+// scale (the larger), and a line marks the limit when it falls inside it.
+// g: { a: { label, value }, b: { label, value }, back (words for the bracket), max?, mark?: value of the limit }
+export function svgSaving(g, { width = 480 } = {}) {
+  const W = Math.max(240, Math.round(width))
+  const max = Math.max(g.max || 0, g.a.value, 0.0001)
+  const x = (v) => Math.max(0, Math.min(W, (v / max) * W))
+  const xa = x(g.a.value)
+  const xb = x(g.b.value)
+  const AY = 22
+  const BY = 66
+  const BH = 18
+  const ink = '#F2F2F7'
+  const text = (px, y, size, str, o = {}) => '<text' + (o.cls ? ' class="' + o.cls + '"' : '') + ' x="' + px.toFixed(1) + '" y="' + y + '" font-size="' + size + '" text-anchor="' + (o.anchor || 'start') + '"' + (o.fill ? ' fill="' + o.fill + '"' : '') + (o.weight ? ' font-weight="' + o.weight + '"' : '') + (o.style ? ' style="' + o.style + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
+  const parts = []
+  parts.push(text(0, 14, 13, g.a.label, { fill: ink, weight: 600 }))
+  parts.push('<rect x="0" y="' + AY + '" width="' + W + '" height="' + BH + '" rx="4" fill="#8E8E93" fill-opacity="0.2"/>')
+  parts.push('<g class="msw"><rect x="0" y="' + AY + '" width="' + xa.toFixed(1) + '" height="' + BH + '" rx="4" fill="#BF5AF2"/></g>')
+  parts.push(text(0, BY - 8, 13, g.b.label, { fill: ink, weight: 600 }))
+  parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="' + BH + '" rx="4" fill="#8E8E93" fill-opacity="0.2"/>')
+  parts.push('<g class="msw"><rect x="0" y="' + BY + '" width="' + xb.toFixed(1) + '" height="' + BH + '" rx="4" fill="#BF5AF2"/></g>')
+  // the part the ideas would save: an outline where the second bar ends and the first goes on
+  if (xa - xb > 3) parts.push('<rect class="mrise gs" x="' + (xb + 1).toFixed(1) + '" y="' + (BY + 1) + '" width="' + (xa - xb - 2).toFixed(1) + '" height="' + (BH - 2) + '" rx="3" stroke-width="1.5" stroke-dasharray="4 3" fill-opacity="0.2"/>')
+  if (g.mark && g.mark > max * 0.2 && g.mark < max * 0.98) {
+    const m = x(g.mark)
+    parts.push('<line x1="' + m.toFixed(1) + '" x2="' + m.toFixed(1) + '" y1="' + (AY - 4) + '" y2="' + (BY + BH + 4) + '" stroke="#AEAEB2" stroke-width="1.5" stroke-dasharray="3 3"/>')
+    if (m > 300) parts.push(text(m, 14, 12, 'the limit', { anchor: 'middle', fill: HEX.marker }))
+  }
+  // the bracket under both, from where the shorter bar ends to where the longer one does
+  const BR = BY + BH + 10
+  const gap = xa - xb
+  if (gap > 3) parts.push('<path class="gs" d="M' + xb.toFixed(1) + ' ' + BR + 'v6h' + gap.toFixed(1) + 'v-6" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')
+  const size = Math.max(16, Math.min(26, Math.floor(W / (g.back.length * 0.58))))
+  const lw = g.back.length * size * 0.56
+  const mid = xb + gap / 2
+  let anchor = 'middle'
+  let tx = mid
+  if (mid - lw / 2 < 0) {
+    anchor = 'start'
+    tx = 0
+  } else if (mid + lw / 2 > W) {
+    anchor = 'end'
+    tx = W
+  }
+  parts.push(text(tx, BR + 6 + size, size, g.back, { anchor, cls: 'gt', weight: 800, style: 'font-variant-numeric:tabular-nums;letter-spacing:-0.01em' }))
+  const H = BR + 6 + size + 8
+  const light = toneFor(HEX.success, false)
+  const css = '<style>.gt{fill:' + HEX.success + '}.gs{stroke:' + HEX.success + ';fill:' + HEX.success + '}path.gs{fill:none}@media (prefers-color-scheme:light){.gt{fill:' + light + '}.gs{stroke:' + light + ';fill:' + light + '}path.gs{fill:none}svg>text[fill="#F2F2F7"]{fill:#1C1C1E}}</style>'
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + MOTION_CSS + css + parts.join('') + '</svg>')
+}
+
+// A tiny bar for one idea's own saving, in proportion to the largest: green on a faint track.
+export function svgMiniBar(fraction, { width = 96, height = 8 } = {}) {
+  const w = Math.max(2, Math.round(Math.max(0, Math.min(1, fraction)) * width))
+  const light = toneFor(HEX.success, false)
+  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height + '">' + MOTION_CSS + '<style>.gb{fill:' + HEX.success + '}@media (prefers-color-scheme:light){.gb{fill:' + light + '}}</style><rect x="0" y="0" width="' + width + '" height="' + height + '" rx="' + height / 2 + '" fill="#8E8E93" fill-opacity="0.24"/><g class="msw"><rect class="gb" x="0" y="0" width="' + w + '" height="' + height + '" rx="' + height / 2 + '"/></g></svg>')
+}
+
 // The context window, laid out like the week is: its runway over a row of bars, one per turn. The
 // track is the window compaction works to; the fill is what is in use, a faint ghost ahead of it is
 // where the next few turns at the recent pace take it, and a post marks where Claude Code compacts.

@@ -3128,8 +3128,11 @@ export function register(on, options) {
 
   // ---- prompts: hold them past a budget, or tell Claude where things stand ----------
   on('prompt.submit', async ($, e, next) => {
-    // a request that looks like a job for a workflow: say so once per kind, with where to start it
-    if (opts.workflowTips && !e.command && typeof e.text === 'string' && !Object.values(liveRuns).some((r) => r.status === 'running')) {
+    // a request that looks like a job for a workflow: say so once per kind, with where to start it. Only
+    // what the person typed counts (no origin, or their phone): an agent's report, a task notification
+    // or another session's message is not a request of theirs, and must not come back as one
+    const isTyped = !e.origin || e.origin.kind === 'bridge'
+    if (opts.workflowTips && isTyped && !e.command && typeof e.text === 'string' && !Object.values(liveRuns).some((r) => r.status === 'running')) {
       const tip = suggestWorkflows({ prompt: e.text, skip: [...skippedKinds] })[0]
       if (tip) {
         suggestedFrom = { text: e.text, at: await $.clock.now() }

@@ -1076,10 +1076,10 @@ test('Home leads with one big figure and says where the pace lands, and each sav
     const text = await shown(ui)
     // the figure is drawn as a gradient on the desktop and is text on the terminal
     if (surface === 'desktop') {
-      expect(await figures(ui)).toContain('30%')
-      expect(text).toContain('of your weekly limit')
+      // the figure and the forecast are drawn inside the week's one drawing, and its words say both
+      expect((await figures(ui)).some((a: string) => /30% of your weekly limit\. On pace to end the week at about 4\d%/.test(a))).toBe(true)
     } else expect(text).toContain('30%\nof your weekly limit')
-    expect(text).toMatch(/On pace to end the week at about 4\d%\./)
+    if (surface === 'terminal') expect(text).toMatch(/On pace to end the week at about 4\d%\./)
     // helpers did 55% of the week on Opus and Haiku: moving them to Haiku lands the week lower
     expect(text).toMatch(/If helpers ran on Haiku: on pace to end the week at about \d+%\./)
     if (surface === 'terminal') expect(text).toContain('▒') // the stretch the pace will take, in blocks
@@ -2260,6 +2260,74 @@ test('Workflows says how to spend less, from every project’s finished runs, an
   await ui.unmount()
 })
 
+test('the savings are drawn as two bars with a green bracket, each idea has its own bar, and every one is named, sized, still under reduced motion and readable on a light pane', async ($, on) => {
+  const { store } = stubs(on)
+  store['runs:v1'] = { wf_1: digest(), wf_2: digest({ runId: 'wf_2', name: 'docs-check', startedAt: NOW - 86_400_000 }) }
+  await $.command.run({ command: 'tobebestme', args: 'workflows' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'flow-refresh' })
+  await ui.press({ key: 'tab-workflows' })
+  const all = (await ui.findAll({ type: 'Svg' })) as any[]
+  const two = all.find((x) => /Workflows (cost|took) /.test(String(x.props.alt)) && /With these ideas applied/.test(String(x.props.alt)))
+  expect(two, 'no two-bar savings drawing').toBeTruthy()
+  expect(String(two.props.alt)).toMatch(/about \$[\d.]+ less|about \d+ points|weeks’ worth/) // an estimate says so
+  expect(two.props.width > 0 && two.props.width <= 4096 && two.props.height > 0 && two.props.height <= 4096).toBe(true)
+  const src = String(two.props.source)
+  expect(src).toContain('@media (prefers-reduced-motion:reduce){') // its bars sweep in, and stop under reduced motion
+  expect(src).toContain('prefers-color-scheme:light') // green and violet have light-pane colours
+  expect(src).toMatch(/font-weight="800"[^>]*>about /) // the bracket's words are big and bold
+  // each idea with a saving has its own small bar
+  const minis = all.filter((x) => /share of the largest saving/.test(String(x.props.alt)))
+  expect(minis.length).toBeGreaterThanOrEqual(2)
+  for (const m of minis) expect(m.props.width > 0 && m.props.height > 0).toBe(true)
+  await ui.unmount()
+})
+
+test('Home’s most urgent chat is one large tinted card, the rest are a short list below it, and every answer button still works', async ($, on) => {
+  stubs(on)
+  waitingDesk(on, [], [])
+  transcripts(on, WAITING, true, [{ pid: 9, sessionId: 'perm', cwd: '/Users/me/Projects/api', kind: 'interactive', name: 'Release', status: 'waiting', waitingFor: 'permission to run npm publish' }])
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'usage-refresh' })
+  const text = await shown(ui)
+  expect(text).toMatch(/\d more waiting/)
+  const tree = JSON.stringify(await ui.drawn())
+  expect(tree).toMatch(/"backgroundColor":"#FF453A1A"/) // a tenth of its status colour, flat
+  const labels = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.label)
+  expect(labels).toEqual(expect.arrayContaining(['Ship it', 'Hold off', 'Show options']))
+  // the terminal keeps its plain list
+  const term = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await shown(term)).not.toMatch(/\d more waiting/)
+  await term.unmount()
+  await ui.unmount()
+})
+
+test('the week on Home is one drawing: the figure, the forecast, the days, the line, the projection and the gap are all in it, named, and drawn at the column’s width', async ($, on) => {
+  stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
+  transcripts(on, WEEK)
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  for (const cols of [40, 148]) {
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: cols } })
+    await ui.press({ key: 'usage-refresh' })
+    const week = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x) => String(x.props.source).includes('class="mwk"'))
+    expect(week, cols + ' columns: no week drawing').toBeTruthy()
+    expect(week.props.isInteractive).toBe(true)
+    expect(String(week.props.alt)).toMatch(/82% of your weekly limit.*runs out.*before it resets.*Use by day/)
+    expect(week.props.width).toBe(Math.round(Math.round(cols * 8.4) - 28 - 8))
+    const src = String(week.props.source)
+    expect(src).toContain('without Claude') // the gap is named
+    expect(src).toMatch(/fill="url\(#mh\d+\)"/) // and hatched
+    expect(src).toContain('stroke-dasharray="6 5"') // the projection is dashed
+    expect(src).toContain('@media (prefers-reduced-motion:reduce){')
+    expect(src).toContain('prefers-color-scheme:light')
+    expect(/<svg\b[^>]*data-fig=/.test(src)).toBe(false) // the app's scrub drops data attributes: nothing depends on one
+    expect(src).not.toContain('pointer-events="') // nor on that attribute
+    await ui.unmount()
+  }
+})
+
+
 test('a cheaper model that fails once is not called missing: it answers a check, and only failing again here stops routing in this session, for half an hour', { options: { mode: 'always', cheapModel: 'sonnet' } }, async ($, on) => {
   const { toasts, store, clock } = stubs(on)
   let checks = 0
@@ -2344,7 +2412,15 @@ test('a request that looks like a workflow job is suggested as one, with a shape
     filled.push(e.text)
     return { isFilled: true }
   })
-  on('prompt.submit', (_$: unknown, e: any) => ({ text: e.text }))
+  const origins: any[] = []
+  on('prompt.submit', (_$: unknown, e: any) => {
+    origins.push(e.origin)
+    return { text: e.text }
+  })
+  // an agent's report that reads like a job is not the person's request, and is never offered back as one
+  await $.prompt.submit({ text: 'Please review all the changes on this branch and fix the failing tests', origin: { kind: 'task-notification' } } as any).catch(() => undefined)
+  expect(origins[0]?.kind).toBe('task-notification')
+  expect(toasts.some((t) => t.startsWith('This could be a workflow'))).toBe(false)
   await $.prompt.submit({ text: 'Please review all the changes on this branch before I open the pull request tomorrow' } as any)
   expect(toasts.some((t) => t.startsWith('This could be a workflow: review changes'))).toBe(true)
 
