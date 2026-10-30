@@ -1494,7 +1494,7 @@ function skillsTab(k, d, act) {
       ),
     )
     put('room', 
-      k.card('Make room in the listing', 'Claude picks a skill from a listing of names and descriptions sent with every request. It has room for about ' + fmtTokens(L.budget) + ' tokens; what doesn’t fit goes by name alone. Each button puts a request in the prompt box for you to read and send.', options, { gap: 'md' }),
+      k.card('Make room in the listing', 'Claude picks a skill from a listing of names and descriptions sent with every request. It has room for about ' + fmtTokens(L.budget) + ' tokens; what doesn’t fit goes by name alone. Each button shows the change here first and saves it only when you press Save change.', options, { gap: 'md' }),
     )
   }
 
@@ -2955,7 +2955,7 @@ function workflowsTab(k, d, act) {
             ...savingsPicture(k, fl, sv, shownSavings),
             ...shownSavings.map((f, i) => savingRow(k, act, f, 'flow-save-' + i, '', fl.share, i === 0, Math.max(0, ...shownSavings.map((y) => y.high || 0)))),
             ...(setAside ? [k.buttons([k.button('flow-save-shown', d.view.showSetAside ? 'Hide set-aside ideas' : 'Show ' + plural(setAside, 'set-aside idea', 'set-aside ideas'), () => act.setView({ showSetAside: !d.view.showSetAside }), { dimColor: true })])] : []),
-            k.footnote('Make it a rule… puts a request in the prompt box to add the rule to your CLAUDE.md; Claude shows the change before saving it.'),
+            k.footnote('Make it a rule… shows the rule here and adds it to your CLAUDE.md when you press Save change.'),
           ]
         : [k.footnote(setAside ? 'Nothing new. ' + plural(setAside, 'idea is', 'ideas are') + ' set aside.' : 'Nothing stands out: your runs already pick their models and sizes well.')],
       { gap: 'lg' },

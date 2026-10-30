@@ -15,6 +15,7 @@ How ToBeBestMe is written:
 - **Design.** It has its own visual language, described in DESIGN.md: sentence case, buttons that say what they do, one primary action per view, nothing under 11px, colour only for meaning. DESIGN.md has the details.
 - **Honest numbers.** Estimates are shown as ranges and say what they come from. Don't make a guess look precise.
 - **No secrets, ever.** Not in code, tests, fixtures or screenshots. The e2e screenshots can show your own projects; they stay under `e2e/.out/`, which git ignores.
+- **Images show fixtures only.** The pictures in `assets/` are screenshots of the e2e fixture pages (`node e2e/lib/export.mjs` writes them to `e2e/.out/pages/`), never of a real session or your own projects.
 - **Security issues** go through SECURITY.md, not public issues.
 
 ## Cutting a release
