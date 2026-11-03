@@ -17,6 +17,7 @@ import {
   TINT,
   RING_HEX,
   WINDOW_MS,
+  kindOfLabel,
   MODES,
   fmtTokens,
   fmtUsd,
@@ -81,6 +82,7 @@ import {
   settleMotion,
   FLUID_PX,
 } from './lib.js'
+import { lobbyData, reportAlt, reportData, svgReportCard } from './extras.js'
 
 // Costs as dollars, or as a share of the weekly limit when that is what runs out (costShare): set
 // at the start of each drawing, so every figure in it speaks the same unit.
@@ -928,7 +930,7 @@ function group(k, title, rows, buttons = []) {
 function limitList(d, h) {
   if (d.limits.length) return d.limits
   return h.windows.map((w) => {
-    const kind = /5|hour/i.test(w.label) ? 'five_hour' : /opus/i.test(w.label) ? 'seven_day_opus' : 'seven_day'
+    const kind = kindOfLabel(w.label)
     const r = { kind, percentUsed: w.pct, resetsAt: w.resetsAt ? new Date(w.resetsAt).toISOString() : undefined }
     const o = limitOutlook(r, null, d.now)
     return { r, o, level: limitLevel(r, o, d.opts) }
@@ -1027,7 +1029,7 @@ function usageLead(k, d, act, h, limits, main) {
   if (main) {
     const { r, o } = main
     const p = Math.round(r.percentUsed)
-    const what = r.kind === 'five_hour' ? 'window' : 'week'
+    const what = 'week'
     level = main.level
     if (isEarly(r, o)) {
       headline = limitLabel(r.kind) + ' runs out ' + fmtClock(o.fullAt, d.now)
@@ -1060,6 +1062,103 @@ function usageLead(k, d, act, h, limits, main) {
   })
 }
 
+// The week as one picture to keep and post: drawn in the pane (desktop and VS Code, where a drawing
+// shows), saved as an SVG and, where the computer has a converter, a PNG, with a few lines to paste.
+function reportCard(k, d, act) {
+  if (!k.hasSvg || !d.usage || d.usage.isEmpty) return null
+  const r = reportData(d, { hideNames: !!d.view.cardHide })
+  if (!r) return null
+  const W = Math.max(240, Math.min(720, Math.round(k.px - 44)))
+  const src = svgReportCard(r, { width: W, isAnimated: true })
+  return k.card('Weekly report card', 'Your week as one picture: saved as an image file, with a few lines to paste beside it.', [
+    k.Box({ flexDirection: 'column', alignSelf: 'flex-start', children: [k.Svg({ source: src, alt: reportAlt(r) })] }),
+    k.buttons([
+      k.button('card-save', 'Save report card', (ev) => act.saveCard(ev && ev.surface)),
+      k.button('card-copy', 'Copy text summary', (ev) => act.copyCardText(ev && ev.surface)),
+      k.button('card-names', d.view.cardHide ? 'Show project names' : 'Hide project names', act.toggleCardNames, { plain: true, dimColor: true }),
+    ]),
+    k.footnote('Saves an SVG to ~/.claude/tobebestme/reports, and a PNG too when rsvg-convert, ImageMagick, Inkscape or macOS Quick Look is on this computer. Nothing is uploaded.'),
+  ], { keepCaption: true })
+}
+
+// The phone: a short lobby. What waits for you (with the answers the chat itself suggested), the limit
+// that binds first and when it runs out, and what is running. The mobile app draws no field, so a
+// reply is one of the suggested buttons, shown whole and confirmed before it is sent.
+export function drawLobby(k, d, act) {
+  const L = lobbyData(d)
+  const w = d.waiting
+  const c = d.view.confirm || ''
+  const head = L.chats ? plural(L.chats, 'chat', 'chats') + (L.chats === 1 ? ' is' : ' are') + ' waiting for you' : L.prs ? plural(L.prs, 'pull request', 'pull requests') + (L.prs === 1 ? ' needs' : ' need') + ' a look' : 'Nothing is waiting for you'
+  const out = [
+    k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('ToBeBestMe'), k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'flex-start', children: [k.text(L.chats ? '● ' : '✓ ', L.chats ? { color: 'warning' } : { color: 'success' }), k.Box({ flexShrink: 1, children: [k.text(head, { size: 'title', weight: 'semibold', wrap: 'wrap' })] })] })] }),
+  ]
+  L.needs.forEach((x, i) => {
+    const [label, level] = needWords(x)
+    const asking = c.startsWith('reply:' + x.key + ':') ? Number(c.slice(('reply:' + x.key + ':').length)) : -1
+    const canSend = canAnswer(w, x)
+    const pending = asking >= 0 && asking < x.replies.length ? x.replies[asking].message || x.replies[asking].label : ''
+    const text = (x.text || x.recap || '').length > 180 ? (x.text || x.recap).slice(0, 179).replace(/\s+\S*$/, '') + '…' : x.text || x.recap || ''
+    const buttons = []
+    if (canSend && asking < 0) x.replies.slice(0, 3).forEach((r, j) => buttons.push(k.button('lobby-' + i + '-r' + j, r.label, () => act.setView({ confirm: 'reply:' + x.key + ':' + j, replying: '' }))))
+    if (x.prUrl && k.Link) buttons.push(k.Link({ href: x.prUrl, label: 'Open pull request #' + x.prNumber }))
+    out.push(
+      k.Box({
+        key: 'lobby-need-' + i,
+        flexDirection: 'column',
+        rowGap: 'sm',
+        paddingX: 'md',
+        paddingY: 'md',
+        backgroundColor: GROUP_BG,
+        borderStyle: 'round',
+        borderDimColor: true,
+        children: [
+          k.Text({ wrap: 'wrap', children: [k.text('●  ', { color: level === 'success' ? 'success' : level === 'info' ? undefined : level, dimColor: level === 'info' ? true : undefined }), k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) })] }),
+          k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
+          k.footnote([x.project, ago(d.now - x.at)].filter(Boolean).join(' · '), { wrap: 'wrap' }),
+          ...(text ? [k.text(text, { wrap: 'wrap' })] : []),
+          ...(asking >= 0
+            ? [k.text('Send this to “' + x.title + '”?', { weight: 'medium', wrap: 'wrap' }), k.Box({ paddingX: 'md', paddingY: 'sm', borderStyle: 'round', borderDimColor: true, children: [k.text(pending, { wrap: 'wrap' })] }), k.buttons([k.button('reply-go', 'Send reply', () => act.sendReply(x, pending), { variant: 'primary' }), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }))])]
+            : buttons.length
+              ? [k.buttons(buttons)]
+              : !canSend && x.kind !== 'pr' ? [k.guide(x.kind === 'permission' ? 'Allow or deny it in that session.' : 'Open that session to answer.')] : []),
+        ],
+      }),
+    )
+  })
+  if (L.more) out.push(k.footnote('and ' + L.more + ' more, in ToBeBestMe on your computer.'))
+  const t = L.tight
+  if (t) {
+    const level = t.pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : t.pct >= d.opts.limitAlertAt || t.early ? 'warning' : 'success'
+    const hex = level === 'success' ? planHex(t.label) : HEX[level]
+    out.push(
+      k.Box({
+        key: 'lobby-limit',
+        flexDirection: 'column',
+        rowGap: 'xs',
+        children: [
+          k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(t.label, { weight: 'semibold', wrap: 'truncate-end' })] }), k.text(Math.round(t.pct) + '%', { tabular: true, weight: 'semibold', color: quiet(level) })] }),
+          k.bar(t.pct, 100, hex, t.label + ' ' + Math.round(t.pct) + '% used'),
+          k.footnote(t.early ? 'Runs out ' + fmtClock(t.fullAt, d.now) + ', ' + fmtSpan(t.resetsAt - t.fullAt) + ' before it resets.' : t.resetsAt ? 'Resets ' + fmtClock(t.resetsAt, d.now) + ', in ' + fmtSpan(t.resetsAt - d.now) + '.' : '', { wrap: 'wrap', ...(t.early ? { color: 'warning' } : {}) }),
+        ],
+      }),
+    )
+  }
+  if (L.runs.length) {
+    out.push(
+      k.Box({
+        flexDirection: 'column',
+        rowGap: 'xs',
+        children: [
+          k.text('Running now', { weight: 'semibold' }),
+          ...L.runs.map((r) => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Text({ wrap: 'wrap', children: [k.text('● ', { color: 'success' }), k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  ' + r.progress.done + ' of ' + r.progress.total + ' agents' + (r.paused ? ', paused' : ''), { size: 'footnote', dimColor: true })] }), k.bar(r.progress.done, Math.max(1, r.progress.total), HEX.success, (r.name || 'Workflow') + ': ' + r.progress.done + ' of ' + r.progress.total + ' agents done')] })),
+        ],
+      }),
+    )
+  }
+  out.push(k.footnote('Context in this session: ' + d.pct + '%. The full dashboard is in ToBeBestMe on your computer.', { wrap: 'wrap' }))
+  return k.Box({ flexDirection: 'column', rowGap: 'lg', width: '100%', paddingX: 'xs', paddingY: 'sm', children: out })
+}
+
 function usageTab(k, d, act) {
   const h = homeContext(d)
   const limits = limitList(d, h)
@@ -1067,7 +1166,7 @@ function usageTab(k, d, act) {
   const head = usageLead(k, d, act, h, limits, main)
   if (k.isTerminal || k.columns < SPLIT_AT) {
     const spent = spendingTab(k, d, act, h)
-    return [head, ...(limits.length ? limitsTab(k, d, act, limits, main) : []), ...(limits.length ? [limitsSettings(k, d, act)] : []), spent.glance, spent.turns, spent.budgets, spent.models, spent.tools, spent.week, spent.share].filter(Boolean)
+    return [head, reportCard(k, d, act), ...(limits.length ? limitsTab(k, d, act, limits, main) : []), ...(limits.length ? [limitsSettings(k, d, act)] : []), spent.glance, spent.turns, spent.budgets, spent.models, spent.tools, spent.week, spent.share].filter(Boolean)
   }
   // wide: the record of what was spent on the left, the controls and the glance beside them
   const [km, ka] = k.split()
@@ -1075,6 +1174,7 @@ function usageTab(k, d, act) {
   const spentSide = spendingTab(ka, d, act, h)
   return [
     head,
+    reportCard(k, d, act),
     km.layout(
       [...(limits.length ? limitsTab(km, d, act, limits, main) : []), spentMain.turns, spentMain.models, spentMain.tools, spentMain.week].filter(Boolean),
       [spentSide.glance, ...(limits.length ? [limitsSettings(ka, d, act)] : []), spentSide.budgets, spentSide.share].filter(Boolean),
@@ -1298,12 +1398,12 @@ function limitChart(k, d, l) {
         hex: tint(hex, l.level),
         warnHex: early ? HEX.warning : HEX.marker,
         labels: {
-          start: r.kind === 'five_hour' ? fmtClock(o.resetAt - span, d.now) : day(o.resetAt - span),
-          end: 'resets ' + (r.kind === 'five_hour' ? fmtClock(o.resetAt, d.now) : day(o.resetAt)),
+          start: day(o.resetAt - span),
+          end: 'resets ' + day(o.resetAt),
           full: 'runs out ' + fmtClock(o.fullAt || o.resetAt, d.now),
           fullTitle: 'At this pace it runs out around ' + fmtClock(o.fullAt || o.resetAt, d.now),
           now: 'Now: ' + p + '% used',
-          area: 'Your use so far this ' + (r.kind === 'five_hour' ? 'window' : 'week'),
+          area: 'Your use so far this week',
           projection: o.atReset !== null ? 'At this pace: about ' + Math.min(100, Math.round(o.atReset)) + '% by the reset' : '',
           sample: (s) => fmtClock(s.at, d.now) + ': ' + Math.round(s.pct) + '%',
         },
@@ -1335,12 +1435,11 @@ function limitsTab(k, d, act, limits, main) {
     if (o.recentPerHour !== null) facts.push(['Lately', 'about ' + (o.recentPerHour >= 10 ? Math.round(o.recentPerHour) : Math.round(o.recentPerHour * 10) / 10) + '% an hour while you work'])
     if (o.resetAt !== null && p < 100) {
       const hours = (o.resetAt - d.now) / 3_600_000
-      if (r.kind === 'five_hour' && hours >= 0.5) facts.push(['To last until the reset', 'about ' + Math.max(1, Math.floor((100 - p) / hours)) + '% an hour'])
-      else if (hours >= 24) facts.push(['To last until the reset', 'about ' + Math.max(1, Math.floor((100 - p) / (hours / 24))) + '% a day'])
+      if (hours >= 24) facts.push(['To last until the reset', 'about ' + Math.max(1, Math.floor((100 - p) / (hours / 24))) + '% a day'])
     }
     const share = dailyShare(l, (d.limitHistory && d.limitHistory[r.kind]) || [], d.now)
     if (share && share.usedToday !== null) facts.push(['Today so far', Math.round(share.usedToday) + '% of about ' + Math.max(1, Math.round(share.share)) + '%' + (share.isOver ? ', over today’s share' : ', on track')])
-    return k.card(limitLabel(r.kind), r.kind === 'five_hour' ? 'Resets five hours after the window starts.' : r.kind === 'seven_day' ? 'Your use across the week.' : null, [
+    return k.card(limitLabel(r.kind), r.kind === 'seven_day' ? 'Your use across the week.' : null, [
       k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', alignItems: 'flex-end', children: [k.text(p + '% used', { size: 'title', weight: 'semibold', tabular: true, color: quiet(l.level) }), ...(l.level !== 'success' ? [k.footnote(l.level === 'error' ? 'nearly out' : early ? 'runs out early' : 'past your alert')] : [])] }),
       ...(drawn ? [drawn] : []),
       k.hang(k.dot(early ? 'warning' : 'info'), k.text(paceSentence(l, d.now), { wrap: 'wrap', weight: early ? 'medium' : undefined })),
@@ -1785,6 +1884,7 @@ const SOURCE_WORDS = [
   ['agents', 'Running sessions', 'Which sessions are working or waiting now'],
   ['desk', 'Desktop sessions', 'Open sessions in the Claude app, for replies'],
   ['git', 'Folders’ git state', 'Work left uncommitted or unpushed'],
+  ['gh', 'Pull requests (GitHub CLI)', 'Your open pull requests that need you: review requested, changes requested, checks failing, ready to merge. Read-only gh queries, every few minutes'],
   ['skills', 'Your skills', 'Skill and command files, for the check-up'],
   ['integrity', 'This copy of ToBeBestMe', 'Its own files, checked against the release they came from'],
 ]
@@ -1845,10 +1945,10 @@ function settingsTab(k, d, act) {
 function notifyCard(k, d, act) {
   const n = d.notify || { at: 0, results: {} }
   const o = d.opts
-  const NAMES = { claude: 'Claude Code', system: 'System', sound: 'Sound', phone: 'Phone' }
-  const WORDS = { sent: 'Sent', bell: 'Bell only: this terminal shows no words', played: 'Played', unavailable: 'Not on this computer', failed: 'Failed', 'no-channel': 'No channel set in Claude Code', 'no-surface': 'Nothing to show it on', disabled: 'Turned off in Claude Code', refused: 'Refused' }
+  const NAMES = { claude: 'Claude Code', system: 'System', sound: 'Sound', speech: 'Speech', phone: 'Phone' }
+  const WORDS = { sent: 'Sent', bell: 'Bell only: this terminal shows no words', played: 'Played', spoken: 'Spoken', unavailable: 'Not on this computer', failed: 'Failed', 'no-channel': 'No channel set in Claude Code', 'no-surface': 'Nothing to show it on', disabled: 'Turned off in Claude Code', refused: 'Refused' }
   const rows = Object.entries(n.results || {}).map(([key, v]) => {
-    const isGood = v === 'sent' || v === 'played'
+    const isGood = v === 'sent' || v === 'played' || v === 'spoken'
     return k.Text({ wrap: 'wrap', children: [k.text(isGood ? '✓ ' : '● ', isGood ? { color: 'success' } : { color: 'warning' }), k.text(NAMES[key] + '  ', { weight: 'medium' }), k.text(WORDS[v] || v, { size: 'footnote', dimColor: isGood ? true : undefined })] })
   })
   const isEditing = d.view.editing === 'notifyUrl'
@@ -1883,7 +1983,6 @@ function notifyCard(k, d, act) {
 // and covers sessions that never ran tobebestme; in the desktop app the open sessions follow.
 
 function planHex(label) {
-  if (/5-hour/i.test(label)) return RING_HEX.five_hour
   if (/all models|^weekly( limit)?$/i.test(label)) return RING_HEX.seven_day
   return RING_HEX.seven_day_opus
 }
@@ -1980,6 +2079,7 @@ const NEED_WORDS = {
 }
 
 function needWords(x) {
+  if (x.pr) return [x.pr.label, x.pr.level]
   if (x.kind === 'error' && x.hasReset) return ['Ready to carry on', 'info']
   if (x.kind === 'error' && x.resetsAt) return ['Stopped at a usage limit', 'error']
   return NEED_WORDS[x.kind] || ['Waiting', 'info']
@@ -1991,7 +2091,7 @@ function whereRan(entry) {
 
 // The runway of the tightest limit, as the item the runway drawing takes.
 function tightestItem(d, tightest, h) {
-  const kind = /5|hour/i.test(tightest.label) ? 'five_hour' : 'seven_day'
+  const kind = kindOfLabel(tightest.label)
   const runway = runwayOf(kind, tightest.pct, tightest.resetsAt, d.now)
   const window = windowOf(kind, runway, tightest.resetsAt, d.now)
   const focus = (d.view && d.view.project) || ''
@@ -2013,13 +2113,13 @@ function tightestItem(d, tightest, h) {
 // What the calendar view of a runway needs beyond the runway itself: the window's ends and the words
 // over its posts.
 function windowOf(kind, runway, resetsAt, now) {
-  if (!resetsAt) return null
   const span = WINDOW_MS[kind]
+  if (!resetsAt || !span) return null
   const start = resetsAt - span
   return {
     startMs: start,
     endMs: resetsAt,
-    unit: kind === 'five_hour' ? 'hour' : 'day',
+    unit: 'day',
     nowLabel: 'Now',
     runLabel: runway.runOut !== null && runway.runOut !== undefined ? 'Runs out ' + fmtClock(start + (runway.runOut / 100) * span, now) : '',
     gap: runway.runOut !== null && runway.runOut !== undefined ? fmtSpan(resetsAt - (start + (runway.runOut / 100) * span)) : '',
@@ -2039,7 +2139,7 @@ function homeHero(k, d, h, act) {
   } catch {
     date = dayKey(d.now)
   }
-  const headline = chats ? (chats === 1 ? 'One chat is waiting for you' : chats + ' chats are waiting for you') : prs ? (prs === 1 ? 'One pull request is waiting for review' : prs + ' pull requests are waiting for review') : 'Nothing is waiting for you'
+  const headline = chats ? (chats === 1 ? 'One chat is waiting for you' : chats + ' chats are waiting for you') : prs ? (prs === 1 ? 'One pull request needs a look' : prs + ' pull requests need a look') : 'Nothing is waiting for you'
   const u = d.usage
   const facts = []
   if (u && !u.isEmpty) facts.push('Today, in every session: ' + (SHARE ? ofLimit(cost(u.today.usd)) : fmtUsd(u.today.usd) + ' of work') + ', across ' + plural(u.today.projects, 'project', 'projects') + ' and ' + plural(u.today.sessions, 'session', 'sessions'))
@@ -2064,7 +2164,7 @@ function homeHero(k, d, h, act) {
       ],
     })
   const level = tightest ? (tightest.pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : tightest.pct >= d.opts.limitAlertAt ? 'warning' : 'success') : 'success'
-  const kind = tightest ? (/5|hour/i.test(tightest.label) ? 'five_hour' : 'seven_day') : 'seven_day'
+  const kind = tightest ? kindOfLabel(tightest.label) : 'seven_day'
   const pace = item ? paceWords(kind, item.runway, tightest.resetsAt, d.now) : ''
   const isWide = k.columns >= 90
   // what needs you, and beside it (under it, on a narrow pane) where you stand: one big figure
@@ -2135,7 +2235,7 @@ function homeHero(k, d, h, act) {
 
 // The hero's calendar on desktop: the drawing at its column's own width, and under it a button per
 // A limit's name as a phrase: "Weekly · all models" reads "weekly limit, all models", "Weekly · Fable"
-// reads "Fable weekly limit", and "5-hour limit" stays as it is.
+// reads "Fable weekly limit".
 function limitPhrase(label) {
   const m = /^(.*?) · (.*)$/.exec(String(label || ''))
   if (!m) return String(label || '').toLowerCase()
@@ -2214,13 +2314,13 @@ function heroDetail(k, d, h, act) {
 function limitRow(k, d, h, x, i) {
   const { now, plan, levelOf } = h
   const level = levelOf(x.pct)
-  const kind = /5|hour/i.test(x.label) ? 'five_hour' : 'seven_day'
+  const kind = kindOfLabel(x.label)
   const runway = runwayOf(kind, x.pct, x.resetsAt, now)
   const hex = level === 'success' ? planHex(x.label) : HEX[level]
   const where = plan.source === 'app' ? (plan.plan ? plan.plan + ' plan. ' : '') : plan.source === 'session' ? 'From this session’s latest reading. ' : 'As read ' + ago(now - plan.at) + ' by another session. '
   const isRoomy = k.columns >= 64
   // where it runs out when that is early enough to matter, else when it resets
-  const runOutAt = x.resetsAt && runway.runOut !== null && runway.runOut !== undefined ? x.resetsAt - WINDOW_MS[kind] + (runway.runOut / 100) * WINDOW_MS[kind] : 0
+  const runOutAt = x.resetsAt && WINDOW_MS[kind] && runway.runOut !== null && runway.runOut !== undefined ? x.resetsAt - WINDOW_MS[kind] + (runway.runOut / 100) * WINDOW_MS[kind] : 0
   return k.hoverBox('plan-' + i, { flexDirection: 'row', columnGap: 'md', alignItems: 'center', width: '100%' }, [
     k.Box({ width: isRoomy ? 24 : 16, flexShrink: 0, children: [k.Text({ wrap: 'truncate-end', children: [k.text('● ', { color: k.isTerminal ? (level === 'success' ? 'suggestion' : level) : midHex(hex) }), k.text(x.label)] })] }),
     k.Box({ flexGrow: 1, flexShrink: 1, children: [runwayBar(k, { runway, hex, label: x.label, valueText: Math.round(x.pct) + '%' }, 'tile')] }),
@@ -2251,6 +2351,7 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
     buttons.push(k.button('need-' + i + '-type', x.kind === 'plan' ? 'Answer…' : 'Reply…', () => act.setView({ replying: x.key, confirm: '' }), { variant: isFirst && !x.replies.length && !(x.kind === 'error' && x.hasReset) ? 'primary' : undefined }))
   }
   if (x.prUrl && k.Link) buttons.push(k.Link({ href: x.prUrl, label: 'Open pull request #' + x.prNumber }))
+  if (x.prUrl && x.pr) buttons.push(k.button('need-' + i + '-copylink', 'Copy link', (ev) => act.copyText(x.prUrl, ev && ev.surface, 'Link'), { plain: true, dimColor: true }))
   // a session running now, or one whose work is a pull request, isn't carried on from a terminal
   if (x.sid && !x.isLive && x.kind !== 'pr' && asking < 0 && !isTyping) buttons.push(k.button('need-' + i + '-copy', 'Copy resume command', (ev) => act.copyResume(x, ev && ev.surface), { plain: true, dimColor: true }))
   if (asking < 0 && !isTyping) buttons.push(k.button('need-' + i + '-later', 'Set aside', () => act.dismissNeed(x), { plain: true, dimColor: true }))
@@ -3066,7 +3167,7 @@ function homeContext(d) {
     plan,
     windows,
     levelOf: (pct) => (pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : pct >= d.opts.limitAlertAt ? 'warning' : 'success'),
-    tightest: [...windows].sort((a, z) => z.pct - a.pct)[0],
+    tightest: [...windows].sort((a, z) => Number(kindOfLabel(a.label) === 'five_hour') - Number(kindOfLabel(z.label) === 'five_hour') || z.pct - a.pct)[0],
     w: d.waiting || { needs: [], pickup: [], canReply: false },
     hues: u && !u.isEmpty ? projectHues(u.projects) : Object.create(null),
   }
@@ -3330,7 +3431,7 @@ function homeProjects(k, d, act, h) {
 function homeChart(k, d, act, h) {
   const { u, now, has } = h
   const out = []
-  // the hero's calendar already draws the week by project; this is for a 5-hour window or no plan
+  // the hero's calendar already draws the week by project; this is for when there is no plan
   if (has && !(k.hasSvg && h.item && h.item.days)) {
     const stacks = u.days.map((_, i) => {
       let other = 0
@@ -3602,7 +3703,7 @@ export function drawBand(k, d, act) {
   // the gauges: everything that can run out, each with a small meter
   const levelOf = (pct, warn, err) => (pct >= err ? 'error' : pct >= warn ? 'warning' : 'success')
   const gauges = [{ key: 'context', label: 'Context', pct: d.pct, hex: RING_HEX.context, level: levelOf(d.pct, d.opts.contextWarnAt, d.opts.cheaperModelAt) }]
-  for (const l of d.limits.slice(0, 2)) gauges.push({ key: l.r.kind, label: l.r.kind === 'five_hour' ? '5-hour' : l.r.kind === 'seven_day' ? 'Weekly' : limitLabel(l.r.kind).replace(/ limit$/i, ''), pct: l.r.percentUsed, hex: RING_HEX[l.r.kind] || RING_HEX.seven_day_opus, level: l.level === 'info' ? 'success' : l.level, resetsAt: l.o.resetAt, runway: runwayOf(l.r.kind, l.r.percentUsed, l.o.resetAt, d.now) })
+  for (const l of d.limits.slice(0, 2)) gauges.push({ key: l.r.kind, label: l.r.kind === 'seven_day' ? 'Weekly' : limitLabel(l.r.kind).replace(/ limit$/i, ''), pct: l.r.percentUsed, hex: RING_HEX[l.r.kind] || RING_HEX.seven_day_opus, level: l.level === 'info' ? 'success' : l.level, resetsAt: l.o.resetAt, runway: runwayOf(l.r.kind, l.r.percentUsed, l.o.resetAt, d.now) })
   // On desktop each figure takes an equal share of the row, its runway filling the room between its
   // name and its percentage, so pace reads at a glance; on a phone-width band, two to a row.
   const isNarrow = k.columns < 72

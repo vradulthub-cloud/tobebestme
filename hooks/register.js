@@ -107,7 +107,25 @@ import {
   shortModel,
   modelName,
 } from './lib.js'
-import { kit, drawDashboard, drawBand, TABS } from './draw.js'
+import {
+  GH_SH,
+  STATUS_SCHEMA,
+  STATUS_TOOL,
+  STATUS_TOOL_DESCRIPTION,
+  cardName,
+  chimeWav,
+  ghSource,
+  nextPrompt,
+  parseGh,
+  pngTries,
+  prNeeds,
+  reportData,
+  reportSummary,
+  statusReport,
+  svgReportCard,
+  waitAlert,
+} from './extras.js'
+import { kit, drawDashboard, drawBand, drawLobby, TABS } from './draw.js'
 
 const PANE = 'tobebestme'
 // How the pane opens, from wherever it is opened: Esc closes it the same way each time.
@@ -222,6 +240,15 @@ let habits = { dismissed: {}, isTourDone: false }
 // One small git run for the few folders on Home, at most every two minutes.
 const GIT_SH = String.raw`for d in "$@"; do if git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then c=$(git -C "$d" status --porcelain 2>/dev/null | wc -l | tr -d ' '); a=$(git -C "$d" rev-list --count '@{u}..HEAD' 2>/dev/null || echo -); printf '%s\t%s\t%s\n' "$d" "$c" "$a"; fi; done`
 let gitState = { at: 0, key: '', byPath: {} }
+// Pull requests that need you, read with the GitHub CLI (gh) when it is there and signed in: the
+// parsed answer is kept, the items are worked out at each draw, and gh is asked at most every five minutes.
+const GH_EVERY = 5 * 60_000
+let gh = { at: 0, state: '', parsed: null, isBusy: false }
+// Each wait of this chat has its own number, so it alerts once however many ways Claude Code reports it:
+// it moves on when the person answers, a turn starts or a tool call ends.
+let waitNo = Date.now()
+// The dim suggestions offered already: context once per crossing, a limit once per window.
+const offered = { context: false, limit: {} }
 // Your own skills' files and the settings that shape the skill listing, read when Skills is on
 // screen, at most every minute; and prompts you repeat across projects, searched every six hours.
 let ownSkills = { at: 0, list: [], overrides: Object.create(null), fraction: 0, envChars: 0 }
@@ -1062,6 +1089,15 @@ function waiting(now) {
   for (const k of [...liveSeen.keys()]) if (!open.has(k)) liveSeen.delete(k)
   const needs = needsYou(recent, { now, selfSid, desk, live: list, dismissed, sent, since: Object.fromEntries(liveSeen) })
   const pickup = pickUp(recent, { selfSid, desk, live: list, skip: new Set(needs.map((x) => x.sid).filter(Boolean)) }).map((x) => ({ ...x, git: gitState.byPath[x.cwd] || null }))
+  // pull requests read with gh come after the chats; a pull request the desktop app also lists is shown once
+  const prs = opts.githubChecks && gh.parsed ? prNeeds(gh.parsed, { dismissed }) : []
+  if (prs.length) {
+    const urls = new Set(prs.map((x) => x.prUrl))
+    const merged = needs.filter((x) => !(x.kind === 'pr' && !x.pr && x.prUrl && urls.has(x.prUrl)))
+    const firstPr = merged.findIndex((x) => x.kind === 'pr')
+    merged.splice(firstPr < 0 ? merged.length : firstPr, 0, ...prs)
+    return { needs: merged, pickup, canReply: !!desk }
+  }
   return { needs, pickup, canReply: !!desk }
 }
 
@@ -1085,6 +1121,37 @@ async function refreshGit($, paths) {
     // no shell or no git here: nothing to say about loose ends
     noteSource('git', null, 'No shell or git here')
   }
+}
+
+// Open pull requests that need the person, read with gh in the background: at most every five minutes,
+// never while a draw waits. It fails quietly: with no gh, or gh not signed in, Settings says why.
+async function refreshPrs($, paths, force = false) {
+  if (!opts.githubChecks) {
+    noteSource('gh', ...Object.values(ghSource('off', 0, 0)))
+    return
+  }
+  const list = [...new Set(paths.filter(Boolean))].slice(0, 8)
+  const now = await $.clock.now()
+  if (!list.length || gh.isBusy || (!force && now - gh.at < GH_EVERY)) return
+  gh = { ...gh, at: now, isBusy: true }
+  try {
+    const r = await $.process.run(['sh', '-c', GH_SH, 'gh-prs', ...list], { timeoutMs: 45_000 })
+    const parsed = parseGh(r && r.stdout)
+    gh = { at: now, state: parsed.state, parsed: parsed.state === 'ok' ? parsed : null, isBusy: false }
+    const n = parsed.state === 'ok' ? prNeeds(parsed, {}).length : 0
+    const src = ghSource(parsed.state, n, parsed.repos.length)
+    noteSource('gh', src.ok, src.detail)
+    $.ui.invalidate('ui.render')
+  } catch {
+    gh = { ...gh, state: 'error', isBusy: false }
+    noteSource('gh', null, 'No shell here, so pull requests aren’t read')
+  }
+}
+
+// The folders worth asking GitHub about: this session's, the projects waiting to be picked up and the
+// ones used this week.
+function prFolders(d) {
+  return [d.session.cwd, ...d.waiting.pickup.map((x) => x.cwd), ...((d.usage && d.usage.projects) || []).filter((p) => p.week > 0).slice(0, 6).map((p) => p.path)]
 }
 
 async function sendReply($, item, message) {
@@ -1999,8 +2066,8 @@ async function claimOne($, key) {
 }
 let systemNotifier = '' // the command that worked last: osascript or notify-send
 
-async function notifyPerson($, key, title, text, force = false) {
-  if (!opts.notifications && !force) return null
+async function notifyPerson($, key, title, text, force = false, always = false, say = '') {
+  if (!opts.notifications && !force && !always) return null
   if (key && notified.has(key) && !force) return null
   if (key) {
     if (notified.size > 500) notified.clear()
@@ -2011,20 +2078,21 @@ async function notifyPerson($, key, title, text, force = false) {
   const head = cleanText(title, 80)
   const results = {}
   const tasks = []
+  // Claude Code's own channel first: where it shows the words (iTerm2, Kitty, Ghostty) the system
+  // notification centre would only say it twice, so by default it is the fallback for a bell or no terminal
+  let claudeShowed = false
   if (opts.notifyVia !== 'system') {
-    tasks.push(
-      (async () => {
-        try {
-          const r = await $.ui.notify(body, { title: head })
-          results.claude = r && r.isSent ? (r.channel === 'terminal_bell' ? 'bell' : 'sent') : (r && r.reason) || 'not sent'
-        } catch {
-          results.claude = 'failed'
-        }
-      })(),
-    )
+    try {
+      const r = await $.ui.notify(body, { title: head })
+      results.claude = r && r.isSent ? (r.channel === 'terminal_bell' ? 'bell' : 'sent') : (r && r.reason) || 'not sent'
+      claudeShowed = !!(r && r.isSent && r.channel !== 'terminal_bell')
+    } catch {
+      results.claude = 'failed'
+    }
   }
-  if (opts.notifyVia !== 'claude') tasks.push(systemNotify($, head, body).then((v) => (results.system = v)))
+  if (opts.notifyVia === 'system' || (opts.notifyVia === 'both' && !claudeShowed)) tasks.push(systemNotify($, head, body).then((v) => (results.system = v)))
   if (opts.notifySound) tasks.push(playAlert($).then((v) => (results.sound = v)))
+  if (opts.speakAlerts && say) tasks.push(speakAlert($, say).then((v) => (results.speech = v)))
   if (safeUrl(opts.notifyUrl)) tasks.push(pushNotify($, head, body).then((v) => (results.phone = v)))
   await Promise.all(tasks)
   lastNotify = { at: Date.now(), results }
@@ -2051,7 +2119,15 @@ async function systemNotify($, title, text) {
   return 'unavailable'
 }
 
+// The alert sound: the engine's own player ($.audio.play) with a chime this mod makes itself. Where the
+// engine can't play it (no player on this surface) the system's sound files are the fallback.
 async function playAlert($) {
+  try {
+    await $.audio.play({ base64: chimeWav(), mime: 'audio/wav' })
+    return 'played'
+  } catch {
+    // the engine has no player here: try the system's own
+  }
   const sounds = [
     ['afplay', '/System/Library/Sounds/Glass.aiff'],
     ['paplay', '/usr/share/sounds/freedesktop/stereo/message.oga'],
@@ -2065,6 +2141,45 @@ async function playAlert($) {
     }
   }
   return 'unavailable'
+}
+
+async function speakAlert($, words) {
+  try {
+    await $.audio.speak(cleanText(words, 120))
+    return 'spoken'
+  } catch {
+    return 'unavailable'
+  }
+}
+
+// This chat starts waiting on the person (a permission, a question, a finished answer): one alert per
+// wait, by the same channels and limits as every notification, whether or not Notifications is on.
+function alertWaiting($, kind, tool = '') {
+  if (!opts.alertWhenWaiting || !isInteractiveSession) return
+  void (async () => {
+    const s = await read($, session)
+    const a = waitAlert(kind, { project: s.project, tool })
+    await notifyPerson($, 'wait:' + (selfSid || s.id || 'here') + ':' + kind + ':' + waitNo, a.title, a.text, false, true, a.say)
+  })().catch(() => {})
+}
+
+// A useful next prompt in the box's dim suggestion slot (Tab takes it; nothing is typed for the person):
+// near compaction, the compact that keeps the plan; after a limit warning, a handoff note.
+async function suggestNext($) {
+  if (!opts.suggestNext || !isInteractiveSession) return
+  if (pct() < opts.contextWarnAt - 10) offered.context = false // below the warning again: a later crossing is new
+  if (opts.autoCompactAt > 0) offered.context = true // it compacts by itself
+  const pick = nextPrompt({ pct: pct(), warnAt: opts.contextWarnAt, limits: (snap.rateLimits || []).map((r) => ({ kind: r.kind, pct: r.percentUsed, resetsAt: r.resetsAt })), alertAt: opts.limitAlertAt, done: offered })
+  if (!pick) return
+  try {
+    const r = await $.prompt.suggest({ text: pick.text })
+    if (r && r.isShown) {
+      if (pick.kind === 'limit') offered.limit[pick.tag] = pick.window
+      else offered.context = true
+    }
+  } catch {
+    // no prompt box here
+  }
 }
 
 // A header value: plain ASCII as it is; anything else (a curly quote, an accent, another script)
@@ -2521,6 +2636,10 @@ async function gather($) {
     d.flows.suggestions = suggestWorkflows({ prompt: recent, changed: git ? git.changed : 0, digests: Object.values(digests.byId), skip: [...skippedKinds] }).map((x) => ({ ...x, request: workflowRequest(x), isFresh: !!recent && x.task !== 'review the uncommitted changes in this folder' }))
   } else d.flows.suggestions = []
   d.version = engineVersion
+  // the workflows run this week, for the report card
+  const weekAgo = now - 7 * 86_400_000
+  const recentRuns = Object.values(digests.byId).filter((x) => x.startedAt >= weekAgo)
+  d.weekFlows = { runs: recentRuns.length, agents: recentRuns.reduce((n, x) => n + (x.agents || 0), 0), usd: recentRuns.reduce((n, x) => n + (x.usd || 0), 0) }
   lastShare = costShare(d) // the status line and the line under each answer use the same unit
   d.outlook = outlook(d)
   d.advice = advise(d)
@@ -2598,6 +2717,47 @@ function actions($, d) {
       } catch {
         $.ui.toast("Couldn't save the report.")
       }
+    },
+    copyCardText: async (surface) => {
+      const r = reportData(d, { hideNames: !!d.view.cardHide })
+      if (r) await copyText($, reportSummary(r), surface, 'The text summary')
+    },
+    toggleCardNames: () => setView({ cardHide: !d.view.cardHide }),
+    // the card as an SVG file, a PNG where the computer has a converter, and the short text on the clipboard
+    saveCard: async (surface) => {
+      const r = reportData(d, { hideNames: !!d.view.cardHide })
+      if (!r) return
+      const stamp = localStamp(d.now)
+      const home = ((await $.env.get('HOME')) || '').replace(/[\\/]+$/, '')
+      const dir = home ? home + '/.claude/tobebestme/reports' : REPORT_DIR + '/reports'
+      const base = dir + '/' + cardName(stamp)
+      try {
+        await $.fs.write(base + '.svg', svgReportCard(r, { width: 720 }))
+      } catch {
+        $.ui.toast("Couldn't save the report card.")
+        return
+      }
+      let png = ''
+      for (const [argv, made] of pngTries(base + '.svg', base + '.png', dir)) {
+        try {
+          const x = await $.process.run(argv, { timeoutMs: 30_000 })
+          if (!x || x.exitCode !== 0) continue
+          if (made !== base + '.png') await $.process.run(['mv', '-f', made, base + '.png'], { timeoutMs: 5000 })
+          png = base + '.png'
+          break
+        } catch {
+          // that converter isn't here: try the next
+        }
+      }
+      let copied = false
+      try {
+        const c = await $.ui.copy({ text: reportSummary(r), surface })
+        copied = !!(c && c.isCopied)
+      } catch {
+        // no clipboard here
+      }
+      await logActivity($, 'success', 'Report card saved to ' + base + '.svg' + (png ? ' and .png' : '') + '.')
+      $.ui.toast('Saved ' + base + '.svg' + (png ? ' and a PNG' : ' (no PNG: install rsvg-convert, or use macOS Quick Look)') + (copied ? '. The text summary is copied.' : '.'), { timeoutMs: 9000 })
     },
     toggleNote: () => setView({ showNote: !d.view.showNote }),
     toggleActivity: () => setView({ showAllActivity: !d.view.showAllActivity }),
@@ -2869,6 +3029,11 @@ export function register(on, options) {
     } catch {
       // a name was taken; the rest of the mod still works
     }
+    try {
+      await $.tool.register({ name: STATUS_TOOL, description: STATUS_TOOL_DESCRIPTION, inputSchema: STATUS_SCHEMA, isDeferred: false })
+    } catch {
+      // this engine can't declare tools: everything else still works
+    }
     // keeps the pane's relative times ("12 min ago", "resets in 1 h") current while nothing else redraws it
     $.clock.every(60_000, () => $.ui.invalidate('ui.render'))
     updateStatus($)
@@ -2892,6 +3057,51 @@ export function register(on, options) {
     })
     return next(e)
   })
+
+  // ---- this chat starts waiting on the person: one alert per wait ---------------------------------
+  on('classic.PermissionRequest', async ($, e, next) => {
+    alertWaiting($, 'ask', String(e.tool_name || ''))
+    return next(e)
+  }).catch(async ($, e, next) => next(e))
+  on('classic.Notification', async ($, e, next) => {
+    const t = String(e.notification_type || '')
+    if (t === 'permission_prompt' || t === 'elicitation_dialog') alertWaiting($, 'ask')
+    else if (t === 'idle_prompt') alertWaiting($, 'idle')
+    return next(e)
+  }).catch(async ($, e, next) => next(e))
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
+    alertWaiting($, 'ask', 'AskUserQuestion')
+    // the dialog is open a moment later: a line under it says what else waits, where the person is looking
+    if (e.tool_use_id && chatsWaiting > 0) {
+      $.clock.after(600, () => {
+        try {
+          $.ui.notice(e.tool_use_id, 'ToBeBestMe: ' + (chatsWaiting === 1 ? 'one other chat is' : chatsWaiting + ' other chats are') + ' waiting for you too.')
+        } catch {
+          // the dialog is already answered
+        }
+      })
+    }
+    return next(e)
+  }).catch(async ($, e, next) => next(e))
+
+  // ---- the status tool: Claude can answer "where do my limits stand" itself ----------------------
+  on('tool.call', { tool: 'mcp__tobebestme__' + STATUS_TOOL }, async ($, e) => {
+    await refresh($)
+    const d = await gather($)
+    const r = statusReport(d, typeof e.topic === 'string' ? e.topic : 'all')
+    return { result: r.data, text: r.text }
+  }).catch(async () => ({ deny: 'ToBeBestMe could not read its figures just now.' }))
+  on('tool.check', { tool: 'mcp__tobebestme__' + STATUS_TOOL }, () => ({ decision: 'allow', reason: 'ToBeBestMe status only reads figures the mod already holds; it changes nothing.' }))
+
+  // ---- a phone attaches: the lobby is drawn in a pane, since the app places no band ---------------
+  on('session.attach', { surface: 'mobile' }, async ($, e, next) => {
+    try {
+      await $.ui.open({ id: PANE, title: 'ToBeBestMe' })
+    } catch {
+      // no pane for this client
+    }
+    return next(e)
+  }).catch(async ($, e, next) => next(e))
 
   // ---- commands ------------------------------------------------------------
   on('command.run', { command: 'tobebestme' }, async ($, e) => {
@@ -3110,6 +3320,7 @@ export function register(on, options) {
     if (e.agentId !== undefined && agentRun.has(e.agentId)) noteActivity($, e.agentId, toolActivity(String(e.tool), e.input || e))
     const started = await $.clock.now()
     const r = await next(e)
+    waitNo++ // the tool ran, so whatever it waited for is answered
     const ms = Math.max(0, (await $.clock.now()) - started)
     const name = String(e.tool)
     const chars = r && typeof r.text === 'string' ? r.text.length : 0
@@ -3128,6 +3339,7 @@ export function register(on, options) {
 
   // ---- prompts: hold them past a budget, or tell Claude where things stand ----------
   on('prompt.submit', async ($, e, next) => {
+    waitNo++
     // a request that looks like a job for a workflow: say so once per kind, with where to start it. Only
     // what the person typed counts (no origin, or their phone): an agent's report, a task notification
     // or another session's message is not a request of theirs, and must not come back as one
@@ -3174,6 +3386,7 @@ export function register(on, options) {
     // a helper's turn starts inside the main turn; only the main turn sets the baseline
     if (e.agentId !== undefined) return next(e)
     isTurnRunning = true
+    waitNo++
     await refresh($)
     await update($, turnCost, () => usd())
     return next(e)
@@ -3222,6 +3435,7 @@ export function register(on, options) {
     await checkAlerts($)
     await refreshIdeas($)
     updateStatus($)
+    $.clock.after(1_500, () => void suggestNext($).catch(() => {}))
     if (opts.autoCompactAt > 0 && pct() >= opts.autoCompactAt && !e.isAborted) {
       const at = pct()
       $.clock.after(2_000, async () => {
@@ -3304,7 +3518,15 @@ export function register(on, options) {
     if (breakdown) await refresh($) // the plain call is free, so every draw shows current figures
     else await refreshBreakdown($) // a reload starts without the breakdown: measure it again
     const d = await gather($)
+    if (e.surface === 'mobile') {
+      void refreshFleet($)
+      void scanUsage($)
+      void refreshLive($)
+      void refreshPrs($, prFolders(d))
+      return drawLobby(kit($.ui.resolve(e), { ...e, motionAge: motionAge('pane:lobby', d.now) }), d, actions($, d))
+    }
     if (d.view.tab === 'all') {
+      void refreshPrs($, prFolders(d))
       void refreshFleet($)
       void scanUsage($)
       void refreshLive($)

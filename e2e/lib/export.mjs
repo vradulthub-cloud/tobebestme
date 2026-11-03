@@ -56,7 +56,7 @@ kitTest('e2e: an empty session', { timeoutMs: 120_000 }, async ($: any, on: any)
 })
 
 kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true } }, async ($: any, on: any) => {
-  const { store, usage, clock } = stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN }, rateLimits: [...HIGH().rateLimits, { kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
+  const { store, usage, clock } = stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN }, rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'seven_day_opus', percentUsed: 38, resetsAt: '2026-10-25T21:00:00Z' }] })
   effects(on)
   on('turn.start', (_$: unknown, e: any) => ({ turnId: e.turnId }))
   // real sessions carry long titles and long branch names; neither may push a column off the pane
@@ -76,7 +76,7 @@ kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true 
     spread('docs-site', 'w4', [['2026-10-18', 90_000], ['2026-10-21', 140_000]]),
     spread('notes', 'w5', [['2026-10-20', 60_000], ['2026-10-22', 90_000]]),
   ]
-  transcripts(on, [...WAITING, ...WEEK, ...SPREAD] as any, true, [{ pid: 9, sessionId: 'perm', cwd: '/Users/me/Projects/api', kind: 'interactive', name: 'Release', status: 'waiting', waitingFor: 'permission to run npm publish' }])
+  transcripts(on, [...WAITING, ...WEEK, ...SPREAD] as any, true, [{ pid: 9, sessionId: 'perm', cwd: '/Users/me/Projects/api', kind: 'interactive', name: 'Release', status: 'waiting', waitingFor: 'permission to run npm publish' }], {}, { gh: GH_OUT })
   store['runs:v1'] = { wf_1: digest(), wf_2: digest({ runId: 'wf_2', name: 'docs-check', startedAt: NOW - 86_400_000, status: 'killed' }) }
   on('tool.call', (_$: unknown, e: any) => {
     if (e.tool === 'TaskStop') return { result: {}, text: 'stopped' }
@@ -107,6 +107,10 @@ kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true 
   usage.context = { ...usage.context, tokens: ctx }
   usage.cost = { usd: 12.5 }
   await e2eDump($, 'busy')
+  // the phone's lobby, at a phone's width
+  const lobby = await $.ui.mount({ ...PANE, surface: 'mobile', props: { ...PANE.props, bodyColumns: 40 } } as any)
+  e2ePrint({ state: 'busy', view: 'lobby', cols: 40, details: false }, await lobby.drawn())
+  await lobby.unmount()
   // the calendar with a day and a project picked: the others step back, and Projects follows
   for (const cols of [148, 40]) {
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: cols } } as any)

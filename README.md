@@ -16,7 +16,7 @@ A mod for Claude Code: a pane beside the chat in the desktop app and the termina
 
 It tracks the three budgets every session spends, and none of them is in view while you work:
 
-- **Usage limits:** the 5-hour and weekly limits on Claude plans.
+- **Usage limits:** the weekly limit on Claude plans, and a model's own weekly limit where there is one.
 - **Money:** what each request costs on an API key or team billing.
 - **Context:** the conversation Claude re-reads on every turn. As it grows, each turn costs more.
 
@@ -34,11 +34,20 @@ Home reads Claude Code's own records for every project on the computer, includin
 - **Needs you.** Every chat that stopped for you in the last week, most pressing first: a permission prompt, a question, a plan to approve, a usage limit, a pull request waiting. The most urgent is a card of its own. In the desktop app a suggested reply shows the whole message and asks before it sends; **Reply…** takes your own words. Elsewhere, **Copy resume command** carries the chat on in a terminal.
 - **Pick up where you left off.** The latest session in each project, with its last message, branch, pull request and loose ends such as *3 files changed, not committed*.
 - **What stands out.** Up to three plain observations. A saving is drawn before you act on it: the week as run, against the week with the idea applied.
+- **Pull requests, from GitHub.** When the GitHub CLI (`gh`) is installed and signed in, your open pull requests that need you join Needs you: review requested, changes requested, checks failing, merge conflicts, and ready to merge, each with a button to open it and one to copy its link. They are read in the background at most every five minutes. With no `gh`, or not signed in, nothing is shown and Settings › What ToBeBestMe reads says why.
 - **Projects, open sessions and running workflows.**
 
 ![Needs you on Home: a permission prompt as a card, then waiting chats with their reply buttons.](assets/home-needs-you.png)
 
 ![What stands out on Home: the week as run against the week with half the work on Sonnet.](assets/home-saves.png)
+
+### The weekly report card
+
+On Usage, the week as one image to post: the weekly figure, each day by project, days used and your streak, top projects, models, workflows and savings. **Save report card** writes an SVG to `~/.claude/tobebestme/reports/` (and a PNG when `rsvg-convert`, ImageMagick, Inkscape or macOS Quick Look is there) and copies a few lines of text to paste with it. **Hide project names** swaps them for Project 1, 2, 3 first. Nothing is uploaded.
+
+### On your phone
+
+Attach a phone and the mod draws a short lobby in the mobile app: what is waiting for you (with the replies the chat itself suggested, each confirmed before it is sent), the limit that binds first and when it runs out, and what is running. The app has no text field yet, so replies are the suggested buttons.
 
 ### Workflows
 
@@ -58,7 +67,7 @@ A workflow is a script Claude writes to split a big job across many agents. One 
 
 Whether this conversation will make it: its cost, and the context window as a runway with a post where Claude Code compacts, a ghost for the next turns at the recent pace, and a bar per turn. Under it, ways to save, the right model for the job, a planner for long runs, what fills the context, and what is always loaded (MCP servers, memory files, skills).
 
-![This session: context at 85% of the window, compaction about one turn away, and both usage limits.](assets/session.png)
+![This session: context at 85% of the window, compaction about one turn away, and the weekly limits.](assets/session.png)
 
 ### Usage
 
@@ -100,6 +109,9 @@ It was called budget-pilot before 1.2; the first time ToBeBestMe starts, it carr
 - **Writes a handoff note before every compaction**, to `.claude/tobebestme/handoff.md`, and points the next prompt at it.
 - **Tells Claude where things stand.** Past the warning, each prompt carries a line so Claude keeps its steps small and saves a note.
 - **Explains every workflow** as it starts, tracks each agent, and holds new agents while a run is paused or at its limit.
+- **Alerts you when this chat waits for you.** On by default and separate from *Notifications*: when Claude asks permission, asks a question or finishes and waits, you get one alert for that wait, through Claude Code's own notification channel (the computer's notification centre where that shows no words), with a short chime Claude Code plays itself. *Say alerts aloud* adds a few spoken words. Turn it off with *Alert when this chat waits for you*. Alerts say who is waiting, never the command or file.
+- **Suggests the next prompt, dimly.** Near compaction the prompt box's dim suggestion offers `/compact` with the plan kept; after a limit warning it offers `/tobebestme-handoff`. Tab takes it. Nothing is ever typed for you, and each is offered once per crossing or window. *Suggest the next prompt* turns it off.
+- **Answers when you ask Claude.** A read-only tool, `mcp__tobebestme__status`, tells Claude where your limits, context, costs, waiting chats and workflows stand, so "how much of my week is left?" just works.
 - **Notifies once per computer.** Each alert fires once, whichever session sees it first, at most four in ten minutes. Alerts go to toasts and Recent activity, and with **Notifications** on, to your computer's notification centre, a sound and, if you set an `https://` address such as an [ntfy](https://ntfy.sh) topic, your phone.
 - **Adds a line under each answer** (what the turn cost, how much came from the cache, the session's context and tightest limit) and **a status line**.
 - **Suggests workflows** when a request looks like one, once, with its stages and a model for each. The request goes into the prompt box for you to read before sending.
@@ -112,6 +124,7 @@ What leaves your computer:
 
 - **Prompts to Claude, through your own account:** when you press a button that says so (for example **Suggest more**, **Improve it**, **Fix description…**), to write the handoff note before a compaction (Settings can turn that off), and as a five-token check when the cheaper model comes back empty.
 - **A notification's text** to the `https://` address you set, if you set one.
+- **Nothing to GitHub** beyond the GitHub CLI's own read queries (`gh pr list`, `gh auth status`) that you run on your own account, and only when `gh` is installed and signed in.
 - **Lines added to your prompts** about the budget and the handoff note, as listed in [SECURITY.md](SECURITY.md).
 
 Reading the records sends nothing anywhere. SECURITY.md lists everything it reads, writes and sends, and how to verify a download. Each release comes with `SHA256SUMS` and build provenance signed by GitHub, and ToBeBestMe checks its own files against its release once a day; the result is in Settings under *What ToBeBestMe reads*. Report a vulnerability privately on the repository's Security tab.
@@ -144,14 +157,17 @@ Every setting is a `userConfig` field, so it appears in Claude Code's **/config*
 | Suggest workflows | On | On, Off |
 | Notifications | Off | On, Off |
 | Notify through | Both | Both, System, Claude Code |
+| Alert when this chat waits for you | On | On, Off |
+| Suggest the next prompt | On | On, Off |
+| Pull requests and CI in Needs you | On | On, Off |
 | Open the dashboard in every session | Off | On, Off |
 
-Advanced: cost alert every, warn when a limit will run out early, helpers always use the cheaper model, main conversation too, think less past the warning, effort to use, cheaper model at context %, compact automatically at %, handoff note before compacting, keep the plan through compaction, play a sound, a web address for your phone, tell Claude where the budget stands.
+Advanced: cost alert every, warn when a limit will run out early, helpers always use the cheaper model, main conversation too, think less past the warning, effort to use, cheaper model at context %, compact automatically at %, handoff note before compacting, keep the plan through compaction, play a sound, say alerts aloud, a web address for your phone, tell Claude where the budget stands.
 
 ### Honest limits
 
 - **Cost** is Claude Code's own ledger (`/cost`). On a subscription it is the API-price equivalent, not a bill. Home and Workflows figures are list-price estimates from token counts, so they can differ a little from `/cost`.
-- **A limit's pace** is its window's own average: use so far over the time the window has run. Running out counts as early when it is at least 8% of the window before the reset (24 minutes of a 5-hour window, about 13 hours of a week).
+- **A limit's pace** is its window's own average: use so far over the time the window has run. Running out counts as early when it is at least 8% of the window before the reset (about 13 hours of a week).
 - **Home covers this computer only.** Sessions on other computers or in the cloud are not included. Where no shell runs (Windows without Git Bash), transcripts over 4 MB are left out, and the tab says how many.
 - **Needs you** reads where each session's transcript stopped. A permission prompt leaves nothing there, so only sessions running right now show one.
 - **Replies need the desktop app** (they go through its `send_message`). In a terminal, Needs you offers the resume command instead.
@@ -187,8 +203,8 @@ For the desktop app, name the folder in `CLAUDE_CODE_PLUGIN_DIRS` in the `env` b
 
 ```bash
 claude plugin validate ./tobebestme   # static analysis: events hooked, API calls made, state used
-claude plugin test ./tobebestme       # 91 tests on the terminal and desktop surfaces, no sign-in or network
-cd tobebestme/e2e && npm install && npm test   # 153 end-to-end tests
+claude plugin test ./tobebestme       # 103 tests on the terminal and desktop surfaces, no sign-in or network
+cd tobebestme/e2e && npm install && npm test   # 155 end-to-end tests
 ```
 
 The end-to-end suite uses Playwright. It draws every view in an empty session, a busy day with long titles and branch names, and a workflow waiting for an answer, at 375, 768, 1280 and 1920 pixels, on a dark and a light pane, with boxes sized the way the app sizes them. Each view is checked for sideways scrolling, type under 11px, text drawn over text, hover cards out of view, unnamed controls, more than one primary button, and unreadable contrast. It also drives real Claude Code sessions in a terminal, with notifications off and no prompts sent. `npm run test:live` adds one real two-agent workflow on Haiku (a few cents).

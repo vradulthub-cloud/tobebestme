@@ -12,7 +12,7 @@ const LOW = () => ({ startedAt: 0, context: { tokens: 20_000, window: 200_000, p
 const HIGH = () => ({
   startedAt: NOW - 3_600_000,
   context: { tokens: 170_000, window: 200_000, percent: 85 },
-  rateLimits: [{ kind: 'five_hour', percentUsed: 40, resetsAt: '2026-10-23T15:00:00Z' }] as any[],
+  rateLimits: [{ kind: 'seven_day', percentUsed: 40, resetsAt: '2026-10-25T21:00:00Z' }] as any[],
   cost: { usd: 12.5 },
 })
 
@@ -90,7 +90,12 @@ function stubs(on: any, usage: any = LOW(), messages: any[] = []) {
     statuses.push(e.text)
     return { value: undefined }
   })
-  on('ui.notify', () => ({ value: { isSent: true, channel: 'terminal_bell' } }))
+  const notified: any[] = [] // each native notification as asked for
+  const notify = { channel: 'terminal_bell' } // what the person's channel is
+  on('ui.notify', (_$: unknown, e: any) => {
+    notified.push(e)
+    return { value: { isSent: true, channel: notify.channel } }
+  })
   on('ui.toast', (_$: unknown, e: any) => {
     toasts.push(e.text)
     return { value: undefined }
@@ -108,7 +113,7 @@ function stubs(on: any, usage: any = LOW(), messages: any[] = []) {
     sets.push({ key: e.key, value: e.value })
     return { value: e.value }
   })
-  return { toasts, clock, store, sets, usage, opened, opens, pane, statuses }
+  return { toasts, clock, store, sets, usage, opened, opens, pane, statuses, notified, notify }
 }
 
 // Records the model that reaches the bottom of the agent.spawn chain.
@@ -363,7 +368,7 @@ test('an empty session says you are in good shape, and every tab teaches what wi
     expect(text).toContain("You're in good shape")
     expect(text).toContain('20k of 200k tokens')
     expect(text).toContain('20k of 200k tokens')
-    expect(text).not.toContain('5-hour limit')
+    expect(text).not.toContain('Weekly limit')
 
     await ui.press({ key: 'tab-usage' })
     text = await shown(ui)
@@ -430,19 +435,19 @@ test('a busy session leads with its most pressing problem, what fixing it saves,
 })
 
 test('a usage limit on course to run out before it resets heads the dashboard, with a forecast chart', async ($, on) => {
-  const { usage } = stubs(on, { ...LOW(), rateLimits: [{ kind: 'five_hour', percentUsed: 60, resetsAt: '2026-10-23T15:30:00Z' }] })
+  const { usage } = stubs(on, { ...LOW(), rateLimits: [{ kind: 'seven_day', percentUsed: 81, resetsAt: '2026-10-25T21:00:00Z' }] })
   on('session.measure', (_$: unknown, e: any) => ({ changed: e.changed }))
   await $.session.measure({ context: usage.context, rateLimits: usage.rateLimits, cost: usage.cost, changed: ['rateLimits'] })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'tab-overview' })
-  expect(await shown(ui)).toContain('5-hour limit runs out 2 h 30 min early')
+  expect(await shown(ui)).toContain('Weekly limit runs out 30 h 58 min early')
   await ui.press({ key: 'tab-usage' })
-  expect(await shown(ui)).toContain('At your pace in this window it runs out around')
+  expect(await shown(ui)).toContain('At your pace this week it runs out around')
   // Usage opens on the forecast: the window so far, the line it is on and where that ends
-  const forecasts = async () => (await ui.findAll({ type: 'Svg' })).filter((s: any) => String(s.props.alt).startsWith('5-hour limit: 60% used'))
+  const forecasts = async () => (await ui.findAll({ type: 'Svg' })).filter((s: any) => String(s.props.alt).startsWith('Weekly limit: 81% used'))
   const text = await shown(ui)
-  expect(text).toContain('5-hour limit runs out') // the headline says when
+  expect(text).toContain('Weekly limit runs out') // the headline says when
   expect(text).toContain('before it resets')
   expect(await forecasts()).toHaveLength(1)
   await ui.press({ key: 'details' })
@@ -452,11 +457,11 @@ test('a usage limit on course to run out before it resets heads the dashboard, w
   await ui.unmount()
 })
 
-test('a weekly limit running out a day early outranks a 5-hour limit that runs out minutes before its reset', async ($, on) => {
+test('a weekly limit running out a day early outranks a model’s weekly limit that is on pace', async ($, on) => {
   const { usage } = stubs(on, {
     ...LOW(),
     rateLimits: [
-      { kind: 'five_hour', percentUsed: 31, resetsAt: '2026-10-23T15:30:00Z' },
+      { kind: 'seven_day_opus', percentUsed: 31, resetsAt: '2026-10-25T21:00:00Z' },
       { kind: 'seven_day', percentUsed: 81, resetsAt: '2026-10-25T21:00:00Z' },
     ],
   })
@@ -467,7 +472,7 @@ test('a weekly limit running out a day early outranks a 5-hour limit that runs o
   await ui.press({ key: 'tab-overview' })
   let text = await shown(ui)
   expect(text).toContain('Weekly limit runs out 30 h 58 min early')
-  expect(text).not.toContain('5-hour limit runs out')
+  expect(text).not.toContain('Weekly Opus limit runs out')
   expect((await ui.find({ type: 'Button', key: 'hero-action' }))?.props.label).toBe('Use Haiku for helpers')
   // a desktop button draws its label alone, so tab names stay plain
   expect((await ui.find({ type: 'Button', key: 'tab-usage' }))?.props.label).toBe('Usage')
@@ -477,7 +482,7 @@ test('a weekly limit running out a day early outranks a 5-hour limit that runs o
 
   await ui.press({ key: 'tab-usage' })
   text = await shown(ui)
-  expect(text).toContain('just before it resets')
+  expect(text).toContain('about 47% by the time it resets') // the model’s limit is on pace
   expect(text).toContain('runs out early')
   await ui.unmount()
 })
@@ -486,7 +491,7 @@ test('each limit is a runway, not a ring: the weekly one says in words and in ma
   const { usage } = stubs(on, {
     ...LOW(),
     rateLimits: [
-      { kind: 'five_hour', percentUsed: 13, resetsAt: '2026-10-23T15:30:00Z' },
+      { kind: 'seven_day_opus', percentUsed: 13, resetsAt: '2026-10-25T21:00:00Z' },
       { kind: 'seven_day', percentUsed: 86, resetsAt: '2026-10-25T21:00:00Z' },
     ],
   })
@@ -504,10 +509,10 @@ test('each limit is a runway, not a ring: the weekly one says in words and in ma
   expect(String(weekly?.props.source)).toMatch(/class="ro[ "]/) // the run-out stop
   expect(String(weekly?.props.source)).toContain('class="now"') // the playhead
   expect(String(weekly?.props.source)).toContain('class="post"') // the reset
-  const fiveHour = svgs.find((x: any) => String(x.props.alt).startsWith('5-hour limit'))
-  expect(String(fiveHour?.props.alt)).toMatch(/on pace for about \d+% by the reset/)
-  expect(String(fiveHour?.props.source)).not.toMatch(/class="ro[ "]/) // on pace: no stop
-  expect(String(fiveHour?.props.source)).toContain('class="ahead"') // where the pace lands, ahead of the fill
+  const modelLimit = svgs.find((x: any) => String(x.props.alt).startsWith('Weekly Opus limit'))
+  expect(String(modelLimit?.props.alt)).toMatch(/on pace for about \d+% by the reset/)
+  expect(String(modelLimit?.props.source)).not.toMatch(/class="ro[ "]/) // on pace: no stop
+  expect(String(modelLimit?.props.source)).toContain('class="ahead"') // where the pace lands, ahead of the fill
   await desktop.unmount()
 
   // the terminal draws the same thing in block characters: fill, now (┃) and the dry stretch (╌)
@@ -566,11 +571,11 @@ test('budgets are set on the Usage tab, and the skills list filters as you type'
 })
 
 test('after a few turns the outlook says how many turns are left and how long that is', async ($, on) => {
-  const { clock, usage } = stubs(on, { ...LOW(), rateLimits: [{ kind: 'five_hour', percentUsed: 10, resetsAt: '2026-10-23T14:00:00Z' }] })
+  const { clock, usage } = stubs(on, { ...LOW(), rateLimits: [{ kind: 'seven_day', percentUsed: 10, resetsAt: '2026-10-25T21:00:00Z' }] })
   on('turn.complete', (_$: unknown, e: any) => ({ text: e.answer, usage: e.usage }))
   for (let i = 0; i < 4; i++) {
     usage.context = { tokens: 20_000 * (i + 1), window: 200_000, percent: 10 * (i + 1) }
-    usage.rateLimits = [{ kind: 'five_hour', percentUsed: 10 + 4 * i, resetsAt: '2026-10-23T14:00:00Z' }]
+    usage.rateLimits = [{ kind: 'seven_day', percentUsed: 10 + 4 * i, resetsAt: '2026-10-25T21:00:00Z' }]
     await completeTurn($, { ...USAGE, output_tokens: 500, model: 'claude-opus-5-5' })
     clock.now += 3 * 60_000
   }
@@ -952,7 +957,7 @@ function sessionTools(on: any, calls: { tool: string; args: any }[]) {
       ])
     if (e.tool === 'get_usage' && e.args.session_id === 'local_a') return json({ plan: { status: 'ok' }, context: { status: 'ok', tokensUsed: 120_000, contextWindow: 200_000, percentUsed: 60 } })
     if (e.tool === 'get_usage')
-      return json({ plan: { status: 'ok', plan: 'Max', windows: [{ label: '5-hour limit', percentUsed: 33, resetsAt: '2026-10-23T15:00:00Z' }, { label: 'Weekly · all models', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }], extraUsage: { enabled: false } }, context: { status: 'ok' } })
+      return json({ plan: { status: 'ok', plan: 'Max', windows: [{ label: 'Weekly · Fable', percentUsed: 33, resetsAt: '2026-10-25T21:00:00Z' }, { label: 'Weekly · all models', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }], extraUsage: { enabled: false } }, context: { status: 'ok' } })
     if (e.tool === 'archive_session') return json({ archived: true })
     return { value: { isError: true, content: [] } }
   })
@@ -997,7 +1002,7 @@ function transcriptText(f: Transcript) {
 }
 
 // more: other files by absolute path (skill files), and what the repeated-prompt search prints.
-function transcripts(on: any, files: Transcript[], shell = true, live: any[] | null = [], git: Record<string, [number, number]> = {}, more: { files?: Record<string, string>; prompts?: string[] } = {}) {
+function transcripts(on: any, files: Transcript[], shell = true, live: any[] | null = [], git: Record<string, [number, number]> = {}, more: { files?: Record<string, string>; prompts?: string[]; gh?: string; ran?: string[][] } = {}) {
   const runs: string[][] = []
   const reads: string[] = []
   const dirs: Record<string, any[]> = {}
@@ -1020,6 +1025,7 @@ function transcripts(on: any, files: Transcript[], shell = true, live: any[] | n
   })
   const byPath = (path: string) => files.find((f) => ROOT + '/' + f.path === path)
   on('process.run', (_$: unknown, e: any) => {
+    more.ran?.push(e.argv)
     if (e.argv[1] === 'agents') {
       // the sessions running now, as `claude agents --json` lists them
       if (!live) throw new Error('claude: not found')
@@ -1027,6 +1033,7 @@ function transcripts(on: any, files: Transcript[], shell = true, live: any[] | n
     }
     if (!shell) throw new Error('sh: not found')
     if (String(e.argv[2]).includes('"origin":{"kind":"human"')) return { value: { exitCode: 0, stdout: (more.prompts || []).join('\n') + '\n', stderr: '' } }
+    if (e.argv[3] === 'gh-prs') return { value: { exitCode: 0, stdout: more.gh ?? '@@MISSING\n', stderr: '' } }
     if (e.argv[3] === 'git-state') {
       // each folder's changed files and unpushed commits, as the git loop prints them
       const out = e.argv.slice(4).filter((d: string) => git[d]).map((d: string) => [d, ...git[d]].join('\t'))
@@ -1093,7 +1100,7 @@ test('Home leads with one big figure and says where the pace lands, and each sav
 })
 
 test('every desktop drawing is one the app draws as made: named, given its size, within the app’s bounds; and its entrance plays once a tab is opened, not again on every redraw', async ($, on) => {
-  const { clock } = stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'five_hour', percentUsed: 40, resetsAt: '2026-10-23T14:00:00Z' }] })
+  const { clock } = stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'seven_day_opus', percentUsed: 40, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 148 } })
@@ -1750,14 +1757,37 @@ test('in the desktop app, All projects also lists the open sessions and the plan
 
 test('a plan reading one session took shows in another that has none yet, with its age', async ($, on) => {
   const { store, clock } = stubs(on)
-  store['plan:last'] = { at: NOW - 20 * 60_000, plan: 'Max', windows: [{ label: 'Weekly · all models', pct: 64, resetsAt: Date.parse('2026-10-25T21:00:00Z') }, { label: '5-hour limit', pct: 90, resetsAt: NOW - 60_000 }] }
+  store['plan:last'] = { at: NOW - 20 * 60_000, plan: 'Max', windows: [{ label: 'Weekly · all models', pct: 64, resetsAt: Date.parse('2026-10-25T21:00:00Z') }, { label: 'Weekly · Fable', pct: 90, resetsAt: NOW - 60_000 }] }
   await $.command.run({ command: 'tobebestme', args: 'projects' })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const text = await shown(ui)
   expect(text).toContain('As read 20 min ago by another session.')
   expect(text).toContain('64%')
-  expect(text).not.toContain('5-hour limit') // that window has reset since
+  expect(text).not.toContain('Weekly · Fable') // that window has reset since
   await ui.unmount()
+})
+
+test('a session that still reports an hours-long limit lists it as just another limit, after the weekly one and without a forecast', async ($, on) => {
+  const { usage } = stubs(on, {
+    ...LOW(),
+    rateLimits: [
+      { kind: 'five_hour', percentUsed: 95, resetsAt: '2026-10-23T14:00:00Z' },
+      { kind: 'seven_day', percentUsed: 40, resetsAt: '2026-10-25T21:00:00Z' },
+    ],
+  })
+  on('session.measure', (_$: unknown, e: any) => ({ changed: e.changed }))
+  await $.session.measure({ context: usage.context, rateLimits: usage.rateLimits, cost: usage.cost, changed: ['rateLimits'] })
+  for (const surface of ['desktop', 'terminal']) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'tab-overview' })
+    let text = await shown(ui)
+    expect(text).toContain('Weekly limit')
+    await ui.press({ key: 'tab-usage' })
+    text = await shown(ui)
+    expect(text).toContain('Five hour limit') // named plainly, not mislabelled as a week
+    expect(text).not.toContain('Five hour limit runs out')
+    await ui.unmount()
+  }
 })
 
 test('set to open in every session, the dashboard opens at the start, or with the first message when the window was too narrow', { options: { openOnStart: true } }, async ($, on) => {
@@ -1954,7 +1984,7 @@ test('on Fable the adviser knows the model: tight limits suggest Opus, and one p
 })
 
 test('a long run is planned against the limits, saved as a playbook skill, and started in the prompt box', async ($, on) => {
-  stubs(on, { ...LOW(), rateLimits: [{ kind: 'five_hour', percentUsed: 70, resetsAt: '2026-10-23T14:00:00Z' }] })
+  stubs(on, { ...LOW(), rateLimits: [{ kind: 'seven_day', percentUsed: 92, resetsAt: '2026-10-25T21:00:00Z' }] })
   const writes: { path: string; text: string }[] = []
   const filled: string[] = []
   on('fs.exists', () => ({ value: false }))
@@ -1976,7 +2006,7 @@ test('a long run is planned against the limits, saved as a playbook skill, and s
   await ui.input({ key: 'run-goal', text: 'Move the API to v2 and update every caller' })
   text = await shown(ui)
   expect(text).toContain('Plan on Opus')
-  expect(text).toContain('Best start: after the 5-hour reset')
+  expect(text).toContain('Best start: after the weekly reset')
 
   await ui.press({ key: 'run-start' })
   expect(writes[0].path).toBe('/Users/me/.claude/skills/long-run/SKILL.md')
@@ -2570,7 +2600,7 @@ test('a notification goes out once on this computer: a limit another session alr
 
 test('with no other session in the way, the same limit notifies once; and at most four notifications go out in any ten minutes, across every session', { options: { notifications: true, notifyVia: 'system', notifySound: false } }, async ($, on) => {
   const limits = [
-    { kind: 'five_hour', percentUsed: 92, resetsAt: '2026-10-24T20:00:00Z' },
+    { kind: 'seven_day_opus', percentUsed: 92, resetsAt: '2026-10-24T20:00:00Z' },
     { kind: 'seven_day', percentUsed: 85, resetsAt: '2026-10-25T21:00:00Z' },
   ]
   const { store } = stubs(on, { ...LOW(), rateLimits: limits })
@@ -2867,5 +2897,266 @@ test('polish: every model reads as one name, spans as one format, and free space
   // free space is everything not in use (the part kept back for compaction is part of it)
   expect(text).toContain('Free space')
   expect(text).toContain('Of that, kept for compaction')
+  await ui.unmount()
+})
+
+// ---- alerts that feel alive, the status tool, pull requests, the report card and the phone ------------
+
+const ASK = { session_id: 's1', transcript_path: '', cwd: '/Users/me/Projects/shop', hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: {} } as any
+const later = (ms = 1000) => new Promise((go) => setTimeout(go, ms))
+// timers run in a few milliseconds, so a test need not wait out a delay the mod asks for
+const fastClock = (on: any) => on('clock.after', async () => { await later(20); return { value: undefined } })
+const classicStubs = (on: any) => {
+  on('classic.PermissionRequest', () => ({}))
+  on('classic.Notification', () => ({}))
+}
+
+test('a chat that starts waiting on you alerts once per wait by default: the native channel, the engine’s own chime, words only', async ($, on) => {
+  const { notified: said, notify } = stubs(on)
+  classicStubs(on)
+  notify.channel = 'iterm2'
+  const plays: any[] = []
+  on('audio.play', (_$: unknown, e: any) => {
+    plays.push(e.clip || e)
+    return { value: undefined }
+  })
+  on('tool.call', () => ({ result: {}, text: 'ok' }))
+  await $.classic.PermissionRequest(ASK)
+  await $.classic.Notification({ ...ASK, hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' } as any)
+  await later()
+  expect(said).toHaveLength(1) // two reports of one wait
+  expect(said[0].text).toBe('Claude needs your OK to use Bash.')
+  expect(said[0].title).toContain('needs you')
+  expect(plays).toHaveLength(1)
+  expect(JSON.stringify(plays[0])).toContain('audio/wav')
+  // answered: the tool runs, and the next wait is a new one
+  await $.tool.call({ tool: 'Read', file_path: 'a.md' } as any)
+  await $.classic.PermissionRequest(ASK)
+  await later()
+  expect(said).toHaveLength(2)
+})
+
+test('the alert can be turned off, and speaks only when asked', { options: { alertWhenWaiting: false } }, async ($, on) => {
+  const { notified: said } = stubs(on)
+  classicStubs(on)
+  await $.classic.PermissionRequest(ASK)
+  await later(300)
+  expect(said).toHaveLength(0)
+})
+
+test('with speech on, an alert says a few words aloud and falls back to the system sound only if the engine cannot play one', { options: { speakAlerts: true } }, async ($, on) => {
+  stubs(on)
+  classicStubs(on)
+  const spoken: string[] = []
+  const ran: string[][] = []
+  on('audio.speak', (_$: unknown, e: any) => {
+    spoken.push(e.text)
+    return { value: { via: 'system' } }
+  })
+  on('audio.play', () => {
+    throw new Error('no player on this surface')
+  })
+  on('process.run', (_$: unknown, e: any) => {
+    ran.push(e.argv)
+    return { value: { exitCode: e.argv[0] === 'afplay' ? 0 : 1, stdout: '', stderr: '' } }
+  })
+  await $.classic.Notification({ ...ASK, hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'Claude is waiting for your input' } as any)
+  await later()
+  expect(spoken).toEqual(['Claude is waiting for you'])
+  expect(ran.some((a) => a[0] === 'afplay')).toBe(true)
+})
+
+test('near compaction the dim suggestion offers the compact that keeps the plan, once; after a limit warning, a handoff note', async ($, on) => {
+  const { usage } = stubs(on, HIGH())
+  effects(on)
+  fastClock(on)
+  const offered: string[] = []
+  on('prompt.suggest', (_$: unknown, e: any) => {
+    offered.push(e.text)
+    return { isShown: true }
+  })
+  const usageNow = { ...USAGE, input_tokens: 10, model: 'claude-opus-5-5' }
+  await completeTurn($, usageNow)
+  await later(300)
+  expect(offered).toEqual(['/compact Keep the goal, the decisions made and the exact next steps'])
+  await completeTurn($, usageNow)
+  await later(300)
+  expect(offered).toHaveLength(1) // once per crossing
+  usage.rateLimits = [{ kind: 'seven_day', percentUsed: 90, resetsAt: '2026-10-25T21:00:00Z' }]
+  await completeTurn($, usageNow)
+  await later(300)
+  expect(offered[1]).toBe('/tobebestme-handoff')
+})
+
+test('the suggestion is off when the setting is', { options: { suggestNext: false } }, async ($, on) => {
+  stubs(on, HIGH())
+  effects(on)
+  fastClock(on)
+  const offered: string[] = []
+  on('prompt.suggest', (_$: unknown, e: any) => {
+    offered.push(e.text)
+    return { isShown: true }
+  })
+  await completeTurn($, { ...USAGE, model: 'claude-opus-5-5' })
+  await later(300)
+  expect(offered).toEqual([])
+})
+
+test('the status tool is declared for the model, allowed without a prompt, and answers limits, context, cost and what waits', async ($, on) => {
+  stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
+  transcripts(on, WAITING, true, [{ pid: 9, sessionId: 'perm', cwd: '/Users/me/Projects/api', kind: 'interactive', name: 'Release', status: 'waiting', waitingFor: 'permission to run npm publish' }])
+  const registered: any[] = []
+  on('tool.register', (_$: unknown, e: any) => {
+    registered.push(e)
+    return { value: { tool: 'mcp__tobebestme__' + e.name } }
+  })
+  on('session.start', (_$: unknown, e: any) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/Users/me/Projects/shop', surface: 'desktop', isInteractive: true } as any)
+  expect(registered).toHaveLength(1)
+  expect(registered[0].name).toBe('status')
+  expect(registered[0].description).toContain('usage limit')
+  expect(registered[0].description).toContain('Read-only')
+  expect(registered[0].isDeferred).toBe(false)
+  expect((await $.tool.check({ tool: 'mcp__tobebestme__status', input: {} } as any)).decision).toBe('allow')
+  const all: any = await $.tool.call({ tool: 'mcp__tobebestme__status' } as any)
+  expect(all.text).toContain('Weekly limit: 82% used')
+  expect(all.text).toContain('Context: 85% full')
+  expect(all.text).toContain('Cost (list-price equivalent): this session $12.50')
+  expect(all.text).toContain('Waiting for the person:')
+  expect(all.result.limits[0].pct).toBe(82)
+  const limits: any = await $.tool.call({ tool: 'mcp__tobebestme__status', topic: 'limits' } as any)
+  expect(limits.text).toContain('Usage limits:')
+  expect(limits.text).not.toContain('Context:')
+})
+
+const PR_URL = (n: number) => 'https://github.com/me/storefront/pull/' + n
+const GH_OUT =
+  [
+    '@@OK',
+    '@@R\t/Users/me/Projects/storefront',
+    '@@M\t' + JSON.stringify([
+      { number: 12, title: 'Fix checkout rounding', url: PR_URL(12), isDraft: false, reviewDecision: 'APPROVED', mergeStateStatus: 'CLEAN', statusCheckRollup: [{ __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS', name: 'ci' }], headRefName: 'fix-rounding', updatedAt: '2026-10-23T10:00:00Z' },
+      { number: 13, title: 'Add coupon codes', url: PR_URL(13), isDraft: false, reviewDecision: '', mergeStateStatus: 'UNSTABLE', statusCheckRollup: [{ __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE', name: 'unit tests' }, { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS', name: 'lint' }], headRefName: 'coupons', updatedAt: '2026-10-23T09:00:00Z' },
+      { number: 14, title: 'Rework the cart page', url: PR_URL(14), isDraft: false, reviewDecision: 'CHANGES_REQUESTED', mergeStateStatus: 'BLOCKED', statusCheckRollup: [], headRefName: 'cart', updatedAt: '2026-10-22T09:00:00Z' },
+      { number: 15, title: 'Wip: idea', url: PR_URL(15), isDraft: true, reviewDecision: '', mergeStateStatus: 'CLEAN', statusCheckRollup: [], headRefName: 'idea', updatedAt: '2026-10-22T08:00:00Z' },
+    ]),
+    '@@A\t' + JSON.stringify([{ number: 99, title: 'Refactor the search index', url: PR_URL(99), isDraft: false, author: { login: 'sam' }, headRefName: 'search', updatedAt: '2026-10-23T08:00:00Z' }]),
+  ].join('\n') + '\n'
+
+test('open pull requests that need you join Needs you, read with gh: failing checks, changes requested, review requested, ready to merge', async ($, on) => {
+  stubs(on, HIGH())
+  transcripts(on, WEEK, true, [], {}, { gh: GH_OUT })
+  const copied: string[] = []
+  on('ui.copy', (_$: unknown, e: any) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  const first = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await later(200)
+  await first.unmount()
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  let text = await shown(ui)
+  expect(text).toContain('4 pull requests need a look')
+  expect(text).toContain('Checks failing')
+  expect(text).toContain('1 check failing of 2: unit tests.')
+  expect(text).not.toContain('Wip: idea') // a draft nothing is asked of
+  const keys = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.key)
+  for (const n of [0, 1, 2, 3]) if (keys.includes('need-' + n + '-open')) await ui.press({ key: 'need-' + n + '-open' })
+  text = await shown(ui)
+  for (const words of ['Changes requested', 'Review requested', 'Ready to merge', 'sam asked for your review.']) expect(text).toContain(words)
+  const links = await ui.findAll({ type: 'Link' })
+  expect(links.map((l: any) => l.props.href)).toContain(PR_URL(13))
+  const copy = (await ui.findAll({ type: 'Button' })).find((b: any) => /^need-\d+-copylink$/.test(String(b.props.key)))
+  expect(copy).toBeDefined()
+  await ui.press({ key: copy.props.key })
+  expect(copied[0]).toMatch(/^https:\/\/github\.com\/me\/storefront\/pull\/\d+$/)
+  await ui.press({ key: 'tab-settings' })
+  expect(await shown(ui)).toContain('Pull requests (GitHub CLI)')
+  await ui.unmount()
+})
+
+for (const [out, words] of [['@@MISSING\n', 'isn’t installed'], ['@@SIGNEDOUT\n', 'isn’t signed in']] as const) {
+  test('with gh ' + (out.includes('MISSING') ? 'missing' : 'signed out') + ', pull requests fail quietly and Settings says why', async ($, on) => {
+    stubs(on, HIGH())
+    transcripts(on, WEEK, true, [], {}, { gh: out })
+    await $.command.run({ command: 'tobebestme', args: 'home' })
+    const a = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await later(200)
+    await a.press({ key: 'tab-settings' })
+    const text = await shown(a)
+    expect(text).toContain(words)
+    expect(text).not.toContain('Checks failing')
+    await a.unmount()
+  })
+}
+
+test('the weekly report card is drawn on Usage with a real alt, saved as an SVG (and a PNG where a converter exists) and copied as a few lines', async ($, on) => {
+  const { toasts } = stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
+  const written: { path: string; text: string }[] = []
+  const ran: string[][] = []
+  const copied: string[] = []
+  transcripts(on, WEEK, true, [], {}, { ran })
+  on('fs.write', (_$: unknown, e: any) => {
+    written.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  on('ui.copy', (_$: unknown, e: any) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  await $.command.run({ command: 'tobebestme', args: 'usage' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await later(200)
+  const card = (await ui.findAll({ type: 'Svg' })).find((x: any) => String(x.props.source).includes('data-poster'))
+  expect(card).toBeDefined()
+  expect(String(card.props.alt)).toMatch(/^Weekly report card for .*82% of my weekly limit/)
+  expect(Number(card.props.width)).toBeLessThanOrEqual(4096)
+  await ui.press({ key: 'card-save' })
+  const svg = written.find((w) => w.path.endsWith('.svg'))!
+  expect(svg.path).toMatch(/^\/Users\/me\/\.claude\/tobebestme\/reports\/report-card-2026-10-23-\d{4}\.svg$/)
+  expect(svg.text.startsWith('<svg')).toBe(true)
+  expect(svg.text).not.toContain('<script')
+  expect(svg.text).not.toContain('foreignObject')
+  expect(ran.some((a) => a[0] === 'rsvg-convert' && a[a.length - 1] === svg.path)).toBe(true)
+  expect(copied[0]).toContain('My Claude Code week')
+  expect(copied[0]).toContain('82% of my weekly limit')
+  expect(toasts.some((t) => t.includes('and a PNG') && t.includes('text summary is copied'))).toBe(true)
+  // names can be hidden before it is posted
+  await ui.press({ key: 'card-names' })
+  const hidden = (await ui.findAll({ type: 'Svg' })).find((x: any) => String(x.props.source).includes('data-poster'))
+  expect(String(hidden.props.source)).toContain('Project 1')
+  expect(String(hidden.props.source)).not.toContain('storefront')
+  await ui.unmount()
+  const term = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await term.press({ key: 'tab-usage' })
+  expect((await term.findAll({ type: 'Svg' })).length).toBe(0)
+  await term.unmount()
+})
+
+test('the phone gets a lobby: what waits with the answers that exist, the tightest limit and its run-out, and what runs', async ($, on) => {
+  const { opened } = stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 62, resetsAt: '2026-10-25T21:00:00Z' }] })
+  const calls: { tool: string; args: any }[] = []
+  waitingDesk(on, calls)
+  transcripts(on, WAITING, true, [{ pid: 9, sessionId: 'perm', cwd: '/Users/me/Projects/api', kind: 'interactive', name: 'Release', status: 'waiting', waitingFor: 'permission to run npm publish' }])
+  on('session.attach', (_$: unknown, e: any) => ({ clientId: e.clientId }))
+  await $.session.attach({ surface: 'mobile', clientId: 'mobile:p1' } as any)
+  expect(opened).toContain('tobebestme')
+  const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
+  await ui.press({ key: 'lobby-refresh' }).catch(() => {})
+  await later(200)
+  let text = await shown(ui)
+  expect(text).toMatch(/\d chats are waiting for you/)
+  expect(text).toContain('Weekly limit')
+  expect(text).toContain('62%')
+  expect(text).toContain('Needs your permission')
+  const buttons = (await ui.findAll({ type: 'Button' })).filter((b: any) => String(b.props.key).startsWith('lobby-'))
+  const answer = buttons.find((b: any) => b.props.label === 'Ship it')
+  expect(answer).toBeDefined()
+  await ui.press({ key: answer.props.key })
+  expect(await shown(ui)).toContain('Send this to “Checkout redesign”?')
+  expect(calls.some((c) => c.tool === 'send_message')).toBe(false) // asks first
+  await ui.press({ key: 'reply-go' })
+  expect(calls.find((c) => c.tool === 'send_message')?.args.session_id).toBe('local_ask')
   await ui.unmount()
 })

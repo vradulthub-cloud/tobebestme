@@ -116,6 +116,7 @@ export type BudgetView = {
   tourStep?: number
   habitsAt?: number
   day?: string // a day of the week picked on Home's calendar ('YYYY-MM-DD'), or '' for the week
+  cardHide?: boolean // the weekly report card shows 'Project 1…' instead of project names
   project?: string // a project picked from the calendar's legend, by key, or '' for every project
 }
 

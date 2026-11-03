@@ -156,6 +156,14 @@ for (const v of manifest) {
       for (const t of document.querySelectorAll('#pane svg text')) {
         if (t.closest('.tip') || !visible(t)) continue
         const cs = getComputedStyle(t)
+        // the weekly report card is a poster on its own dark ground: its words are held to that ground
+        const poster = t.ownerSVGElement?.getAttribute('data-poster')
+        if (poster) {
+          if (/^url\(/.test(cs.fill)) continue
+          const r = contrast(cs.fill, poster.startsWith('#') ? 'rgb(' + [1, 3, 5].map((i) => parseInt(poster.slice(i, i + 2), 16)).join(',') + ')' : poster)
+          if (r < 4.5) drawn.push(`${r.toFixed(2)}:1 poster text “${(t.textContent || '').slice(0, 30)}” (${cs.fill})`)
+          continue
+        }
         // a gradient: every one of its stops must hold the ratio, on this pane's own colour for it
         const grad = /url\(["']?#([^"')]+)/.exec(cs.fill)
         if (grad) {
@@ -171,7 +179,7 @@ for (const v of manifest) {
         if (r < 4.5) drawn.push(`${r.toFixed(2)}:1 text “${(t.textContent || '').slice(0, 30)}” (${cs.fill})`)
       }
       for (const m of document.querySelectorAll('#pane svg rect, #pane svg circle, #pane svg path')) {
-        if (m.closest('.tip') || !visible(m)) continue
+        if (m.closest('.tip') || !visible(m) || m.ownerSVGElement?.hasAttribute('data-poster')) continue
         const cs = getComputedStyle(m)
         if (cs.fill === 'none' || cs.fill.startsWith('url(') || cs.fill.startsWith('rgba') || Number(cs.fillOpacity) < 0.9 || Number(cs.opacity) < 0.9) continue
         const [r, g, b] = rgb(cs.fill)

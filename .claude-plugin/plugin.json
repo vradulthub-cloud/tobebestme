@@ -43,14 +43,14 @@
     "limitAlertAt": {
       "type": "number",
       "title": "ToBeBestMe: usage limit alert at (%)",
-      "description": "Warn once a usage limit passes this. In automatic mode, helpers also switch to the cheaper model.",
+      "description": "Warn once a weekly limit passes this. In automatic mode, helpers also switch to the cheaper model.",
       "required": false,
       "default": 80
     },
     "paceAlert": {
       "type": "boolean",
       "title": "ToBeBestMe: warn when a limit will run out early",
-      "description": "Watch the pace, and warn when a usage limit will run out before it resets.",
+      "description": "Watch your pace, and warn when a weekly limit will run out before it resets.",
       "required": false,
       "default": true
     },
@@ -250,6 +250,34 @@
       "type": "boolean",
       "title": "ToBeBestMe: read every project",
       "description": "Add up each project's use from Claude Code's own transcripts on this computer, for the All projects view.",
+      "required": false,
+      "default": true
+    },
+    "alertWhenWaiting": {
+      "type": "boolean",
+      "title": "ToBeBestMe: alert when this chat waits for you",
+      "description": "A notification and a sound, once per wait, when Claude asks permission, asks a question or finishes and waits. Works even with notifications off.",
+      "required": false,
+      "default": true
+    },
+    "speakAlerts": {
+      "type": "boolean",
+      "title": "ToBeBestMe: say alerts aloud",
+      "description": "Speaks a few words with the computer's own voice when an alert goes out.",
+      "required": false,
+      "default": false
+    },
+    "suggestNext": {
+      "type": "boolean",
+      "title": "ToBeBestMe: suggest the next prompt",
+      "description": "Near compaction or after a limit warning, the useful next prompt shows dim in the prompt box. Nothing is typed for you.",
+      "required": false,
+      "default": true
+    },
+    "githubChecks": {
+      "type": "boolean",
+      "title": "ToBeBestMe: pull requests and CI in Needs you",
+      "description": "Reads your open pull requests with the GitHub CLI (gh) when it is installed and signed in. Read-only queries, every few minutes.",
       "required": false,
       "default": true
     }

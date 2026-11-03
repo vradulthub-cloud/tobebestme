@@ -18,13 +18,17 @@ ToBeBestMe runs inside Claude Code, on your computer, with the permissions Claud
 | Reads | A workflow's script file, when Claude names one for a run | The explanation and estimate before the run starts |
 | Reads | budget-pilot's file in `~/.claude/plugins/store`, once, the first time it starts | What the older version kept, carried over |
 | Reads | The environment variables `HOME`, `USERPROFILE`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_EXECPATH` and `SLASH_COMMAND_TOOL_CHAR_BUDGET` | Where Claude Code keeps things, and how much room the skill listing has |
+| Reads | `gh auth status` and `gh pr list` (the GitHub CLI's own read queries, run on your account) in the folders of recent projects with a GitHub remote, at most every five minutes, only when `gh` is installed and signed in and *Pull requests and CI in Needs you* is on | Your open pull requests that need you, in Needs you. Nothing is created, commented on or merged, and nothing else is sent to GitHub |
 | Reads | Its own files | The daily integrity check below |
 | Writes | `.claude/tobebestme/handoff.md` in the project, with a `.gitignore` of `*` beside it | The handoff note before compaction |
-| Writes | `~/.claude/tobebestme/reports/` | Reports you save |
+| Writes | `~/.claude/tobebestme/reports/` | Reports and report cards (SVG, and PNG when a converter is installed) you save |
+| Runs | `rsvg-convert`, `magick`, `inkscape` or `qlmanage`, with the paths of the file just saved, if you press *Save report card* | Making the card's PNG |
 | Writes | Claude Code's store for mods (at most 4 MiB, capped) | Usage totals, workflow digests, settings it remembers |
 | Sends | Prompts to Claude, through your own Claude Code account: to your cheaper model when you press a button that says so ("Suggest more", "Improve it", "Fix description…"); a five-token check ("Reply with the word ok.") when a request sent to the cheaper model came back empty, at most once in ten minutes; and the handoff note before a compaction, written by Claude from this conversation (Settings › Handoff note before compacting turns it off). It also adds lines to a prompt you send: with *Tell Claude where the budget stands* on (the default), once context passes its warning, a budget is reached, or helpers always use the cheaper model, the session's context, cost and limit percentages and what to do about them; and, at the first prompt after a compaction, where the handoff note is | Skill ideas, skill drafts, whether the cheaper model is there, handoff notes, keeping Claude's steps small when a limit is close. Fixes (skill descriptions, settings, CLAUDE.md rules) are worked out in the pane and written only when you press Save change; none goes through your prompt box |
 | Sends | A notification's title and text to the web address you set (only `https://`) | Notifications on your phone, if you set one up |
-| Runs | `osascript` (macOS) or `notify-send` (Linux), with the words passed as arguments | System notifications |
+| Runs | `osascript` (macOS) or `notify-send` (Linux), with the words passed as arguments, when Claude Code's own channel shows no words; `afplay` or `paplay` only if the engine's own player can't play the alert chime | System notifications and the alert sound |
+| Offers | A tool, `mcp__tobebestme__status`, that Claude can call. It only reads the figures the mod already holds (limits, context, costs, waiting chats, running workflows) and returns them to the conversation, which goes to Claude as any tool result does | "How much of my week is left?" |
+| Offers | A dim suggestion in the prompt box (`/compact …`, `/tobebestme-handoff`), shown only, never typed or sent for you | Near compaction, or after a limit warning |
 
 It never opens `.env` files or key files. Claude Code's settings files can hold keys (an `env` block, `apiKeyHelper`): ToBeBestMe parses them only for the two skill settings above, and keeps, shows and sends nothing else from them. Apart from the prompts in the table, which go to Claude through your own account, nothing from your transcripts leaves your computer. Text from transcripts and other sessions is treated as data: it is cleaned before it is shown, never run, and framed as data when it goes into a prompt.
 
@@ -39,7 +43,7 @@ ToBeBestMe also checks itself once a day against `.claude-plugin/integrity.json`
 
 ## Tests
 
-`claude plugin test .` runs 91 tests in Claude Code's own mod test kit. Among them:
+`claude plugin test .` runs 103 tests in Claude Code's own mod test kit. Among them:
 
 - one presses every button on every tab, on both surfaces;
 - others try the security guards: names from records that could reach an object's prototype (`__proto__`, `constructor`, `toString`), web addresses that aren't `https://`, notification words passed as arguments where they can't run, and the release self-check (a changed file, an added module, a missing manifest).

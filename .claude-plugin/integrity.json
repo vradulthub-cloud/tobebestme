@@ -2,16 +2,17 @@
   "name": "tobebestme",
   "version": "1.4.0",
   "files": {
-    ".claude-plugin/plugin.json": "3547be3c99d7f7c50782d5640e9201dd5a6c65e6fc79584ae6f729cab4cc2862",
+    ".claude-plugin/plugin.json": "4de16a0fb75fe02d4f275ae66572ca0250529a42385f40bcab9dda63d1fd5890",
     ".claude-plugin/marketplace.json": "af83638c8b775380bae7f23bc4fc7f15fca9052ed848f8613dec6a36c308ef7e",
-    "hooks/draw.js": "c75a0cc592f8c17d76c4de8e2a57a7f9e0075b581e7d794975c8af8f75880ff1",
+    "hooks/draw.js": "17cd2ecd793d413858fb2e7346151fe50a886a5ba24c89a1333475141b04e297",
+    "hooks/extras.js": "c244b948366f47e8b3a7c910cb0a574c39ad1aff02a6022b24096407793fd273",
     "hooks/hooks.json": "7b6d139080a2cb5eabcb77f885e74e13d24e48b1f8ab72778b51f7457f227563",
-    "hooks/lib.js": "76196f1b7dc399e43f2e6df77207acd6000999532a90e9837b372df8fb04aab2",
-    "hooks/register.js": "8086b5fdd0dd7ff6c7b305182d587eb5903418c16049665ac2c4ddc1cfbf6642",
-    "types/index.d.ts": "67f9fbca51a4b649214d7abd5eadc9e08f78c6572a5211af230a196a572b6509",
+    "hooks/lib.js": "c714ed02cfafbc6917b55b7413b44916a404389c53255d6526585d9af05954de",
+    "hooks/register.js": "372d47b33748eb4ee96e866b89e5ae4fe142007281718e6371d5e399bca7c3aa",
+    "types/index.d.ts": "cf960e5ccb447bf81b179f43a0ea342380c26877845f0af7f45cc82256fbb645",
     "LICENSE": "878f7bbdf2d84730ee9d3585a80571671820f17c6e7347ac3683eb23ba00b424",
     "TRADEMARKS.md": "372e5a42e814013d5f1b9355dae135b7f669c8c1398b288966018f792a4c1363",
-    "README.md": "9928e3d91097f2c4cdf685433908490feb707d2cc6a2bb1121358178b5e8ee7f",
-    "SECURITY.md": "f94505114dfe2566c4d2ebb64175d9ea958f7c7eebbdf571fcb622b2935b84cc"
+    "README.md": "834f79ee680bfdb868120cbfbffb9a94aa5bf6560195cf8d968864892d3ca0b2",
+    "SECURITY.md": "ee8f5ae429ef059f4ac0db209589e427adf92701f6c3fb8886f5b53eeb69f6b1"
   }
 }

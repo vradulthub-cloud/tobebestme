@@ -36,6 +36,10 @@ export const DEFAULTS = {
   notifyVia: 'both',
   notifySound: true,
   notifyUrl: '',
+  alertWhenWaiting: true,
+  speakAlerts: false,
+  suggestNext: true,
+  githubChecks: true,
   tellClaude: true,
   openOnStart: false,
   band: true,
@@ -84,7 +88,7 @@ export const SETTINGS = [
   {
     group: 'Usage limits',
     fields: [
-      { field: 'limitAlertAt', kind: 'number', unit: '%', presets: [50, 70, 80, 90], min: 1, max: 100, label: 'Alert at', help: 'Warn when a 5-hour or weekly limit passes this.' },
+      { field: 'limitAlertAt', kind: 'number', unit: '%', presets: [50, 70, 80, 90], min: 1, max: 100, label: 'Alert at', help: 'Warn when a weekly limit passes this.' },
       { field: 'paceAlert', kind: 'boolean', label: 'Warn when a limit will run out early', help: 'Watches your pace against the reset time.', advanced: true },
       { field: 'costUnit', kind: 'choice', options: COST_UNITS, label: 'Show costs as', help: 'On a Claude plan what counts is how much of your weekly limit work takes, not dollars. Automatic shows that share on a plan and dollars with an API key.' },
     ],
@@ -144,7 +148,11 @@ export const SETTINGS = [
           { value: 'claude', label: 'Claude Code' },
         ],
       },
+      { field: 'alertWhenWaiting', kind: 'boolean', label: 'Alert when this chat waits for you', help: 'A notification and a sound, once per wait, when Claude asks permission, asks a question or finishes and waits. Works even with Notifications off.' },
+      { field: 'suggestNext', kind: 'boolean', label: 'Suggest the next prompt', help: 'Near compaction or after a limit warning, the useful next prompt shows dim in the prompt box. Tab takes it; nothing is typed for you.' },
+      { field: 'githubChecks', kind: 'boolean', label: 'Pull requests and CI in Needs you', help: 'Uses the GitHub CLI (gh), when installed and signed in, to read your open pull requests every few minutes. Read-only.' },
       { field: 'notifySound', kind: 'boolean', label: 'Play a sound', help: 'A short alert sound with each notification.', advanced: true },
+      { field: 'speakAlerts', kind: 'boolean', label: 'Say alerts aloud', help: 'Speaks a few words, such as “storefront needs your OK”, with the computer’s own voice.', advanced: true },
       { field: 'tellClaude', kind: 'boolean', label: 'Tell Claude where the budget stands', help: 'Past the warning, Claude reads a line and keeps steps small.', advanced: true },
 
     ],
@@ -279,11 +287,21 @@ export function clip(s, n) {
 }
 
 export function limitLabel(kind) {
-  if (kind === 'five_hour') return '5-hour limit'
   if (kind === 'seven_day') return 'Weekly limit'
-  if (kind === 'seven_day_opus') return 'Weekly Opus limit'
+  const model = /^seven_day_(\w+)$/.exec(kind)
+  if (model) return 'Weekly ' + titleCase(model[1]) + ' limit'
   if (kind === 'spend_limit') return 'Spend limit'
-  return titleCase(kind.replace(/_/g, ' '))
+  const name = titleCase(kind.replace(/_/g, ' '))
+  return /limit$/i.test(name) ? name : name + ' limit'
+}
+
+// A plan window's kind from its label. Weekly limits are the whole story; a reading that still
+// carries an hours-long window is kept as a limit of its own kind, listed but not forecast.
+export function kindOfLabel(label) {
+  const s = String(label || '')
+  if (/opus/i.test(s)) return 'seven_day_opus'
+  if (/\b(\d+|five)[- ]hour/i.test(s)) return 'five_hour'
+  return 'seven_day'
 }
 
 export function modeWords(o) {
@@ -310,7 +328,7 @@ function median(xs) {
 
 // ---- usage limits ------------------------------------------------------------------
 
-export const WINDOW_MS = { five_hour: 5 * 3_600_000, seven_day: 7 * 86_400_000, seven_day_opus: 7 * 86_400_000 }
+export const WINDOW_MS = { seven_day: 7 * 86_400_000, seven_day_opus: 7 * 86_400_000 }
 
 // Where a usage limit is headed. The pace is the window's own average (its use so far
 // over the time it has run), which counts nights and breaks, so it is fair from the first
@@ -338,12 +356,12 @@ export function shortfall(o) {
   return runsOutFirst(o) && o.resetAt !== null ? o.resetAt - o.fullAt : 0
 }
 
-// Whether running out early matters: minutes before a 5-hour reset is noise, a day before
-// the weekly one is not. Early means at least 8% of the window, and never under 20 minutes.
+// Whether running out early matters: minutes before a reset is noise, a day before the weekly
+// one is not. Early means at least 8% of the window, and never under 20 minutes.
 export function isEarly(r, o) {
   if (!runsOutFirst(o)) return false
   if (o.resetAt === null) return true
-  return shortfall(o) >= Math.max(20 * 60_000, (WINDOW_MS[r.kind] || 5 * 3_600_000) * 0.08)
+  return shortfall(o) >= Math.max(20 * 60_000, (WINDOW_MS[r.kind] || WINDOW_MS.seven_day) * 0.08)
 }
 
 // One way of saying a span everywhere (Home, This session, alerts), so the same limit never reads
@@ -361,7 +379,7 @@ export function limitLevel(r, o, opts) {
 
 // "At your pace this week it runs out around Sat 6:30 PM, 26 h 30 min before it resets."
 export function paceSentence(l, now) {
-  const where = l.r.kind === 'five_hour' ? 'in this window' : 'this week'
+  const where = 'this week'
   const o = l.o
   if (runsOutFirst(o)) {
     const at = 'At your pace ' + where + ' it runs out around ' + fmtClock(o.fullAt, now)
@@ -2632,7 +2650,7 @@ export function runFit(d) {
     const perHour = l.o.recentPerHour || (elapsed > 15 * 60_000 ? (l.r.percentUsed / elapsed) * 3_600_000 : null)
     if (perHour && perHour > 0) lines.push(limitLabel(l.r.kind) + ': ' + Math.round(left) + '% left, about ' + fmtSpan((left / perHour) * 3_600_000) + ' of work at your recent pace.')
     else lines.push(limitLabel(l.r.kind) + ': ' + Math.round(left) + '% left.')
-    if (l.r.kind === 'five_hour' && l.r.percentUsed >= 60 && l.o.resetAt !== null) start = 'after the 5-hour reset at ' + fmtClock(l.o.resetAt, d.now)
+    if (l.r.kind === 'seven_day' && l.r.percentUsed >= 90 && l.o.resetAt !== null) start = 'after the weekly reset on ' + fmtClock(l.o.resetAt, d.now)
   }
   return { lines, start }
 }
@@ -2686,7 +2704,7 @@ export function textMeter(pct, cells = 8) {
 }
 
 function shortLimit(kind) {
-  return kind === 'five_hour' ? '5-hour' : kind === 'seven_day' ? 'weekly' : limitLabel(kind).replace(/ limit$/i, '').toLowerCase()
+  return kind === 'seven_day' ? 'weekly' : limitLabel(kind).replace(/ limit$/i, '').toLowerCase()
 }
 
 // The line under each answer: what the turn took, then where the session stands, then anything
@@ -3098,7 +3116,7 @@ export function svgBars(values, slots, extra = {}) {
   return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + MOTION_CSS + '<rect x="0" y="' + (H - 1) + '" width="' + W + '" height="1" fill="' + HEX.track + '"/>' + bars.join('') + line + '</svg>')
 }
 
-function escapeXml(s) {
+export function escapeXml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
@@ -3164,10 +3182,10 @@ export const FAMILY_HEX = { Opus: '#0A84FF', Sonnet: '#BF5AF2', Fable: '#FF9F0A'
 // One meaning per colour: a limit or a budget is drawn in a neutral, told apart by its name and place;
 // red, amber and green mean status alone, and blue, purple and cyan name models alone.
 // Each thing that can run out keeps one vivid colour everywhere it is drawn, so it is found at a
-// glance: the weekly limit in blue, the 5-hour one in purple, a model's own weekly limit in pink,
+// glance: the weekly limit in blue, a model's own weekly limit in pink,
 // context in cyan and a budget in mint. None is a status colour: amber and red alone say a limit is
 // running out early or nearly out, and green alone says all is well.
-export const RING_HEX = { context: '#64D2FF', five_hour: '#BF5AF2', seven_day: '#0A84FF', seven_day_opus: '#FF375F', session: '#00C7BE', daily: '#00C7BE', spending: '#0A84FF' }
+export const RING_HEX = { context: '#64D2FF', seven_day: '#0A84FF', seven_day_opus: '#FF375F', session: '#00C7BE', daily: '#00C7BE', spending: '#0A84FF' }
 
 // Each project's own colour, kept wherever the project is drawn (the week's bars, the projects list,
 // the busiest project), so it can be followed down the page. The six most used this fortnight get
@@ -3765,8 +3783,8 @@ export function svgLive(hex) {
 // `projected` is where the window's own average pace lands by the reset (capped at 100), so a
 // runway shows not only where you are but where you are heading; null until a quarter hour is in.
 export function runwayOf(kind, pct, resetAt, now) {
-  const span = WINDOW_MS[kind] || WINDOW_MS.five_hour
-  if (!resetAt || Number.isNaN(resetAt)) return { used: pct, elapsed: null, runOut: null, projected: null }
+  const span = WINDOW_MS[kind]
+  if (!span || !resetAt || Number.isNaN(resetAt)) return { used: pct, elapsed: null, runOut: null, projected: null }
   const start = resetAt - span
   const elapsedMs = Math.max(0, Math.min(span, now - start))
   let runOut = null
@@ -3784,10 +3802,10 @@ export function runwayOf(kind, pct, resetAt, now) {
 // Words for where a runway's pace lands: running out early, or ending the window at about so much.
 export function paceWords(kind, r, resetAt, now) {
   if (r.elapsed === null || r.elapsed === undefined) return ''
-  const what = kind === 'five_hour' ? 'window' : 'week'
+  const what = 'week'
   if (r.used >= 100) return 'Used up until it resets.'
   if (r.runOut !== null && r.runOut !== undefined) {
-    const span = WINDOW_MS[kind] || WINDOW_MS.five_hour
+    const span = WINDOW_MS[kind]
     const fullAt = resetAt - span + (r.runOut / 100) * span
     return 'At this pace it runs out ' + fmtClock(fullAt, now) + ', ' + fmtSpan(resetAt - fullAt) + ' before it resets.'
   }
