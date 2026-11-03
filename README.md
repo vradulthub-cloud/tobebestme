@@ -203,7 +203,7 @@ For the desktop app, name the folder in `CLAUDE_CODE_PLUGIN_DIRS` in the `env` b
 
 ```bash
 claude plugin validate ./tobebestme   # static analysis: events hooked, API calls made, state used
-claude plugin test ./tobebestme       # 103 tests on the terminal and desktop surfaces, no sign-in or network
+claude plugin test ./tobebestme       # 107 tests on the terminal and desktop surfaces, no sign-in or network
 cd tobebestme/e2e && npm install && npm test   # 155 end-to-end tests
 ```
 
