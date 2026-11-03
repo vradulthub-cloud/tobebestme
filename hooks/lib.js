@@ -202,15 +202,21 @@ function trimZeros(s) {
 
 export function fmtTokens(n) {
   if (!Number.isFinite(n)) return '0'
-  if (n >= 1_000_000) return trimZeros((n / 1_000_000).toFixed(2)) + 'M'
+  if (n >= 999_500) return trimZeros((n / 1_000_000).toFixed(2)) + 'M'
   if (n >= 10_000) return Math.round(n / 1_000) + 'k'
   if (n >= 1_000) return trimZeros((n / 1_000).toFixed(1)) + 'k'
   return String(Math.round(n))
 }
 
+// "12k tokens to go", and "1 token to go" at the very end.
+function tokensToGo(n) {
+  return fmtTokens(n) + (Math.round(n) === 1 ? ' token' : ' tokens') + ' to go'
+}
+
 export function fmtUsd(n) {
   if (!Number.isFinite(n)) return '$0.00'
   // whole dollars from $100, with thousands grouped: $1,157 rather than $1157.00
+  if (n < 0) return '-' + fmtUsd(-n)
   if (n >= 100) return '$' + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
   return '$' + n.toFixed(2)
 }
@@ -291,6 +297,7 @@ export function limitLabel(kind) {
   const model = /^seven_day_(\w+)$/.exec(kind)
   if (model) return 'Weekly ' + titleCase(model[1]) + ' limit'
   if (kind === 'spend_limit') return 'Spend limit'
+  if (kind === 'five_hour') return 'Five-hour limit'
   const name = titleCase(kind.replace(/_/g, ' '))
   return /limit$/i.test(name) ? name : name + ' limit'
 }
@@ -450,10 +457,10 @@ export function outlook(d) {
     const label = compactAt ? 'Auto-compaction' : 'Context'
     const tip = { title: label, lines: [compactAt ? 'Claude Code summarizes the conversation once it reaches ' + fmtTokens(compactAt) + ' tokens.' : 'The window holds ' + fmtTokens(d.window) + ' tokens.', per ? 'Recent turns added about ' + fmtTokens(pace.mean) + ' tokens each.' : 'A turn count shows after a few turns.'] }
     if (per) {
-      if (n < 1) rows.push({ label, value: 'likely within a turn', sub: fmtTokens(free) + ' tokens to go; recent turns added about ' + fmtTokens(per), level: 'warning', soon: 0, tip })
-      else rows.push({ label, value: 'about ' + plural(n, 'turn', 'turns') + ' away', sub: fmtTokens(free) + ' tokens to go' + (gap && n * gap >= 60_000 ? ', about ' + fmtSpan(n * gap) : ''), level: n <= 3 ? 'warning' : 'success', soon: gap ? n * gap : Infinity, tip })
+      if (n < 1) rows.push({ label, value: 'likely within a turn', sub: tokensToGo(free) + '; recent turns added about ' + fmtTokens(per), level: 'warning', soon: 0, tip })
+      else rows.push({ label, value: 'about ' + plural(n, 'turn', 'turns') + ' away', sub: tokensToGo(free) + (gap && n * gap >= 60_000 ? ', about ' + fmtSpan(n * gap) : ''), level: n <= 3 ? 'warning' : 'success', soon: gap ? n * gap : Infinity, tip })
     } else {
-      rows.push({ label, value: fmtTokens(free) + ' tokens to go', sub: compactAt ? 'before Claude Code compacts' : 'before the window is full', level: 'success', soon: Infinity, tip })
+      rows.push({ label, value: tokensToGo(free), sub: compactAt ? 'before Claude Code compacts' : 'before the window is full', level: 'success', soon: Infinity, tip })
     }
   }
 

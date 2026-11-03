@@ -1150,7 +1150,7 @@ export function drawLobby(k, d, act) {
         rowGap: 'xs',
         children: [
           k.text('Running now', { weight: 'semibold' }),
-          ...L.runs.map((r) => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Text({ wrap: 'wrap', children: [k.text('● ', { color: 'success' }), k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  ' + r.progress.done + ' of ' + r.progress.total + ' agents' + (r.paused ? ', paused' : ''), { size: 'footnote', dimColor: true })] }), k.bar(r.progress.done, Math.max(1, r.progress.total), HEX.success, (r.name || 'Workflow') + ': ' + r.progress.done + ' of ' + r.progress.total + ' agents done')] })),
+          ...L.runs.map((r) => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Text({ wrap: 'wrap', children: [k.text('● ', { color: 'success' }), k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  ' + r.progress.done + ' of ' + plural(r.progress.total, 'agent', 'agents') + (r.paused ? ', paused' : ''), { size: 'footnote', dimColor: true })] }), k.bar(r.progress.done, Math.max(1, r.progress.total), HEX.success, (r.name || 'Workflow') + ': ' + r.progress.done + ' of ' + r.progress.total + ' agents done')] })),
         ],
       }),
     )
@@ -3747,11 +3747,11 @@ export function drawBand(k, d, act) {
               r.paused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running'),
               // the name keeps its room (a long one is cut short), and the meter takes what is left
               k.Box({ flexShrink: 0, children: [k.text(shortName(r.name || 'Workflow', 22), { size: 'footnote', dimColor: true })] }),
-              k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Svg({ source: svgMeter([{ value: pct, hex: r.paused ? HEX.warning : HEX.bar }], 100, [], true), alt: (r.name || 'Workflow') + ' ' + p.done + ' of ' + p.total + ' agents done', height: 6 })] }),
+              k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Svg({ source: svgMeter([{ value: pct, hex: r.paused ? HEX.warning : HEX.bar }], 100, [], true), alt: (r.name || 'Workflow') + ' ' + p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done', height: 6 })] }),
               k.Box({ flexShrink: 0, children: [k.text(p.done + ' of ' + p.total, { tabular: true, weight: 'semibold' })] }),
             ],
           })
-        const meter = k.hasSvg ? k.Box({ width: 8, flexShrink: 0, children: [k.Svg({ source: svgMeter([{ value: pct, hex: r.paused ? HEX.warning : HEX.success }], 100, [], true), alt: (r.name || 'Workflow') + ' ' + p.done + ' of ' + p.total + ' agents done', height: 6 })] }) : k.text(textMeter(pct, 5), { color: r.paused ? 'warning' : 'suggestion' })
+        const meter = k.hasSvg ? k.Box({ width: 8, flexShrink: 0, children: [k.Svg({ source: svgMeter([{ value: pct, hex: r.paused ? HEX.warning : HEX.success }], 100, [], true), alt: (r.name || 'Workflow') + ' ' + p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done', height: 6 })] }) : k.text(textMeter(pct, 5), { color: r.paused ? 'warning' : 'suggestion' })
         return k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', flexShrink: 0, children: [meter, k.text((r.name || 'Workflow') + ' ', { dimColor: true }), k.text(p.done + '/' + p.total, { tabular: true })] })
       })()
     : null
@@ -3765,7 +3765,7 @@ export function drawBand(k, d, act) {
     : hasTip ? k.button('band-open', 'See suggested workflow', act.openWorkflows || act.openPane)
     : mine.length && isCalm && !chats.length ? k.button('band-open', 'Follow it', act.openWorkflows || act.openPane)
     : chats.length ? k.button('band-open', 'See what’s waiting', act.openHome || act.openPane)
-    : k.button('band-open', 'Open Orchestrator', act.openPane)
+    : k.button('band-open', 'Open ToBeBestMe', act.openPane)
   const head = k.Box({
     flexDirection: 'row',
     columnGap: 1,

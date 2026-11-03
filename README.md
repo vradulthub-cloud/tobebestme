@@ -187,7 +187,7 @@ Advanced: cost alert every, warn when a limit will run out early, helpers always
 - **It isn't in a session.** That session started before ToBeBestMe was installed. Start it again.
 - **A finished chat still shows under Needs you.** Press **Set aside**; it comes back only if that session asks again.
 - **"Haiku isn't available on your account".** Press **Use Sonnet as the cheaper model**, or choose another in Settings.
-- **The pane didn't open by itself.** Claude Code opens a pane unasked only in a window at least 144 columns wide. `/tobebestme` and **Open Orchestrator** above the prompt open it at any width.
+- **The pane didn't open by itself.** Claude Code opens a pane unasked only in a window at least 144 columns wide. `/tobebestme` and **Open ToBeBestMe** above the prompt open it at any width.
 
 ## Develop
 

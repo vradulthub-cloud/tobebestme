@@ -1784,8 +1784,8 @@ test('a session that still reports an hours-long limit lists it as just another 
     expect(text).toContain('Weekly limit')
     await ui.press({ key: 'tab-usage' })
     text = await shown(ui)
-    expect(text).toContain('Five hour limit') // named plainly, not mislabelled as a week
-    expect(text).not.toContain('Five hour limit runs out')
+    expect(text).toContain('Five-hour limit') // named plainly, not mislabelled as a week
+    expect(text).not.toContain('Five-hour limit runs out')
     await ui.unmount()
   }
 })
@@ -3158,5 +3158,56 @@ test('the phone gets a lobby: what waits with the answers that exist, the tighte
   expect(calls.some((c) => c.tool === 'send_message')).toBe(false) // asks first
   await ui.press({ key: 'reply-go' })
   expect(calls.find((c) => c.tool === 'send_message')?.args.session_id).toBe('local_ask')
+  await ui.unmount()
+})
+
+// ---- bug run: what a first look at the launch found ----------------------------------------------
+
+const BAND = { plugin: 'tobebestme', component: 'AbovePrompt', surface: 'desktop', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 110, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any
+
+test('the line above the prompt opens ToBeBestMe by its name, not an old one', async ($, on) => {
+  stubs(on)
+  const band = await $.ui.mount(BAND)
+  expect((await band.find({ type: 'Button', key: 'band-open' }))?.props.label).toBe('Open ToBeBestMe')
+  await band.unmount()
+})
+
+test('a limit reading with no percentage is no reading, and a negative one is 0: no NaN or minus sign is drawn', async ($, on) => {
+  stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: NaN, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'seven_day_opus', percentUsed: null, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'seven_day_sonnet', percentUsed: -5, resetsAt: '2026-10-25T21:00:00Z' }] })
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    for (const tab of TAB_KEYS) {
+      await ui.press({ key: 'tab-' + tab })
+      const all = (await shown(ui)) + '\n' + (await ui.findAll({ type: 'Svg' })).map((x: any) => x.props.alt + x.props.source).join('\n')
+      expect(all).not.toMatch(/NaN|undefined|(^|[\s(])-\d+%/)
+    }
+    await ui.unmount()
+  }
+})
+
+test('big counts read as one unit: 999,999 tokens are 1M, never 1000k, and a lone token is not "1 tokens"; an hours-long reading is a five-hour limit', async ($, on) => {
+  stubs(on, { ...HIGH(), context: { tokens: 999_999, window: 1_000_000, percent: 100 }, rateLimits: [{ kind: 'five_hour', percentUsed: 50, resetsAt: '2026-10-23T15:00:00Z' }] })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'tab-overview' })
+  const text = await shown(ui)
+  expect(text).toMatch(/1M tokens/)
+  expect(text).not.toMatch(/1000k/)
+  expect(text).not.toMatch(/\b1 tokens\b/)
+  expect(text).toContain('Five-hour limit')
+  expect(text).not.toContain('Five hour')
+  await ui.unmount()
+})
+
+test('the phone lobby says "0 of 1 agent", as every other place does', async ($, on) => {
+  stubs(on, HIGH())
+  on('tool.call', (_$: unknown, e: any) => (e.tool !== 'Workflow' ? { result: {}, text: '' } : { result: { status: 'async_launched', taskId: 'task9', workflowName: 'review-changes', runId: RUN_ID, summary: 'Review', transcriptDir: '/Users/me/.claude/projects/-p/s1/subagents/workflows/' + RUN_ID }, text: '' }))
+  workflowSpawns(on)
+  await $.tool.call({ tool: 'Workflow', script: SCRIPT } as any)
+  await spawnAgent($, 1, 'verify:a.ts')
+  const ui = await $.ui.mount({ ...PANE, surface: 'mobile', props: { ...PANE.props, bodyColumns: 40 } } as any)
+  const text = await shown(ui)
+  expect(text).toContain('0 of 1 agent')
+  expect(text).not.toContain('1 agents')
   await ui.unmount()
 })

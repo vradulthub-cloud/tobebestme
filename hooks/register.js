@@ -309,9 +309,17 @@ async function followSession($) {
   }
 }
 
+// A limit reading with no usable percentage (the engine sent none yet) is no reading: drawn, it
+// would be "NaN%". A negative one is 0.
+function cleanSnap(s) {
+  if (!s || !Array.isArray(s.rateLimits)) return s
+  const rateLimits = s.rateLimits.filter((r) => r && Number.isFinite(Number(r.percentUsed)) && r.percentUsed !== null).map((r) => ({ ...r, percentUsed: Math.max(0, Number(r.percentUsed)) }))
+  return { ...s, rateLimits }
+}
+
 async function refresh($) {
   try {
-    snap = await $.session.usage()
+    snap = cleanSnap(await $.session.usage())
   } catch {
     // no session bound (claude -p, tests): keep the last snapshot
   }
@@ -321,7 +329,7 @@ async function refresh($) {
 // Like refresh, plus the category breakdown; 'summary' estimates locally and sends no request.
 async function refreshBreakdown($) {
   try {
-    snap = await $.session.usage({ breakdown: 'summary' })
+    snap = cleanSnap(await $.session.usage({ breakdown: 'summary' }))
     if (snap.context && snap.context.breakdown) breakdown = snap.context.breakdown
   } catch {
     // keep the last figures

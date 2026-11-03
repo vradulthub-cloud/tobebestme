@@ -157,7 +157,7 @@ export function statusReport(d, topic = 'all') {
   if (want('workflows')) {
     const runs = ((d.flows && d.flows.runs) || []).filter((r) => r.status === 'running' || r.status === 'stopping')
     data.workflows = runs.map((r) => ({ name: r.name, status: r.status, agentsDone: r.progress.done, agents: r.progress.total, paused: !!r.paused }))
-    lines.push(runs.length ? 'Workflows running: ' + runs.map((r) => r.name + ' (' + r.progress.done + ' of ' + r.progress.total + ' agents done' + (r.paused ? ', paused' : '') + ')').join('; ') + '.' : 'Workflows running: none in this session.')
+    lines.push(runs.length ? 'Workflows running: ' + runs.map((r) => r.name + ' (' + r.progress.done + ' of ' + plural(r.progress.total, 'agent', 'agents') + ' done' + (r.paused ? ', paused' : '') + ')').join('; ') + '.' : 'Workflows running: none in this session.')
   }
   if (t === 'all' && d.health && d.health.level !== 'success') lines.push('Advice: ' + d.health.title + '. ' + d.health.detail)
   return { text: lines.join('\n'), data }

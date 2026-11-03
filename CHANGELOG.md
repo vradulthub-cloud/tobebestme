@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **The idle line above the prompt opens ToBeBestMe.** Its button said "Open Orchestrator", the mod's old working name; the README's troubleshooting note said the same.
+- **A limit with no percentage is not drawn as "NaN%".** A reading the engine sends without a figure is left out, and a negative one counts as 0, on every tab, the line above the prompt and the phone lobby.
+- **Big numbers keep one unit.** 999,999 tokens read "1M", not "1000k"; one token left is "1 token to go"; a negative amount keeps its minus sign before the dollar sign; the phone lobby says "0 of 1 agent"; a reading that still carries an hours-long window is "Five-hour limit".
+- **The terminal end-to-end check no longer fails while a workflow runs** ("2 workflows are running" did not match), and `E2E_CWD` names a trusted folder when the checkout is a git worktree, which Claude Code asks to trust.
+
 ## 1.5.0 (2026-11-03)
 
 - **Weekly limits only.** Claude plans no longer have a 5-hour limit, so none is drawn, forecast or explained: Home, the line above the prompt, alerts, the pace warning, the model adviser, Usage, the status tool, the phone lobby and the report card are about the weekly limit and any model's own weekly limit. A session that still reports another kind of limit lists it as a limit of its own, after the weekly ones and without a forecast. Settings and the description of *Alert at* say weekly.

@@ -13,7 +13,8 @@ import { Session, modCopy } from '../lib/pty.mjs'
 
 const E2E = join(dirname(fileURLToPath(import.meta.url)), '..')
 const MOD = join(E2E, '..')
-const CWD = join(MOD, '..')
+// a folder Claude Code already trusts; a git worktree under .claude/worktrees is not one, so E2E_CWD names another
+const CWD = process.env.E2E_CWD || join(MOD, '..')
 const SHOTS = join(E2E, '.out', 'shots')
 const TABS = ['Home', 'Workflows', 'This session', 'Usage', 'Skills', 'Settings']
 
@@ -58,7 +59,7 @@ test.describe('a wide terminal', () => {
       const screen = await s.settle(500)
       if (tab === 'This session') expect(screen).toContain('How long you can keep going')
       if (tab === 'Settings') expect(screen).toMatch(/on autopilot/)
-      if (tab === 'Workflows') expect(screen).toMatch(/workflows? running|Running now/)
+      if (tab === 'Workflows') expect(screen).toMatch(/workflows? (is |are )?running|Running now/)
       await shot(page, s, 'terminal-' + tab.toLowerCase().replace(/ /g, '-'))
     })
   }
