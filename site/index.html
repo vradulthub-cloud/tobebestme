@@ -476,8 +476,8 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
 <div class="strip">
   <ul>
     <li><b class="num">6</b><span>tabs in one pane: Home, Workflows, This session, Usage, Skills, Settings</span></li>
-    <li><b class="num" data-count="91">91</b><span>behaviour tests in Claude Code's own mod test kit</span></li>
-    <li><b class="num" data-count="153">153</b><span>end-to-end checks of every view, at four widths</span></li>
+    <li><b class="num" data-count="103">103</b><span>behaviour tests in Claude Code's own mod test kit</span></li>
+    <li><b class="num" data-count="155">155</b><span>end-to-end checks of every view, at four widths</span></li>
     <li><b>1 table</b><span>lists everything it reads, writes and sends</span></li>
   </ul>
 </div>
@@ -520,14 +520,14 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
             <input id="pace" type="range" min="10" max="140" step="5" value="100" aria-describedby="pace-out">
             <output id="pace-out" for="pace" class="num">Your pace</output>
           </div>
-          <figcaption style="margin:0" class="small">Sample data. The mod draws this for every limit you have: the 5-hour and weekly limits, and any model's own.</figcaption>
+          <figcaption style="margin:0" class="small">Sample data. The mod draws this for every limit you have: the weekly limit and any model's own.</figcaption>
         </figure>
       </div>
     </div>
   </div>
   <div class="wide" style="margin-top: clamp(48px, 7vw, 112px)">
     <figure class="scene rv">
-      <div class="shot"><img src="img/week.webp" width="2400" height="853" loading="lazy" alt="Home's week drawing in the real pane. 82% of your weekly limit, past your alert; at this pace it runs out Saturday at 5:21 AM, 32 hours 38 minutes before it resets. Each day from Sunday to today is a bar stacked by project, a solid orange line climbs to Now, a dashed line continues to a pulsing run-out point, and a hatched stretch to the reset reads 32 h 38 min without Claude. The 5-hour limit sits below at 40%."></div>
+      <div class="shot"><img src="img/week-v2.webp" width="2400" height="853" loading="lazy" alt="Home's week drawing in the real pane. 82% of your weekly limit, past your alert; at this pace it runs out Saturday at 5:21 AM, 32 hours 38 minutes before it resets. Each day from Sunday to today is a bar stacked by project, a solid orange line climbs to Now, a dashed line continues to a pulsing run-out point, and a hatched stretch to the reset reads 32 h 38 min without Claude. The weekly Opus limit sits below at 38%."></div>
       <figcaption>The real pane, drawn from sample data. One drawing carries the weekly figure, the forecast and the stretch you would spend without Claude.</figcaption>
     </figure>
   </div>
@@ -567,10 +567,10 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <div class="ch-head">
       <p class="kicker rv"><i>03</i>Above the prompt</p>
       <h2 id="band-title" class="rv" style="--d:.05s">One line, always in view.</h2>
-      <p class="lede rv" style="--d:.1s">You do not have to open anything. The headline and its cost sit on one line in every session, then context, the 5-hour limit, the weekly limit and what is running, each as a small runway whose ghost shows where your pace lands. A limit turns amber when it runs low and red when it is nearly gone.</p>
+      <p class="lede rv" style="--d:.1s">You do not have to open anything. The headline and its cost sit on one line in every session, then context, the weekly limit, a model’s own weekly limit and what is running, each as a small runway whose ghost shows where your pace lands. A limit turns amber when it runs low and red when it is nearly gone.</p>
     </div>
     <figure class="scene rv">
-      <div class="shot"><img src="img/band.webp" width="2300" height="249" loading="lazy" alt="The line above the prompt. The headline reads: Weekly limit runs out 32 h 38 min early, 4 chats are waiting for you, this session 15% of the weekly limit. Below it, runways for context at 85%, the 5-hour limit at 40% and the weekly limit at 82%, then a running workflow, review-changes, at 0 of 2."></div>
+      <div class="shot"><img src="img/band-v2.webp" width="2300" height="249" loading="lazy" alt="The line above the prompt. The headline reads: Weekly limit runs out 32 h 38 min early, 4 chats are waiting for you, this session 15% of the weekly limit. Below it, runways for context at 85%, the weekly limit at 82% and the weekly Opus limit at 38%, then a running workflow, review-changes, at 0 of 2."></div>
       <figcaption>The line above the prompt, from sample data.</figcaption>
     </figure>
   </div>
@@ -660,7 +660,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <figure class="scene rv" style="--d:.1s">
       <div class="shot win">
         <div class="tb" aria-hidden="true"><i></i><i></i><i></i><span>ToBeBestMe</span></div>
-        <img src="img/pane.webp" width="1700" height="2087" loading="lazy" alt="The ToBeBestMe Home pane. At the top, 4 chats are waiting and the weekly limit is at 82%, drawn as one week with each day stacked by project and a dashed line to the run-out on Saturday at 5:21 AM. Below are the Now card for the chat that needs permission, the other waiting chats, a running workflow, savings drawn as bars, projects by share of the limit, and open sessions.">
+        <img src="img/pane-v2.webp" width="1700" height="2193" loading="lazy" alt="The ToBeBestMe Home pane. At the top, 4 chats are waiting and the weekly limit is at 82%, drawn as one week with each day stacked by project and a dashed line to the run-out on Saturday at 5:21 AM. Below are the Now card for the chat that needs permission, the other waiting chats, a running workflow, savings drawn as bars, projects by share of the limit, and open sessions.">
       </div>
       <figcaption>The real Home pane. Sample data.</figcaption>
     </figure>
@@ -738,7 +738,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
       <p class="lede rv" style="--d:.1s">The week, the forecast, the chat that needs you, the line above the prompt, savings and fixes, and how to install. With captions.</p>
     </div>
     <button class="film rv" type="button" data-film aria-label="Play the 88-second tour, with captions">
-      <img src="img/overview-poster.webp" width="1600" height="900" loading="lazy" alt="">
+      <img src="img/overview-poster-v2.webp" width="1600" height="900" loading="lazy" alt="">
       <span class="play"><span><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6 3.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4L7.2 3.1A.8.8 0 0 0 6 3.8z"/></svg>Play, 1 min 28 s</span></span>
     </button>
   </div>
@@ -774,11 +774,11 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <div class="ch-head"><h2 id="faq-title" class="rv">Questions</h2></div>
     <div class="faq rv">
       <details><summary>Is this made by Anthropic?</summary><p>No. ToBeBestMe is an independent project. It uses the mod interface Claude Code provides, and nothing else.</p></details>
-      <details><summary>Which plans does it work with?</summary><p>On a Claude plan it shows the 5-hour and weekly limits. On an API key or team billing it shows what each request costs. Context size shows for everyone.</p></details>
+      <details><summary>Which plans does it work with?</summary><p>On a Claude plan it shows the weekly limit, and a model’s own weekly limit where there is one. On an API key or team billing it shows what each request costs. Context size shows for everyone.</p></details>
       <details><summary>Does it cost anything?</summary><p>No. It is free and MIT licensed. The few buttons that ask Claude something run through your own account and say so on the button.</p></details>
       <details><summary>Does it send my transcripts anywhere?</summary><p>Apart from the prompts that go to Claude through your own account, nothing from your transcripts leaves your computer. The ways text from your chats can travel are a prompt you trigger, a handoff note Claude writes before a compaction, and, if you set an <code>https://</code> address, a notification's title and text. The full list is in <a href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">SECURITY.md</a>.</p></details>
       <details><summary>Does it change my files or settings?</summary><p>Only when you press <b>Save change</b>, on a preview that shows what is there now and what it becomes: a skill's description, a skill setting, or a rule in your CLAUDE.md. Otherwise it writes only its own store, the reports you save, and a handoff note in the project.</p></details>
-      <details><summary>Where do the forecasts come from?</summary><p>From the limits Claude Code reports and how fast you have been using them. A limit's pace is its window's own average: use so far over the time the window has run. The mod labels an estimate wherever it shows one.</p></details>
+      <details><summary>Where do the forecasts come from?</summary><p>From the limits Claude Code reports and how fast you have been using them. A limit's pace is its own average: use so far over the time the week has run. The mod labels an estimate wherever it shows one.</p></details>
       <details><summary>Does it see sessions on other computers?</summary><p>No. Home covers this computer only. Sessions on other computers or in the cloud are not included.</p></details>
     </div>
   </div>
@@ -798,9 +798,9 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
 </main>
 
 <dialog class="vid" id="film" aria-label="ToBeBestMe in 88 seconds">
-  <video controls playsinline preload="metadata" poster="img/overview-poster.webp" width="1920" height="1080" aria-label="ToBeBestMe in 88 seconds: an animated tour with captions.">
-    <source src="img/overview.mp4" type="video/mp4">
-    <track kind="captions" srclang="en" label="English" src="img/overview.vtt" default>
+  <video controls playsinline preload="metadata" poster="img/overview-poster-v2.webp" width="1920" height="1080" aria-label="ToBeBestMe in 88 seconds: an animated tour with captions.">
+    <source src="img/overview-v2.mp4" type="video/mp4">
+    <track kind="captions" srclang="en" label="English" src="img/overview-v2.vtt" default>
   </video>
   <div class="vid-bar"><span>ToBeBestMe in 88 seconds. Captions on. Esc closes.</span><button class="btn btn-ghost" type="button" id="film-close">Close</button></div>
 </dialog>

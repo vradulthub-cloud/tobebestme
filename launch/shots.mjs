@@ -26,7 +26,7 @@ const sectionBox = (p, title) => p.evaluate((title) => {
   for (let i = 0; i < 8 && el; i++) { el = el.parentElement; if (el.getBoundingClientRect().height > 140 && el.querySelector('[style*="background"] button')) break }
   const r = el.getBoundingClientRect(); return { x: r.left - 4, y: r.top - 4, width: r.width + 8, height: r.height + 8 }
 }, title)
-// the hero: from the date to the bottom of the 5-hour limit row (the headline, the week drawing)
+// the hero: from the date to the bottom of the last limit row (the headline, the week drawing)
 const heroBox = (p) => p.evaluate(() => {
   const spans = [...document.querySelectorAll('#pane span.t')]
   const top = spans.find((s) => /^[A-Z][a-z]+day, /.test(s.textContent.trim()))

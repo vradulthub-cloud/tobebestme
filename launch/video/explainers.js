@@ -331,10 +331,10 @@ function hero(kind, vis) {
     return (t, s) => { const k = tilt(t); node.style.transform = `translateY(${k.ty}px) rotateX(${k.rx}deg) rotateY(${k.ry}deg)`; node.style.opacity = (0.25 + 0.75 * k.a) * visOut(t, s); inner(t) }
   }
   const spec = {
-    pane: ['pane.png', 1271, 1560, 1680, 560, { s: 1, cy: (t) => 212 + t * 22 }, true],
+    pane: ['pane-v2.png', 1271, 1640, 1680, 560, { s: 1, cy: (t) => 212 + t * 22 }, true],
     needs: ['needs.png', 715, 594, 1680, 560, { s: 2.45, cy: (t) => 136 + t * 12 }],
     standout: ['standout.png', 715, 334, 1680, 450, { s: 1.7, cy: (t) => 100 + t * 10 }],
-    band: ['band.png', 767, 83, 1680, 182, { s: 1, cy: () => 42 }],
+    band: ['band-v2.png', 767, 83, 1680, 182, { s: 1, cy: () => 42 }],
   }[kind]
   const sh = shot(IMG + spec[0], spec[1], spec[2], spec[3], spec[4], [], !!spec[6]); sh.el.style.position = 'absolute'; sh.el.style.left = '0'; sh.el.style.top = kind === 'band' ? '170px' : '0'
   vis.appendChild(sh.el)
@@ -507,11 +507,11 @@ S.colours = (title, sub) => ({
   dur: 8.6, mood: 'red', title, sub, sample: true, e: ['#FF9F0A', '#FF453A'],
   build(vis) {
     const box = $('div', 'rows card')
-    const rows = [['5-hour limit', '#BF5AF2', 40], ['Weekly limit', '#FF9F0A', 82], ['Context', '#FF453A', 85]].map(([n, c, v]) => {
-      const r = $('div', 'row', `<span>${n}</span><span class="t"><i style="background:${c};box-shadow:0 0 30px ${c}"></i></span><span class="pc num" style="color:${c === '#BF5AF2' ? 'var(--fg)' : c}">0%</span>`)
+    const rows = [['Weekly limit', '#FF9F0A', 82], ['Weekly Opus limit', '#FF375F', 38], ['Context', '#FF453A', 85]].map(([n, c, v]) => {
+      const r = $('div', 'row', `<span>${n}</span><span class="t"><i style="background:${c};box-shadow:0 0 30px ${c}"></i></span><span class="pc num" style="color:${c === '#FF375F' ? 'var(--fg)' : c}">0%</span>`)
       box.appendChild(r); return [r, v]
     })
-    const sh = shot(IMG + 'band.png', 767, 83, 1680, 182, [[10, 47, 182, 28, 'ring', '#FF453A'], [388, 47, 184, 28, 'ring', '#FF9F0A']]); sh.el.style.marginTop = '26px'
+    const sh = shot(IMG + 'band-v2.png', 767, 83, 1680, 182, [[10, 47, 182, 28, 'ring', '#FF453A'], [199, 47, 181, 28, 'ring', '#FF9F0A']]); sh.el.style.marginTop = '26px'
     vis.append(box, sh.el)
     return (t, s) => {
       rise(box, prog(t, 0.1, 0.9)); box.style.opacity = Math.min(+box.style.opacity, visOut(t, s))
@@ -587,10 +587,10 @@ S.band = (title, sub, focus = 'dock', cap) => ({
   dur: focus === 'dock' ? 6.5 : focus === 'gauges' ? 7.5 : 7.2, mood: 'cyan', sample: true, title, sub, cap, e: ['#64D2FF', '#0A84FF'],
   build(vis) {
     const K = 1760 / 767, ox = -40
-    const rects = { dock: [[2, 2, 763, 78, 'ring', '#FFFFFF']], gauges: [[10, 47, 182, 28, 'ring', '#FF453A'], [199, 47, 181, 28, 'ring', '#BF5AF2'], [388, 47, 184, 28, 'ring', '#FF9F0A']], top: [[10, 10, 462, 28, 'ring', '#FFB340'], [622, 15, 135, 31, 'ring', '#FFFFFF']] }[focus]
-    const labels = { dock: [], gauges: [[100, 'Context 85%', '#FF453A', 1.4], [290, 'Five-hour 40%', '#BF5AF2', 2.7], [480, 'Weekly 82%', '#FF9F0A', 4.0]], top: [[240, 'The forecast and what’s waiting', '#FFB340', 1.4], [689, 'Opens what’s waiting', '#FFFFFF', 2.8]] }[focus]
+    const rects = { dock: [[2, 2, 763, 78, 'ring', '#FFFFFF']], gauges: [[10, 47, 182, 28, 'ring', '#FF453A'], [199, 47, 181, 28, 'ring', '#FF9F0A'], [388, 47, 184, 28, 'ring', '#FF375F']], top: [[10, 10, 462, 28, 'ring', '#FFB340'], [622, 15, 135, 31, 'ring', '#FFFFFF']] }[focus]
+    const labels = { dock: [], gauges: [[100, 'Context 85%', '#FF453A', 1.4], [290, 'Weekly 82%', '#FF9F0A', 2.7], [480, 'Weekly Opus 38%', '#FF375F', 4.0]], top: [[240, 'The forecast and what’s waiting', '#FFB340', 1.4], [689, 'Opens what’s waiting', '#FFFFFF', 2.8]] }[focus]
     const wrap = $('div'); wrap.style.cssText = `position:absolute;left:${ox}px;top:40px;width:1760px`
-    const sh = shot(IMG + 'band.png', 767, 83, 1760, 190, rects)
+    const sh = shot(IMG + 'band-v2.png', 767, 83, 1760, 190, rects)
     const pr = $('div', 'prompt', '<span style="color:var(--fg-2);font-family:var(--mono)">›</span>Ask Claude to keep going'); pr.style.marginTop = '34px'
     sh.el.style.marginTop = '70px'
     wrap.append(sh.el, pr); vis.appendChild(wrap)
@@ -667,7 +667,7 @@ S.fix = (title, sub, sub2, cap) => ({
 S.pane = (title, sub, cap) => ({
   dur: 10, mood: 'blue', sample: true, title, sub, cap, e: ['#64D2FF', '#BF5AF2'],
   build(vis) {
-    const sh = shot(IMG + 'pane.png', 1271, 1560, 1680, 560, [[24, 60, 700, 160, 'ring', '#FF9F0A'], [24, 215, 1223, 245, 'ring', '#FF9F0A'], [30, 536, 696, 206, 'ring', '#FF453A'], [749, 500, 497, 262, 'ring', '#BF5AF2'], [24, 1212, 715, 336, 'ring', '#30D158']], true); vis.appendChild(sh.el)
+    const sh = shot(IMG + 'pane-v2.png', 1271, 1640, 1680, 560, [[24, 60, 700, 160, 'ring', '#FF9F0A'], [24, 215, 1223, 245, 'ring', '#FF9F0A'], [30, 536, 696, 206, 'ring', '#FF453A'], [749, 500, 497, 262, 'ring', '#BF5AF2'], [24, 1281, 715, 336, 'ring', '#30D158']], true); vis.appendChild(sh.el)
     return (t, s) => {
       const e = eo(prog(t, 0, 1.8))
       // the whole pane, top to bottom: the hero, then Needs you and Projects, then the rest of the page
@@ -714,7 +714,7 @@ S.term = (title, sub, lines, o = {}) => ({
   build(vis) {
     vis.style.display = 'flex'; vis.style.alignItems = 'center'; vis.style.justifyContent = 'center'
     const box = $('div', 'term card'); vis.appendChild(box)
-    const pane = o.pane ? shot(IMG + 'pane.png', 1271, 1560, 1680, 540, [], true) : null
+    const pane = o.pane ? shot(IMG + 'pane-v2.png', 1271, 1640, 1680, 540, [], true) : null
     if (pane) { pane.el.style.position = 'absolute'; pane.el.style.left = '0'; pane.el.style.top = '0'; vis.appendChild(pane.el) }
     return (t, s) => {
       rise(box, prog(t, 0.1, 0.9)); box.style.opacity = Math.min(+box.style.opacity, visOut(t, s)) * (pane ? 1 - prog(t, o.pane, o.pane + 0.6) : 1)
@@ -744,7 +744,7 @@ S.end = (o = {}) => {
     cap: 'See where your week went.\n' + (cmd ? '/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme\n' : '') + 'github.com/vradulthub-cloud/tobebestme\nFree and open source. Not affiliated with Anthropic.',
     build(vis, sc) {
       vis.remove()
-      const bgp = shot(IMG + 'pane.png', 1271, 1560, 1680, 1000, [], true); bgp.el.style.cssText += ';position:absolute;left:120px;top:40px;z-index:0;filter:blur(2px)'
+      const bgp = shot(IMG + 'pane-v2.png', 1271, 1640, 1680, 1000, [], true); bgp.el.style.cssText += ';position:absolute;left:120px;top:40px;z-index:0;filter:blur(2px)'
       sc.insertBefore(bgp.el, sc.firstChild)
       const ic = iconBlock(sc, 160, 70)
       const full = '/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme'
@@ -821,7 +821,7 @@ const V = {
   band: { n: 4, label: 'The line above the prompt', scenes: () => [
     S.intro('One line, always *in view.*', 'What the line above the prompt tells you.', 'cyan', ['#64D2FF', '#0A84FF'], 'band'),
     S.band('It sits right above where you *type.*', 'In every session, in the terminal and the Claude desktop app.', 'dock'),
-    S.band('Context and both limits, at a *glance.*', 'Here context is red at 85%, the five-hour limit at 40% and the weekly limit amber at 82%.', 'gauges'),
+    S.band('Context and your limits, at a *glance.*', 'Here context is red at 85%, the weekly limit amber at 82% and the weekly Opus limit at 38%.', 'gauges'),
     S.band('And what *needs you.*', 'Waiting chats and the forecast, with a button that opens them.', 'top'),
     S.lockup(),
   ] },

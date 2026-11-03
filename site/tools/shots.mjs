@@ -28,7 +28,7 @@ const sectionBox = (p, title) => p.evaluate((title) => {
   for (let i = 0; i < 8 && el; i++) { el = el.parentElement; if (el.getBoundingClientRect().height > 140 && el.querySelector('[style*="background"] button')) break }
   const r = el.getBoundingClientRect(); return { x: r.left - 4, y: r.top - 4, width: r.width + 8, height: r.height + 8 }
 }, title)
-// from the date to the bottom of the last limit row: the headline, the week drawing and the 5-hour limit
+// from the date to the bottom of the last limit row: the headline, the week drawing and the last limit row
 const heroBox = (p) => p.evaluate(() => {
   const spans = [...document.querySelectorAll('#pane span.t')]
   const top = spans.find((s) => /^[A-Z][a-z]+day, /.test(s.textContent.trim()))
@@ -60,7 +60,7 @@ const savingsBox = (p) => p.evaluate(() => {
 
 let p = await open(PAGES, 'busy-all-148', 1280, 2)
 const box = await p.locator('#pane').boundingBox()
-await p.screenshot({ path: join(OUT, 'pane.png'), clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, 1560) } })
+await p.screenshot({ path: join(OUT, 'pane.png'), clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, 1640) } })
 await p.close()
 
 p = await open(PAGES, 'busy-all-148', 1280)

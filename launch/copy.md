@@ -60,7 +60,7 @@ ToBeBestMe is a free mod for Claude Code. It opens a pane beside the chat that a
 • What's waiting for me? The chat that needs you most is a card of its own; the rest of the chats that stopped for a permission, a question or a plan follow, with buttons to answer from one place.
 • What would a change save? Savings are drawn as the week as run against the week with the idea applied, with the points it gives back. And fixes are made in the pane, shown as now and after, and written only when you press Save change.
 
-It runs in the terminal and the Claude desktop app, and it's checked by 91 behaviour tests and 153 rendering tests at four pane widths. It reads Claude Code's own records on your computer; SECURITY.md lists the little it sends. Shares of the limit are estimates, and the images use sample data.
+It runs in the terminal and the Claude desktop app, and it's checked by 103 behaviour tests and 155 rendering tests at four pane widths. It reads Claude Code's own records on your computer; SECURITY.md lists the little it sends. Shares of the limit are estimates, and the images use sample data.
 
 Install it at a Claude Code prompt:
 /plugin install tobebestme --marketplace vradulthub-cloud/tobebestme
@@ -94,7 +94,7 @@ ToBeBestMe is a Claude Code mod that draws a pane beside the chat and a line abo
 
 It reads everything locally. What it sends is prompts to Claude through your own account (buttons that say so, a five-token check when the cheaper model came back empty, a handoff note before compaction, and lines added to a prompt when limits run tight) and a notification's title and text to a web address you set. It also shows system notifications through osascript or notify-send. SECURITY.md lists each one. Shares of the weekly limit are estimates at list prices, and the limit is shared with claude.ai chat, which no local tool sees. Screenshots use sample data.
 
-Tests: 91 in Claude Code's mod test kit, plus 153 Playwright tests that render every view at four widths and check overflow, contrast and type size. MIT. Not affiliated with Anthropic.
+Tests: 103 in Claude Code's mod test kit, plus 155 Playwright tests that render every view at four widths and check overflow, contrast and type size. MIT. Not affiliated with Anthropic.
 
 ---
 
@@ -127,7 +127,7 @@ then /tobebestme. I'd love feedback on what's missing.
 - **carousel/01.png:** See where your week went. One drawing: a bar for each day, stacked by six projects, the line of use, and a dashed line to where your pace runs out.
 - **carousel/02.png:** Know before you run out. A weekly limit at 82% with two days to go, forecast to run out Saturday at 5:21 AM, with a hatched stretch for the 32 h 38 min without Claude.
 - **carousel/03.png:** The chat that needs you most, first. The Needs you list leads with a Now card for Release, which needs permission to run npm publish, then lists four more waiting, including Checkout redesign with Ship it, Hold off and Reply buttons.
-- **carousel/04.png:** One line, always in view. The line above the prompt: context 85% in red, the 5-hour limit at 40%, the weekly limit at 82% in amber.
+- **carousel/04.png:** One line, always in view. The line above the prompt: context 85% in red, the weekly limit at 82% in amber and the weekly Opus limit at 38%.
 - **carousel/05.png:** Know what a change would save. Two bars, the week as run (about 124%) and with half the Opus work on Sonnet (about 114%), with about 10 points back; the run-out moves from Saturday 5:21 AM to Saturday 1:15 PM.
 - **carousel/06.png:** Fix it in the pane, not the chat. A new description for the notes skill, shown as now (none) and after, with Save change and Cancel buttons.
 - **carousel/07.png:** Free, open source, one line to install, with the install command and four facts: every project at once, keyboard first, tested where it draws, MIT licensed.
