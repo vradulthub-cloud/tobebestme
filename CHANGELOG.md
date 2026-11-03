@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 (2026-11-03)
 
 - **Weekly limits only.** Claude plans no longer have a 5-hour limit, so none is drawn, forecast or explained: Home, the line above the prompt, alerts, the pace warning, the model adviser, Usage, the status tool, the phone lobby and the report card are about the weekly limit and any model's own weekly limit. A session that still reports another kind of limit lists it as a limit of its own, after the weekly ones and without a forecast. Settings and the description of *Alert at* say weekly.
 - **The report card says something new under the figure.** Under "82% of my weekly limit" it now gives where the limit is headed (when it runs out, or the pace to the reset) instead of repeating the figure as "work worth 82% of the limit"; the models bar is one continuous rounded bar, with a small model's segment kept visible inside it.

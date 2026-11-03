@@ -12,7 +12,7 @@ A mod for Claude Code: a pane beside the chat in the desktop app and the termina
 /plugin install tobebestme --marketplace vradulthub-cloud/tobebestme
 ```
 
-[Landing page](https://vradulthub-cloud.github.io/tobebestme/) · [What it reads and sends](SECURITY.md) · [Why it exists](DESIGN.md) · [Changelog](CHANGELOG.md)
+[Landing page](https://tobebestme.vercel.app) · [What it reads and sends](SECURITY.md) · [Why it exists](DESIGN.md) · [Changelog](CHANGELOG.md)
 
 It tracks the three budgets every session spends, and none of them is in view while you work:
 
