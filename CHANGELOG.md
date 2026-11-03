@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.1 (2026-11-03)
 
 - **The idle line above the prompt opens ToBeBestMe.** Its button said "Open Orchestrator", the mod's old working name; the README's troubleshooting note said the same.
 - **A limit with no percentage is not drawn as "NaN%".** A reading the engine sends without a figure is left out, and a negative one counts as 0, on every tab, the line above the prompt and the phone lobby.

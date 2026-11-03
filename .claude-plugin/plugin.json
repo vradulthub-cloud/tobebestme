@@ -1,6 +1,6 @@
 {
   "name": "tobebestme",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "ToBeBestMe: one dashboard for keeping several Claude Code projects going: which chats wait for your answer, where each project got to, every workflow Claude runs (explained as it starts or held for your go-ahead, steered while it runs, with ways to spend less), and your usage limits, spending and context: where you stand, how long you can keep going and what to do, with budgets, a cheaper model when things get tight, handoff notes before compaction, and a skill builder",
   "author": {
     "name": "ToBeBestMe contributors"
