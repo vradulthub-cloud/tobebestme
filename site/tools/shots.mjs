@@ -60,7 +60,7 @@ const savingsBox = (p) => p.evaluate(() => {
 
 let p = await open(PAGES, 'busy-all-148', 1280, 2)
 const box = await p.locator('#pane').boundingBox()
-await p.screenshot({ path: join(OUT, 'pane.png'), clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, 1640) } })
+await p.screenshot({ path: join(OUT, 'pane.png'), clip: { x: box.x, y: box.y, width: box.width, height: box.height } })
 await p.close()
 
 p = await open(PAGES, 'busy-all-148', 1280)

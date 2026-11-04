@@ -1,6 +1,6 @@
 # Renders STRATEGY.md as a page for reading and sharing: python3 strategy-page.py <out.html>
 # The page has no document wrapper; the Artifact publish adds one.
-import sys, re, markdown
+import sys, os, re, json, markdown
 src = open('STRATEGY.md').read()
 src = src.split('\n', 1)[1]  # the page draws its own title
 src = re.sub(r'^\s*Written 28 October[^\n]*\n', '', src, count=1)  # and its own date line
@@ -8,13 +8,10 @@ body = markdown.markdown(src, extensions=['tables', 'sane_lists'])
 body = body.replace('<table>', '<div class="tw"><table>').replace('</table>', '</table></div>')
 body = re.sub(r'<a href="(http[^"]+)">', r'<a href="\1" target="_blank" rel="noopener">', body)
 body = body.replace('<td><strong>Yes</strong></td>', '<td><span class="yes">Yes</span></td>').replace('<td><strong>Yes, each post</strong></td>', '<td><span class="yes">Yes, each post</span></td>')
-glance = [
-  ('Launch day', 'Tuesday 10 November 2026. Show HN at 7:00 AM PST.'),
-  ('The message', 'Where your Claude Code week went, by project, and whether you’ll make it to Saturday.'),
-  ('Who it’s for', 'Pro and Max subscribers running several projects at once.'),
-  ('Success by day 7', '100 stars and 5 issues nobody was asked to open.'),
-  ('Waiting on you', 'Repo public, Pages on, directory submission, tester invites, and each post.'),
-]
+# The at-a-glance panel and the line under the title hold dates and links: they live in STRATEGY.glance.json,
+# kept beside STRATEGY.md on this computer and never committed (see .gitignore).
+extra = json.load(open('STRATEGY.glance.json')) if os.path.exists('STRATEGY.glance.json') else {'glance': [], 'meta': ''}
+glance = [tuple(x) for x in extra['glance']]
 gl = ''.join(f'<div><dt>{a}</dt><dd>{b}</dd></div>' for a, b in glance)
 page = f'''<title>ToBeBestMe launch plan</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -64,7 +61,7 @@ thead th {{ border-top: 0; color: var(--fg-2); font-weight: 600; font-size: 13px
 <header>
   <p class="eyebrow">ToBeBestMe · launch strategy</p>
   <h1>Launch plan</h1>
-  <p class="meta">Written 28 October 2026 for v1.4.0. Landing page for review: <a href="https://claude.ai/artifact/CnbErDHx6vmVPMoqPZ2ozv" target="_blank" rel="noopener">ToBeBestMe landing page</a>. Assets and post copy: <a href="https://claude.ai/artifact/1wucicvVXPYCSUVMAiQAsm" target="_blank" rel="noopener">press kit</a>. Facts were checked on 28 October unless marked unverified.</p>
+  <p class="meta">{extra["meta"]}</p>
 </header>
 <dl class="glance">{gl}</dl>
 <article class="doc">{body}</article>

@@ -20,7 +20,7 @@ const FOOT = 'A free mod for Claude Code · open source · not affiliated with A
 const CSS = `
 :root{--bg:#0A0B0D;--raised:#141619;--inset:#1D2024;--line:rgba(255,255,255,.09);--line-2:rgba(255,255,255,.16);--fg:#F5F5F7;--fg-2:#A3A3AB;--fg-3:#8A8A92;
 --accent:#0A84FF;--warn:#FF9F0A;--warn-text:#FFB340;--warn-dim:rgba(255,159,10,.30);--ok:#30D158;--bad:#FF453A;--idle:#98989D;--track:rgba(255,255,255,.10);--past:rgba(255,255,255,.62);
---p1:#BF5AF2;--p2:#64D2FF;--p3:#00C7BE;--p4:#5E5CE6;--p5:#AC8E68;--p6:#FF375F;
+--p1:#BF5AF2;--p2:#64D2FF;--p3:#00C7BE;--p4:#5E5CE6;--p5:#AC8E68;--p6:#7C8DB5;
 --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,monospace}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:var(--bg)}
@@ -31,6 +31,7 @@ body{font-family:var(--font);color:var(--fg);-webkit-font-smoothing:antialiased;
 .asset>*{position:relative;z-index:1}
 .em{background:linear-gradient(100deg,#64D2FF,#BF5AF2 60%,#FF375F);-webkit-background-clip:text;background-clip:text;color:transparent}
 .em.warm{background-image:linear-gradient(100deg,#FFB340,#FF375F)}
+.em.amber{background-image:linear-gradient(100deg,#FFD27A,#FFB020 45%,#FF6A3D)}
 .em.cool{background-image:linear-gradient(100deg,#30D158,#64D2FF)}
 .brand{display:flex;align-items:center;gap:14px;font-weight:600}
 .brand img{border-radius:22%}
@@ -105,14 +106,14 @@ function drawing(s = 1, { height = 300, figure = true, sentence = true, chips = 
   const vls = STARTS.slice(1).map((h) => `<i style="position:absolute;top:0;bottom:0;left:${pct(h)}%;width:1px;background:rgba(255,255,255,.07)"></i>`).join('')
   return `<div class="inst" style="padding:${px(40)};gap:${px(24)}">
   ${figure ? `<div class="fig" style="margin-bottom:${px(-6)}"><span class="big num" style="font-size:${px(104)};background:linear-gradient(100deg,#FFC866,#FF9F0A 70%,#FF7A00);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 ${px(26)} rgba(255,159,10,.35))">82%</span><span class="lab" style="font-size:${px(21)}">of your weekly limit${sentence ? ', with two days to go' : ''}</span></div>` : ''}
-  ${sentence ? `<p class="fc" style="font-size:${px(32)}">At this pace it runs out <b class="num">Sat 5:21 AM</b>, 32 h 38 min before it resets.</p>` : ''}
+  ${sentence ? `<p class="fc" style="font-size:${px(32)}">At this pace it runs out <b class="num">Sat 5:21 AM</b>, about 33 hours before it resets.</p>` : ''}
   ${chips ? `<div class="chips">${P.map(([k, c]) => `<span class="chip" style="font-size:${px(17)};padding:${px(9)} ${px(16)}"><span class="dot" style="background:var(--${c})"></span>${k} <span class="num">${TOT[k]}</span></span>`).join('')}</div>` : ''}
   <div style="position:relative;height:${plotH}px;margin-top:${px(36)}">
     <span class="ml" style="top:${px(-34)};left:${pct(NOW)}%;transform:translateX(-50%);font-size:${px(16)}">Now</span>
     <span class="ml" style="top:${px(-34)};right:0;color:var(--fg-2);font-weight:500;font-size:${px(16)}">Resets Sun 2:00 PM</span>
     <div style="position:absolute;left:0;right:0;top:0;bottom:${lbl}px;border-top:1.5px solid var(--line-2)">
       <span style="position:absolute;left:0;top:${px(6)};font-size:${px(14)};color:var(--fg-3)">100% of the limit</span>${vls}
-      <div style="position:absolute;top:0;bottom:0;right:0;left:${pct(RUN)}%;border-left:2px dashed var(--warn);background:repeating-linear-gradient(135deg,rgba(255,159,10,.46) 0 2px,transparent 2px 9px);display:flex;align-items:flex-end;justify-content:center;padding-bottom:${px(12)}"><div class="num" style="background:#0A0B0D;border:1.5px solid var(--warn);color:var(--warn-text);border-radius:${px(10)};padding:${px(5)} ${px(10)};font-size:${px(14)};font-weight:700;text-align:center;line-height:1.2;white-space:pre">32 h 38 min\nwithout Claude</div></div>
+      <div style="position:absolute;top:0;bottom:0;right:0;left:${pct(RUN)}%;border-left:2px dashed var(--warn);background:repeating-linear-gradient(135deg,rgba(255,159,10,.46) 0 2px,transparent 2px 9px);display:flex;align-items:flex-end;justify-content:center;padding-bottom:${px(12)}"><div class="num" style="background:#0A0B0D;border:1.5px solid var(--warn);color:var(--warn-text);border-radius:${px(10)};padding:${px(5)} ${px(10)};font-size:${px(14)};font-weight:700;text-align:center;line-height:1.2;white-space:pre">about 33 hours\nwithout Claude</div></div>
       <svg viewBox="0 0 1000 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF9F0A" stop-opacity=".4"/><stop offset="1" stop-color="#FF9F0A" stop-opacity="0"/></linearGradient></defs>
         <path d="${line} L${X(NOW)} 100 L0 100 Z" fill="url(#g)"/><path d="${line}" fill="none" stroke="#FF9F0A" stroke-width="${Math.max(2.5, 3.5 * s)}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
         <path d="M${X(NOW)} ${Y(82)} L${X(RUN)} 0" fill="none" stroke="#FF9F0A" stroke-width="${Math.max(2.5, 3.5 * s)}" stroke-dasharray="${Math.round(10 * s) + 3} ${Math.round(8 * s) + 3}" vector-effect="non-scaling-stroke"/></svg>
@@ -132,19 +133,19 @@ const win = (src, extra = '') => `<div class="shot"><div class="titlebar"><i></i
 const frame = (src) => `<div class="shot"><img src="${src}" alt=""></div>`
 
 const assets = []
-// GitHub social card, 1280 × 640
+// GitHub social card, 1280 × 640 (also the landing page's og:image, saved there as social-card-v6.png)
 assets.push({ out: 'social-card.png', w: 1280, h: 640, dpr: 2, html: `
-<div style="padding:64px 72px 56px;display:grid;grid-template-columns:470px 1fr;gap:56px;height:100%;align-items:center">
-  <div style="display:flex;flex-direction:column;gap:28px">${brand(26)}<h1 style="font-size:80px">See where your <span class="em">week</span> went.</h1><p class="sub" style="font-size:24px">A free mod for Claude Code: your week by project, whether you’ll make the reset, and every chat waiting on you.</p></div>
-  ${week(0.62, { height: 330 })}
+<div style="padding:56px 64px 48px;display:grid;grid-template-columns:540px 1fr;gap:44px;height:100%;align-items:center">
+  <div style="display:flex;flex-direction:column;gap:26px">${brand(26)}<h1 style="font-size:58px">A mod inside Claude Code. <span class="em amber" style="display:block;white-space:nowrap;font-size:46px;margin-top:8px">Know where things stand.</span></h1><p class="sub" style="font-size:23px"><b>Not a separate app, service or account.</b> No server, no sign-up, no API key. Limits, waiting chats, workflow costs and skill fixes, in one pane beside the chat.</p></div>
+  <div>${week(0.56, { height: 340 })}<p class="foot" style="font-size:15px;margin-top:12px;text-align:right">Sample data</p></div>
 </div>` })
 // launch hero, 1600 × 900: the claim, then the real pane rising from the bottom
 assets.push({ out: 'launch-hero.png', w: 1600, h: 900, dpr: 2, html: `
 <div style="padding:88px 120px 0;display:flex;flex-direction:column;gap:22px;height:100%">
-  <div style="display:flex;align-items:center;justify-content:space-between">${brand(26)}<span class="foot" style="font-size:20px">A free mod for Claude Code</span></div>
-  <h1 style="font-size:104px;margin-top:20px">See where your <span class="em">week</span> went.</h1>
-  <p class="sub" style="font-size:30px;max-width:30em">Your Claude Code week <b>by project</b>, <b>whether you’ll make the reset</b>, and <b>every chat waiting on you</b>, beside the chat.</p>
-  <div style="margin-top:34px">${win(img('pane-v2.png'))}</div>
+  <div style="display:flex;align-items:center;justify-content:space-between">${brand(26)}<span class="foot" style="font-size:20px">A mod that runs inside Claude Code itself</span></div>
+  <h1 style="font-size:92px;margin-top:12px">A mod inside Claude Code. <span class="em amber" style="display:block;white-space:nowrap">Know where things stand.</span></h1>
+  <p class="sub" style="font-size:30px;max-width:30em">Your <b>limits</b>, <b>every chat waiting on you</b>, <b>what your workflows cost</b> and <b>your skills</b>, in one pane beside the chat.</p>
+  <div style="margin-top:30px">${win(img('pane-v6.png'))}</div>
 </div>` })
 // the carousel, 1080 × 1350 each
 const slide = (n, title, sub, visual, align = 'end') => ({ out: `carousel/0${n}.png`, w: 1080, h: 1350, dpr: 2, html: `
@@ -157,13 +158,13 @@ const slide = (n, title, sub, visual, align = 'end') => ({ out: `carousel/0${n}.
 </div>` })
 assets.push(slide(1, 'See where your <span class="em">week</span> went.', 'One drawing: each day stacked by project, the line of use so far, and where your pace runs out.', week(0.95, { height: 330 })))
 assets.push(slide(2, 'Know before you <span class="em warm">run out.</span>', 'Days ahead, while there’s still time to change course. The hatched stretch is the time you’d spend without Claude.', instrument(0.95)))
-assets.push(slide(3, 'The chat that needs you <span class="em">most, first.</span>', 'The most urgent is a card of its own. The rest follow, with the buttons the chat offered.', `<div class="shot" style="height:600px"><img src="${img('needs.png')}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:top"></div>`))
-assets.push(slide(4, 'One line, always <span class="em">in view.</span>', 'Context, the weekly limit and a model’s own above where you type. Amber when one runs low, red when it’s nearly gone.', `<div class="inst" style="padding:28px 28px 32px;gap:22px">${frame(img('band-v2.png'))}<div style="display:flex;align-items:center;gap:14px;border:1.5px solid var(--line-2);border-radius:16px;padding:22px 24px;font-size:24px;color:var(--fg-3)"><span style="color:var(--fg-2);font-family:var(--mono)">›</span>Ask Claude to keep going</div></div>`, 'center'))
+assets.push(slide(3, 'The chat that needs you <span class="em">most, first.</span>', 'The most urgent is a card of its own. The rest follow, with the buttons the chat offered.', `<div class="shot" style="height:566px"><img src="${img('needs-v6.png')}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:top"></div>`))
+assets.push(slide(4, 'One line, always <span class="em">in view.</span>', 'Context, the weekly limit and a model’s own above where you type. Amber when one runs low, red when it’s nearly gone.', `<div class="inst" style="padding:28px 28px 32px;gap:22px">${frame(img('band-v6.png'))}<div style="display:flex;align-items:center;gap:14px;border:1.5px solid var(--line-2);border-radius:16px;padding:22px 24px;font-size:24px;color:var(--fg-3)"><span style="color:var(--fg-2);font-family:var(--mono)">›</span>Ask Claude to keep going</div></div>`, 'center'))
 assets.push(slide(5, 'Know what a change would <span class="em cool">save.</span>', 'The week as you ran it, against the week with the idea applied, and the points it gives back.', `<div style="display:flex;flex-direction:column;gap:36px">${frame(img('savings.png'))}<div class="inst" style="padding:36px 40px;gap:14px;font-size:27px;line-height:1.35"><p style="color:var(--fg-2)">Half the Opus work on Sonnet moves the run-out from</p><p style="font-size:44px;font-weight:700;letter-spacing:-.02em" class="num"><span style="color:var(--warn-text)">Sat 5:21 AM</span> <span style="color:var(--fg-3)">to</span> Sat 1:15 PM</p></div></div>`, 'center'))
-assets.push(slide(6, 'Fix it in the pane, <span class="em">not the chat.</span>', 'The pane shows what’s there now and what it becomes. Nothing is written until you press Save change.', `<div class="shot" style="overflow:hidden"><img src="${img('fix.png')}" alt="" style="width:142%;max-width:none"></div>`, 'center'))
-assets.push(slide(7, 'Free, open source, <span class="em">one line</span> to install.', 'Works in the terminal and the Claude desktop app. No analytics, no tracking, no server of ours.', `<div style="display:flex;flex-direction:column;gap:30px">
+assets.push(slide(6, 'Fix it in the pane, <span class="em">not the chat.</span>', 'The pane shows what’s there now and what it becomes. Nothing is written until you press Save change.', `<div class="shot" style="overflow:hidden"><img src="${img('fix-v6.png')}" alt="" style="width:142%;max-width:none"></div>`, 'center'))
+assets.push(slide(7, 'Free, open source, <span class="em">one line</span> to install.', 'A mod that runs inside Claude Code itself. No server, no sign-up, no API key. Works in the terminal and the Claude desktop app.', `<div style="display:flex;flex-direction:column;gap:30px">
   <div class="cmd" style="padding:26px 22px 26px 30px;font-size:24px;line-height:1.45;flex-wrap:wrap"><span>/plugin install tobebestme<br>--marketplace vradulthub-cloud/tobebestme</span></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;font-size:24px">${[['Every project at once', 'It reads every session on this computer.'], ['Keyboard first', 'Six tabs, full keyboard control.'], ['Tested where it draws', '103 behaviour tests, 155 rendering checks.'], ['MIT licensed', 'Checksums for every file.']].map(([a, b]) => `<div class="inst" style="padding:26px 28px;gap:8px"><b style="font-weight:600">${a}</b><span style="color:var(--fg-2);font-size:21px;line-height:1.35">${b}</span></div>`).join('')}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;font-size:24px">${[['Every project at once', 'It reads every chat on this computer.'], ['Keyboard first', 'Six tabs, full keyboard control.'], ['Tested where it draws', 'Every button pressed, every view checked.'], ['MIT licensed', 'Free to use and change.']].map(([a, b]) => `<div class="inst" style="padding:26px 28px;gap:8px"><b style="font-weight:600">${a}</b><span style="color:var(--fg-2);font-size:21px;line-height:1.35">${b}</span></div>`).join('')}</div>
   <p style="font-size:24px;color:var(--fg-2)">github.com/vradulthub-cloud/tobebestme</p></div>`, 'center'))
 // demo frames, 1920 × 1080: the real pane's week, a day pressed, a project picked
 const CAP = [['Your week, in one drawing', 'Each day by project, the line of use, and the pace to the run-out.'], ['Press a day', 'See what that day used, project by project.'], ['Pick a project', 'Follow it through the week. The rest step back.']]
@@ -175,7 +176,8 @@ CAP.forEach(([t, s], i) => assets.push({ out: `demo-frame-${i}.png`, w: 1920, h:
 </div>` }))
 
 const b = await chromium.launch()
-for (const a of assets) {
+// ONLY=carousel/07.png renders just the assets whose file name contains it
+for (const a of assets.filter((x) => !process.env.ONLY || x.out.includes(process.env.ONLY))) {
   const file = join(HERE, '.pages', a.out.replace(/\//g, '-').replace('.png', '.html'))
   writeFileSync(file, `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body><div class="asset" style="width:${a.w}px;height:${a.h}px">${a.html}</div></body></html>`)
   const p = await b.newPage({ viewport: { width: a.w, height: a.h }, deviceScaleFactor: a.dpr })

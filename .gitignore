@@ -1,7 +1,5 @@
 node_modules/
-e2e/.out/
-e2e/test-results/
 .DS_Store
 ._*
 .claude/
-.claude-plugin/types/
+__pycache__/

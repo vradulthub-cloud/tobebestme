@@ -1,5 +1,19 @@
+# Not deployed: build tools, notes, and the full-size PNG masters (the page uses the WebP files;
+# the launch kit reads the masters from this folder). Keep social-card-v6.png and the icon PNGs.
 tools/
 README.md
 vercel.json.bak
+img/band-v6.png
+img/fix-v6.png
+img/needs-v6.png
+img/now-v6.png
+img/overview-poster-v7.png
+img/pane-v6.png
+img/savings.png
+img/skills-v6.png
+img/standout-v6.png
+img/week-v6.png
+img/workflows-savings-v6.png
+img/workflows-v6.png
 .env*
 .vercel

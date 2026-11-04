@@ -18,9 +18,9 @@ const mix = (a, b, x) => a.map((v, i) => Math.round(lerp(v, b[i], x)))
 // ---- the sample week, the same as the landing page's and the real pane's ----
 const START = new Date(2026, 9, 18, 14, 0), TOTAL = 168, NOW = 123, USED = 82, RATE = 18 / 12.361
 const pos = (h) => (h / TOTAL) * 100
-const RUN = NOW + 18 / RATE, AFTER = 143.25 // Sat 5:21 AM (32 h 38 min before the reset); Sat 1:15 PM (24 h 45 min) with half the Opus work on Sonnet
+const RUN = NOW + 18 / RATE, AFTER = 143.25 // Sat 5:21 AM (about 33 hours before the reset); Sat 1:15 PM (24 h 45 min) with half the Opus work on Sonnet
 const DAYS = [['Sun', 10], ['Mon', 24], ['Tue', 24], ['Wed', 24], ['Thu', 24], ['Today', 24], ['Sat', 24], ['Sun', 14]]
-const P = [['storefront', '#BF5AF2'], ['ledger-api', '#64D2FF'], ['reports', '#00C7BE'], ['docs-site', '#5E5CE6'], ['notes', '#AC8E68'], ['wiki', '#FF375F']]
+const P = [['storefront', '#BF5AF2'], ['ledger-api', '#64D2FF'], ['reports', '#00C7BE'], ['docs-site', '#5E5CE6'], ['notes', '#AC8E68'], ['wiki', '#7C8DB5']]
 const WEEK = [{ 'docs-site': 2.3 }, { storefront: 6.4, 'ledger-api': 4 }, { storefront: 8.8, reports: 4, notes: 1.2 }, { storefront: 12, 'ledger-api': 5.6, 'docs-site': 3.3 },
   { storefront: 6.4, 'ledger-api': 4.2, reports: 5.2, notes: 2.2 }, { storefront: 15.4, 'ledger-api': 0.2, notes: 0.2, wiki: 0.1 }, null, null]
 const NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Today', 'Saturday', 'Sunday']
@@ -29,7 +29,7 @@ const TOT = {}; P.forEach(([k]) => (TOT[k] = WEEK.reduce((a, d) => a + ((d && d[
 const MAXD = Math.max(...WEEK.filter(Boolean).map(sum))
 const r1 = (x) => (x >= 10 ? Math.round(x) + '%' : Math.round(x * 10) / 10 + '%')
 const at = (h) => { const d = new Date(START.getTime() + h * 3600e3); return d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) }
-const dur = (h) => { const m = Math.floor(h * 60 + 1e-6); return Math.floor(m / 60) + ' h ' + (m % 60) + ' min' }
+const dur = (h) => { const min = h * 60 + 1e-6; if (min < 60) { const r = Math.round(min / 5) * 5; return r < 5 ? 'a few minutes' : 'about ' + r + ' min' } if (min < 360) { const q = Math.round(min / 15) * 15; return 'about ' + Math.floor(q / 60) + ' h' + (q % 60 ? ' ' + (q % 60) + ' min' : '') } const hr = Math.round(h); return hr < 48 ? 'about ' + hr + ' hours' : 'about ' + Math.round(hr / 24) + ' days' }
 
 // ---- light: drifting glows in each scene's colours, mixed as scenes cross ----
 const MOODS = {
@@ -331,10 +331,10 @@ function hero(kind, vis) {
     return (t, s) => { const k = tilt(t); node.style.transform = `translateY(${k.ty}px) rotateX(${k.rx}deg) rotateY(${k.ry}deg)`; node.style.opacity = (0.25 + 0.75 * k.a) * visOut(t, s); inner(t) }
   }
   const spec = {
-    pane: ['pane-v2.png', 1271, 1640, 1680, 560, { s: 1, cy: (t) => 212 + t * 22 }, true],
-    needs: ['needs.png', 715, 594, 1680, 560, { s: 2.45, cy: (t) => 136 + t * 12 }],
-    standout: ['standout.png', 715, 334, 1680, 450, { s: 1.7, cy: (t) => 100 + t * 10 }],
-    band: ['band-v2.png', 767, 83, 1680, 182, { s: 1, cy: () => 42 }],
+    pane: ['pane-v6.png', 1271, 1794, 1680, 560, { s: 1, cy: (t) => 212 + t * 22 }, true],
+    needs: ['needs-v6.png', 715, 631, 1680, 560, { s: 2.45, cy: (t) => 136 + t * 12 }],
+    standout: ['standout-v6.png', 715, 340, 1680, 450, { s: 1.7, cy: (t) => 100 + t * 10 }],
+    band: ['band-v6.png', 767, 70, 1680, 182, { s: 1, cy: () => 35 }],
   }[kind]
   const sh = shot(IMG + spec[0], spec[1], spec[2], spec[3], spec[4], [], !!spec[6]); sh.el.style.position = 'absolute'; sh.el.style.left = '0'; sh.el.style.top = kind === 'band' ? '170px' : '0'
   vis.appendChild(sh.el)
@@ -368,11 +368,11 @@ const visOut = (t, s) => (s.last ? 1 : 1 - eo(prog(t, s.dur - 0.45, s.dur)))
 const S = {}
 S.cold = () => ({
   dur: 5.5, mood: 'red', glow: 0.7, chrome: false, big: true, ctr: true, hs: 128, top: 110, title: 'It always runs out\non a *Saturday.*', e: ['#FF453A', '#FF9F0A'],
-  cap: 'It always runs out on a Saturday.\nWeekly limit reached. Resets Sunday at 2:00 PM, 32 h 38 min from now.',
+  cap: 'It always runs out on a Saturday.\nWeekly limit reached. Resets Sunday at 2:00 PM, about 33 hours from now.',
   build(vis, sc) {
     vis.remove()
     const clock = $('div', 'clock num'); sc.appendChild(clock)
-    const n = $('div', 'notice card', '<div class="r1"><i class="dot" style="background:var(--bad);width:22px;height:22px"></i>Weekly limit reached</div><div class="r2">Resets Sunday at 2:00 PM, 32 h 38 min from now</div>')
+    const n = $('div', 'notice card', '<div class="r1"><i class="dot" style="background:var(--bad);width:22px;height:22px"></i>Weekly limit reached</div><div class="r2">Resets Sunday at 2:00 PM, about 33 hours from now</div>')
     sc.appendChild(n)
     const R = rng(11)
     const sparks = Array.from({ length: 90 }, () => ({ a: R() * Math.PI * 2, v: 260 + R() * 900, life: 0.7 + R() * 0.9, r: 2 + R() * 4, c: R() < 0.3 ? [255, 255, 255] : R() < 0.6 ? [255, 159, 10] : [255, 69, 58] }))
@@ -413,7 +413,7 @@ S.cold = () => ({
     }
   },
 })
-S.question = (title = 'Where did your *week* go?', sub = 'ToBeBestMe, a free mod for Claude Code, answers that.') => ({ dur: 4.2, mood: 'blue', big: true, sample: true, title, sub, e: ['#64D2FF', '#BF5AF2'], build: (vis) => hero('pane', vis) })
+S.question = (title = 'Where did your *week* go?', sub = 'ToBeBestMe, a mod that runs inside Claude Code itself, answers that.') => ({ dur: 4.2, mood: 'blue', big: true, sample: true, title, sub, e: ['#64D2FF', '#BF5AF2'], build: (vis) => hero('pane', vis) })
 S.intro = (title, sub, mood = 'blue', e, kind = 'chart') => ({ dur: 4, mood, big: true, sample: true, title, sub, e: e || ['#64D2FF', '#BF5AF2'], build: (vis) => hero(kind, vis) })
 S.flow = (title, sub, cap) => ({
   dur: 11.8, mood: 'projects', sample: true, title, sub, cap, e: ['#BF5AF2', '#00C7BE'],
@@ -472,7 +472,7 @@ S.forecast = (o = {}) => {
   const END = Math.round(USED + RATE * 0.25 * (TOTAL - NOW))
   return {
     dur: o.dur || 11, mood: 'amber', sample: true, title: o.title || 'Know before you *run out.*', e: ['#FF9F0A', '#FF375F'], cap: o.cap,
-    sub: o.sub || 'At this pace it runs out Saturday at 5:21 AM, 32 h 38 min before it resets.', sub2: o.sub2 === undefined ? 'Ease off to a quarter of today’s pace, and it lasts the week.' : o.sub2, sub2At: o.sub2At || 6.0,
+    sub: o.sub || 'At this pace it runs out Saturday at 5:21 AM, about 33 hours before it resets.', sub2: o.sub2 === undefined ? 'Ease off to a quarter of today’s pace, and it lasts the week.' : o.sub2, sub2At: o.sub2At || 6.0,
     build(vis) {
       const c = calendar({ pill: true }); vis.appendChild(c.el)
       const pace = o.pace === undefined ? [6.3, 8.4] : o.pace
@@ -511,7 +511,7 @@ S.colours = (title, sub) => ({
       const r = $('div', 'row', `<span>${n}</span><span class="t"><i style="background:${c};box-shadow:0 0 30px ${c}"></i></span><span class="pc num" style="color:${c === '#FF375F' ? 'var(--fg)' : c}">0%</span>`)
       box.appendChild(r); return [r, v]
     })
-    const sh = shot(IMG + 'band-v2.png', 767, 83, 1680, 182, [[10, 47, 182, 28, 'ring', '#FF453A'], [199, 47, 181, 28, 'ring', '#FF9F0A']]); sh.el.style.marginTop = '26px'
+    const sh = shot(IMG + 'band-v6.png', 767, 70, 1680, 182, [[10, 37, 182, 28, 'ring', '#FF453A'], [199, 37, 181, 28, 'ring', '#FF9F0A']]); sh.el.style.marginTop = '26px'
     vis.append(box, sh.el)
     return (t, s) => {
       rise(box, prog(t, 0.1, 0.9)); box.style.opacity = Math.min(+box.style.opacity, visOut(t, s))
@@ -524,8 +524,8 @@ S.colours = (title, sub) => ({
 })
 
 // one persistent needs shot serves every needs scene of a video; it lives above the scenes and moves between rows
-// the Needs you section as drawn: the Now card (red), then Notes sync and Checkout redesign (amber), then Ledger import and Docs search (grey)
-const NEEDS = ['needs.png', 715, 594, [[13, 35, 689, 203], [14, 285, 700, 150], [14, 443, 700, 143]]]
+// the Needs you section as drawn: the lead card (red), then Notes sync and Checkout redesign (amber), then Ledger import and Docs search (grey)
+const NEEDS = ['needs-v6.png', 715, 631, [[13, 38, 689, 203], [14, 288, 700, 150], [14, 443, 700, 143]]]
 const NROW = { red: 136, amber: 360, grey: 478 }, NIDX = { red: 0, amber: 1, grey: 2 }, NKS = 2.45
 S.needs = (title, sub, focus = 'sweep', o = {}) => ({
   dur: o.dur || 9, needs: focus, mood: focus === 'red' ? 'red' : focus === 'amber' ? 'amber' : 'blue', sample: true, title, sub, cap: o.cap, e: focus === 'red' ? ['#FF453A', '#FF375F'] : focus === 'amber' ? ['#FF9F0A', '#FFB340'] : ['#64D2FF', '#0A84FF'],
@@ -587,10 +587,10 @@ S.band = (title, sub, focus = 'dock', cap) => ({
   dur: focus === 'dock' ? 6.5 : focus === 'gauges' ? 7.5 : 7.2, mood: 'cyan', sample: true, title, sub, cap, e: ['#64D2FF', '#0A84FF'],
   build(vis) {
     const K = 1760 / 767, ox = -40
-    const rects = { dock: [[2, 2, 763, 78, 'ring', '#FFFFFF']], gauges: [[10, 47, 182, 28, 'ring', '#FF453A'], [199, 47, 181, 28, 'ring', '#FF9F0A'], [388, 47, 184, 28, 'ring', '#FF375F']], top: [[10, 10, 462, 28, 'ring', '#FFB340'], [622, 15, 135, 31, 'ring', '#FFFFFF']] }[focus]
+    const rects = { dock: [[2, 2, 763, 66, 'ring', '#FFFFFF']], gauges: [[10, 37, 182, 28, 'ring', '#FF453A'], [199, 37, 181, 28, 'ring', '#FF9F0A'], [388, 37, 184, 28, 'ring', '#FF375F']], top: [[10, 6, 462, 28, 'ring', '#FFB340'], [622, 5, 135, 31, 'ring', '#FFFFFF']] }[focus]
     const labels = { dock: [], gauges: [[100, 'Context 85%', '#FF453A', 1.4], [290, 'Weekly 82%', '#FF9F0A', 2.7], [480, 'Weekly Opus 38%', '#FF375F', 4.0]], top: [[240, 'The forecast and what’s waiting', '#FFB340', 1.4], [689, 'Opens what’s waiting', '#FFFFFF', 2.8]] }[focus]
     const wrap = $('div'); wrap.style.cssText = `position:absolute;left:${ox}px;top:40px;width:1760px`
-    const sh = shot(IMG + 'band-v2.png', 767, 83, 1760, 190, rects)
+    const sh = shot(IMG + 'band-v6.png', 767, 70, 1760, 190, rects)
     const pr = $('div', 'prompt', '<span style="color:var(--fg-2);font-family:var(--mono)">›</span>Ask Claude to keep going'); pr.style.marginTop = '34px'
     sh.el.style.marginTop = '70px'
     wrap.append(sh.el, pr); vis.appendChild(wrap)
@@ -612,7 +612,7 @@ S.savings = (title, sub, cap) => ({
   build(vis) {
     const top = $('div', 'topline')
     const sw = $('div', 'swap num', '<span style="color:var(--warn-text)">Sat 5:21 AM</span><span>Sat 1:15 PM</span>')
-    const gain = $('div', 'gain num', '+7 h 54 min')
+    const gain = $('div', 'gain num', '+8 hours')
     top.append(sw, gain)
     const c = calendar({ figure: false, pill: true })
     vis.append(top, c.el)
@@ -636,8 +636,8 @@ S.savings = (title, sub, cap) => ({
 S.standout = (title, sub, cap) => ({
   dur: 8.6, mood: 'green', sample: true, title, sub, cap, e: ['#30D158', '#64D2FF'],
   build(vis) {
-    // standout.png is 715 × 334: the heading and the what-if sentence on top, the as-run and with-the-idea bars under them
-    const sh = shot(IMG + 'standout.png', 715, 334, 1680, 450, [[14, 38, 340, 26, 'ring', '#30D158'], [12, 100, 574, 140, 'ring', '#30D158']]); sh.el.style.margin = '30px auto 0'
+    // standout-v6.png is 715 × 340: the heading and the what-if sentence on top, the as-run and with-the-idea bars under them
+    const sh = shot(IMG + 'standout-v6.png', 715, 340, 1680, 450, [[14, 38, 340, 26, 'ring', '#30D158'], [12, 100, 574, 140, 'ring', '#30D158']]); sh.el.style.margin = '30px auto 0'
     vis.appendChild(sh.el)
     return (t, s) => {
       const e = eo(prog(t, 0, 1.6))
@@ -651,9 +651,9 @@ S.standout = (title, sub, cap) => ({
 S.fix = (title, sub, sub2, cap) => ({
   dur: 10, mood: 'purple', sample: true, title, sub, sub2, sub2At: 5.0, cap, e: ['#BF5AF2', '#64D2FF'],
   build(vis) {
-    // fix.png is 1255 × 218: the title, a Now block, an After block, and the Save change and Cancel buttons
+    // fix-v6.png is 1255 × 218: the title, a Now block, an After block, and the Save change and Cancel buttons
     const K = 1680 / 1255, Z = 1.35, CX = 470, top = 70 // zoomed to the left part of the card, where the words are
-    const sh = shot(IMG + 'fix.png', 1255, 218, 1680, 400, [[20, 58, 420, 52, 'ring', '#FF9F0A'], [20, 106, 860, 52, 'ring', '#30D158'], [24, 180, 112, 34, 'ring', '#FFFFFF']], true); sh.el.style.marginTop = top + 'px'
+    const sh = shot(IMG + 'fix-v6.png', 1255, 218, 1680, 400, [[20, 58, 420, 52, 'ring', '#FF9F0A'], [20, 106, 860, 52, 'ring', '#30D158'], [24, 180, 112, 34, 'ring', '#FFFFFF']], true); sh.el.style.marginTop = top + 'px'
     vis.appendChild(sh.el)
     const ptr = pointer(vis)
     const bx = 840 + (79 - CX) * K * Z, by = top + 200 + (197 - 109) * K * Z
@@ -667,7 +667,7 @@ S.fix = (title, sub, sub2, cap) => ({
 S.pane = (title, sub, cap) => ({
   dur: 10, mood: 'blue', sample: true, title, sub, cap, e: ['#64D2FF', '#BF5AF2'],
   build(vis) {
-    const sh = shot(IMG + 'pane-v2.png', 1271, 1640, 1680, 560, [[24, 60, 700, 160, 'ring', '#FF9F0A'], [24, 215, 1223, 245, 'ring', '#FF9F0A'], [30, 536, 696, 206, 'ring', '#FF453A'], [749, 500, 497, 262, 'ring', '#BF5AF2'], [24, 1281, 715, 336, 'ring', '#30D158']], true); vis.appendChild(sh.el)
+    const sh = shot(IMG + 'pane-v6.png', 1271, 1794, 1680, 560, [[24, 60, 700, 160, 'ring', '#FF9F0A'], [24, 215, 1223, 245, 'ring', '#FF9F0A'], [30, 536, 696, 206, 'ring', '#FF453A'], [749, 500, 497, 262, 'ring', '#BF5AF2'], [24, 1281, 715, 336, 'ring', '#30D158']], true); vis.appendChild(sh.el)
     return (t, s) => {
       const e = eo(prog(t, 0, 1.8))
       // the whole pane, top to bottom: the hero, then Needs you and Projects, then the rest of the page
@@ -714,7 +714,7 @@ S.term = (title, sub, lines, o = {}) => ({
   build(vis) {
     vis.style.display = 'flex'; vis.style.alignItems = 'center'; vis.style.justifyContent = 'center'
     const box = $('div', 'term card'); vis.appendChild(box)
-    const pane = o.pane ? shot(IMG + 'pane-v2.png', 1271, 1640, 1680, 540, [], true) : null
+    const pane = o.pane ? shot(IMG + 'pane-v6.png', 1271, 1794, 1680, 540, [], true) : null
     if (pane) { pane.el.style.position = 'absolute'; pane.el.style.left = '0'; pane.el.style.top = '0'; vis.appendChild(pane.el) }
     return (t, s) => {
       rise(box, prog(t, 0.1, 0.9)); box.style.opacity = Math.min(+box.style.opacity, visOut(t, s)) * (pane ? 1 - prog(t, o.pane, o.pane + 0.6) : 1)
@@ -744,7 +744,7 @@ S.end = (o = {}) => {
     cap: 'See where your week went.\n' + (cmd ? '/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme\n' : '') + 'github.com/vradulthub-cloud/tobebestme\nFree and open source. Not affiliated with Anthropic.',
     build(vis, sc) {
       vis.remove()
-      const bgp = shot(IMG + 'pane-v2.png', 1271, 1640, 1680, 1000, [], true); bgp.el.style.cssText += ';position:absolute;left:120px;top:40px;z-index:0;filter:blur(2px)'
+      const bgp = shot(IMG + 'pane-v6.png', 1271, 1794, 1680, 1000, [], true); bgp.el.style.cssText += ';position:absolute;left:120px;top:40px;z-index:0;filter:blur(2px)'
       sc.insertBefore(bgp.el, sc.firstChild)
       const ic = iconBlock(sc, 160, 70)
       const full = '/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme'
@@ -777,8 +777,8 @@ S.lockup = () => ({
   },
 })
 
-const LR = [['#64D2FF', 'Your sessions’ records', 'in ~/.claude/projects, for usage, costs and waiting chats.'], ['#0A84FF', 'Session lists', 'from Claude Code and the Claude app, for what’s working or waiting.'], ['#00C7BE', 'git status', 'in recent sessions’ folders, for work left uncommitted.'], ['#5E5CE6', 'Your skill files', 'and two skill settings, for the skills check-up.']]
-const LS = [['#30D158', 'Prompts you ask for', 'when you press a button that says so, like Fix description…, which sends that skill’s text.'], ['#30D158', 'A handoff note', 'before a compaction, written by Claude from the conversation.'], ['#30D158', 'A short line on your limits', 'once they run tight, so Claude keeps its steps small.'], ['#FF9F0A', 'Phone notifications', 'to the address you set, only if you set one.']]
+const LR = [['#64D2FF', 'Your chats’ records', 'in ~/.claude/projects, for usage, costs and waiting chats.'], ['#0A84FF', 'Chat lists', 'from Claude Code and the Claude app, for what’s working or waiting.'], ['#00C7BE', 'git status', 'in recent chats’ folders, for work left uncommitted.'], ['#5E5CE6', 'Your skill files', 'and two skill settings, for the skills check-up.']]
+const LS = [['#30D158', 'Prompts you ask for', 'when you press Suggest more, Improve it or Fix description…, which send text to a model.'], ['#30D158', 'A handoff note', 'before a compaction, written by Claude from the conversation.'], ['#30D158', 'A short line on your limits', 'once they run tight, so Claude keeps its steps small.'], ['#FF9F0A', 'Phone notifications', 'to the address you set, only if you set one.']]
 const V = {
   overview: { label: 'ToBeBestMe in {n} seconds', scenes: () => [
     S.cold(),
@@ -786,7 +786,7 @@ const V = {
     S.flow('Every day, stacked by the *project* that used it.', 'Read from Claude Code’s own records on your computer.', 'Every day, stacked by the project that used it. 82% of the weekly limit so far, across 6 projects.'),
     S.focus('*storefront* did more than half of it.', 'Press a project, and the rest of the week steps back.', 'project', 'storefront did more than half of it. It used 49% of this week’s limit.'),
     S.forecast({ cap: undefined }),
-    S.needs('The chat that needs you *most, first.*', 'A Now card for the most urgent, then the rest of the waiting chats from every session.', 'sweep', { dur: 9, cap: 'The chat that needs you most comes first, as a Now card. The rest of the waiting chats follow, from every session. The pane counts 4 more waiting.' }),
+    S.needs('The chat that needs you *most, first.*', 'A lead card for the most urgent, then the rest of the waiting chats from every project.', 'sweep', { dur: 9, cap: 'The chat that needs you most comes first, as the lead card. The rest of the waiting chats follow, from every project. The pane counts 4 more waiting.' }),
     S.band('One line, always *in view.*', 'Context and limits above where you type. Amber when one runs low, red when it’s nearly gone.', 'gauges'),
     S.savings('See what a change would *buy back.*', 'Half the Opus work on Sonnet moves the run-out from 5:21 AM to 1:15 PM.', 'See what a change would buy back. Half the Opus work on Sonnet moves the run-out from 5:21 AM to 1:15 PM: 7 h 54 min more.'),
     S.fix('Fix it in the pane, *not in the chat.*', 'The pane works out the change itself and shows what’s there now, and what it becomes after.', 'Nothing is written until you press Save change. Nothing goes through the conversation.'),
@@ -795,32 +795,32 @@ const V = {
   ] },
   week: { n: 1, label: 'Your week, by project', scenes: () => [
     S.intro('Your week, *by project.*', 'How the top of Home shows where your weekly limit went.', 'projects', ['#BF5AF2', '#00C7BE'], 'chart'),
-    S.flow('Each day is a bar, stacked by *project.*', 'ToBeBestMe reads Claude Code’s records for every session on this computer, helpers and workflow agents included.', 'Each day is a bar, stacked by project. It reads Claude Code’s records for every session on this computer, helpers and workflow agents included. 82% of the weekly limit so far.'),
+    S.flow('Each day is a bar, stacked by *project.*', 'ToBeBestMe reads Claude Code’s records for every chat on this computer, helpers and workflow agents included.', 'Each day is a bar, stacked by project. It reads Claude Code’s records for every chat on this computer, helpers and workflow agents included. 82% of the weekly limit so far.'),
     S.focus('Press a *day.*', 'See what that day used, project by project.', 'day', 'Press a day. Wednesday used 21% of the weekly limit: storefront 12%, ledger-api 5.6%, docs-site 3.3%.'),
     S.focus('Pick a *project.*', 'Follow storefront through the week while the others step back.', 'project', 'Pick a project. storefront used 49% of this week’s limit, most of it on Wednesday.'),
-    S.frame('The same, in the *real pane.*', 'Each project keeps its colour everywhere, so you can follow it down the page.', 2),
+    S.frame('The same, in the *real pane.*', 'Each project keeps its color everywhere, so you can follow it down the page.', 2),
     S.lockup(),
   ] },
   runway: { n: 2, label: 'Know before you run out', scenes: () => [
     S.intro('Know before you *run out.*', 'How to read the forecast on every limit.', 'amber', ['#FF9F0A', '#FF375F'], 'calendar'),
     S.window({ dur: 5, title: 'Your weekly limit, on a *calendar.*', sub: 'It opened Sunday at 2:00 PM, and it resets a week later.', at: { days: [0.7, 1.7], reset: [1.4, 2.2] } }),
     S.window({ dur: 9.5, title: 'The line is the week *so far.*', sub: 'You’re at 82%. Each bar is a day’s work, and the orange line is your use climbing to Now.', sub2: 'The dashed line is where your pace leads: it runs out Saturday at 5:21 AM.', sub2At: 4.6, done: ['days', 'reset'], at: { fig: [0.8, 2.4], fill: [0.7, 2.8], ghost: [5.0, 6.4], run: [6.2, 7.0] } }),
-    S.window({ dur: 7, title: 'Then you *wait.*', sub: '32 h 38 min with nothing left, the hatched stretch, until it resets Sunday at 2:00 PM.', done: ['days', 'reset', 'fig', 'fill', 'ghost', 'run'], at: { dry: [0.7, 1.8], brk: [1.8, 2.9] } }),
+    S.window({ dur: 7, title: 'Then you *wait.*', sub: 'about 33 hours with nothing left, the hatched stretch, until it resets Sunday at 2:00 PM.', done: ['days', 'reset', 'fig', 'fill', 'ghost', 'run'], at: { dry: [0.7, 1.8], brk: [1.8, 2.9] } }),
     S.forecast({ fast: true, dur: 8.5, title: 'Change the pace, and the forecast *follows.*', sub: 'At today’s pace it runs out Saturday at 5:21 AM.', sub2: 'At a quarter of today’s pace it lasts the week, ending near 98%.', sub2At: 3.2, pace: [3.4, 5.6] }),
-    S.colours('Colour tells you when to *act.*', 'Amber past your alert, red when it’s nearly gone, on every tab and the line above the prompt.'),
+    S.colours('Color tells you when to *act.*', 'Amber past your alert, red when it’s nearly gone, on every tab and the line above the prompt.'),
     S.lockup(),
   ] },
   waiting: { n: 3, label: 'Every waiting chat', scenes: () => [
-    S.intro('Answer every *waiting* chat.', 'From one place, whichever session it’s in.', 'blue', undefined, 'needs'),
-    S.sessions('Five sessions. Three are *waiting on you.*', 'ToBeBestMe gathers every chat that stopped for you in the last week.', 'Five sessions. Three are waiting on you: one needs permission, two asked a question. The other two are ready to carry on.'),
-    S.needs('*Red* needs your permission.', 'It leads as the Now card: a session running right now, stopped on a prompt. Switch to it to allow or deny.', 'red', { dur: 7 }),
+    S.intro('Answer every *waiting* chat.', 'From one place, whichever project it’s in.', 'blue', undefined, 'needs'),
+    S.sessions('Five chats. Three are *waiting on you.*', 'ToBeBestMe gathers every chat that stopped for you in the last week.', 'Five chats. Three are waiting on you: one needs permission, two asked a question. The other two are ready to carry on.'),
+    S.needs('*Red* needs your permission.', 'It leads as the top card: a chat running right now, stopped on a prompt. Switch to it to allow or deny.', 'red', { dur: 7 }),
     S.needs('*Amber* is waiting for your answer.', 'A question, a plan to approve or a choice, with the buttons the chat offered, like Ship it and Hold off.', 'amber', { dur: 6.5 }),
-    S.needs('*Grey* can carry on when you’re ready.', 'Its limit has reset since, or its pull request is waiting for review.', 'grey', { dur: 6.5 }),
+    S.needs('*Gray* can carry on when you’re ready.', 'Its limit has reset since, or its pull request is waiting for review.', 'grey', { dur: 6.5 }),
     S.lockup(),
   ] },
   band: { n: 4, label: 'The line above the prompt', scenes: () => [
     S.intro('One line, always *in view.*', 'What the line above the prompt tells you.', 'cyan', ['#64D2FF', '#0A84FF'], 'band'),
-    S.band('It sits right above where you *type.*', 'In every session, in the terminal and the Claude desktop app.', 'dock'),
+    S.band('It sits right above where you *type.*', 'In every chat, in the terminal and the Claude desktop app.', 'dock'),
     S.band('Context and your limits, at a *glance.*', 'Here context is red at 85%, the weekly limit amber at 82% and the weekly Opus limit at 38%.', 'gauges'),
     S.band('And what *needs you.*', 'Waiting chats and the forecast, with a button that opens them.', 'top'),
     S.lockup(),
@@ -844,7 +844,7 @@ const V = {
     S.intro('Running in a *minute.*', 'Three steps, and it works in every project.', 'blue', undefined, 'pane'),
     S.term('Check your *version.*', 'You need Claude Code 2.1.308 or later.', [['in', 'claude --version', 16], ['out', '2.1.310 (Claude Code)']], { dur: 6.5 }),
     S.term('Install the *mod.*', 'At a Claude Code prompt.', [['in', '/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme', 40], ['out', 'Installed tobebestme.']], { dur: 7.5 }),
-    S.term('Open *it.*', 'Reopen the app or start a new session, then type /tobebestme.', [['in', '/tobebestme', 10]], { dur: 8.5, pane: 3.2, cap: 'Open it. Reopen the app or start a new session, then type /tobebestme. The pane opens beside your chat.' }),
+    S.term('Open *it.*', 'Reopen the app or start a new chat, then type /tobebestme.', [['in', '/tobebestme', 10]], { dur: 8.5, pane: 3.2, cap: 'Open it. Reopen the app or start a new chat, then type /tobebestme. The pane opens beside your chat.' }),
     S.end({ cmd: false }),
   ] },
 }

@@ -1,6 +1,7 @@
 # Renders the press kit from copy.md and the built assets: python3 kit-page.py <out.html>
 # A full HTML document. Images and video are referenced as out/... and published beside the page.
-# Sizes (dimensions and MB) are read from the files themselves; the icon and trademark note come from ../assets and ../TRADEMARKS.md.
+# Sizes (dimensions and MB) are read from the files themselves; the icon comes from ../site/img/icon.svg and the trademark note from TRADEMARKS.md on main
+# (set TBBM_MAIN to the main checkout; the note is left out when it can't be found).
 import sys, re, html, os, struct, subprocess, shutil
 src = open('copy.md').read()
 secs = re.split(r'\n## ', src)
@@ -12,7 +13,7 @@ def plain(t):  # paste-ready text: no markdown markers or image notes
     return re.sub(r'\n{3,}', '\n\n', t).strip()
 
 REPO = 'https://github.com/vradulthub-cloud/tobebestme'
-SITE = 'https://vradulthub-cloud.github.io/tobebestme/'
+SITE = 'https://tobebestme.vercel.app/'
 INSTALL = '/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme'
 
 # ---- file facts ----
@@ -72,14 +73,8 @@ def length(k):  # its length in seconds
         try: return round(float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', p], capture_output=True, text=True).stdout.strip()))
         except Exception: pass
     return None
-VIDS = [('overview', f'ToBeBestMe in {length("overview") or 90} seconds', 'The launch video: the week as one drawing, the forecast and the stretch without Claude, the chat that needs you, the line above the prompt, savings, fixes made in the pane, and install.'),
-  ('week', '1 · Your week, by project', 'Tokens flow from each project into the day that used them, the line of use and the pace follow; press a day, pick a project, then the real pane.'),
-  ('runway', '2 · Know before you run out', 'How to read the forecast: the window, the line of use, the dashed pace to the run-out, the stretch without Claude, and changing the pace.'),
-  ('waiting', '3 · Every waiting chat', 'Sessions gather into one list; the Now card and the red, amber and grey rows explained on the real list.'),
-  ('band', '4 · The line above the prompt', 'Where it sits, what its runways say, and what needs you.'),
-  ('savings', '5 · What a change would save', 'Which models did the work, as run against with the idea applied, and how a fix is made in the pane: now, after, Save change.'),
-  ('privacy', '6 · What it reads and sends', 'Every source it reads, everything it sends, and what it never opens.'),
-  ('install', '7 · Install in a minute', 'Check the version, install, open it.')]
+VIDS = [('overview', f'ToBeBestMe in {length("overview") or 90} seconds', 'The launch video: the week as one drawing, the forecast and the stretch without Claude, the chat that needs you, the line above the prompt, savings, fixes made in the pane, and install.')]
+# the one-clip-per-idea explainers (week, runway, waiting, band, savings, privacy, install) are held back until they are re-rendered for the current pane
 vids = ''.join(
   f'<figure class="asset"><video src="out/video/{k}-web.mp4" poster="out/video/{k}-poster.png" controls muted playsinline preload="none" aria-label="{html.escape(t)}"></video>'
   f'<figcaption><b>{html.escape(t)}</b><span>{facts(f"out/video/{k}.mp4")} full · {facts(f"out/video/{k}-web.mp4")} web</span>'
@@ -88,11 +83,12 @@ vids = ''.join(
   for k, t, d in VIDS if os.path.exists(f'out/video/{k}-web.mp4'))
 
 # ---- brand ----
-try: icon = re.sub(r'<title>.*?</title>', '', open('../assets/icon.svg').read(), flags=re.S).replace('width="1024" height="1024"', '')
+try: icon = re.sub(r'<title>.*?</title>', '', open('../site/img/icon.svg').read(), flags=re.S).replace('width="1024" height="1024"', '')
 except OSError: icon = ''
 tm = ''
-if os.path.exists('../TRADEMARKS.md'):
-    body = open('../TRADEMARKS.md').read().split('\n', 1)[1].strip().split('\n\n')
+TM_FILE = os.path.join(os.environ.get('TBBM_MAIN', '..'), 'TRADEMARKS.md')
+if os.path.exists(TM_FILE):
+    body = open(TM_FILE).read().split('\n', 1)[1].strip().split('\n\n')
     out = []
     for blk in body:
         if blk.lstrip().startswith('- '): out.append('<ul>' + ''.join(f'<li>{esc(l.lstrip()[2:])}</li>' for l in blk.split('\n') if l.strip().startswith('- ')) + '</ul>')
@@ -177,8 +173,8 @@ footer p { font-size: 13px; color: var(--fg-2); }
 <header class="kit-hero">
   <div class="wrap">
     <p class="eyebrow">ToBeBestMe · press kit</p>
-    <h1>See where your week went.</h1>
-    <p class="one">A free, open-source mod for Claude Code: your week by project, whether you&rsquo;ll make it to the reset, and every chat waiting on you, beside the chat.</p>
+    <h1>A mod inside Claude Code. Know where things stand.</h1>
+    <p class="one">A mod that runs inside Claude Code itself, not a separate app or account: your limits, every chat waiting on you, what your workflows cost and your skills, in one pane beside the chat. Free and open source, with no server, sign-up or API key.</p>
     <div class="install" data-card><code id="install">@@INSTALL@@</code><button type="button" class="big" data-copy="install" aria-label="Copy the install command">Copy install command</button><span class="st" role="status" aria-live="polite"></span></div>
     <p class="links"><a href="@@REPO@@">Source on GitHub</a><a href="@@SITE@@">Landing page</a><span class="muted">Everything below is built from the mod&rsquo;s real output on the test suite&rsquo;s sample data.</span></p>
   </div>

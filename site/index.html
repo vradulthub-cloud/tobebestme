@@ -3,29 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ToBeBestMe: the complete dashboard for Claude Code</title>
-<meta name="description" content="One complete dashboard beside the chat, so you never leave Claude to know where things stand: when your usage limits run out, every chat waiting on you, what workflows cost, and fixes for your skills. A free mod for Claude Code. All local.">
+<title>ToBeBestMe: a mod inside Claude Code</title>
+<meta name="description" content="A mod that runs inside Claude Code itself, not a separate app: limits, waiting chats, workflow costs and skill fixes beside the chat. No server, no sign-up.">
 <link rel="canonical" href="https://tobebestme.vercel.app/">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="theme-color" content="#07080B">
 <meta name="color-scheme" content="dark">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="ToBeBestMe">
-<meta property="og:title" content="ToBeBestMe: never leave Claude to know where things stand">
-<meta property="og:description" content="The complete dashboard for Claude Code: when your limits run out, every chat waiting on you, what workflows cost, and fixes for your skills. Free, and it all stays on your computer.">
+<meta property="og:title" content="ToBeBestMe: a mod inside Claude Code, so you always know where things stand">
+<meta property="og:description" content="A mod that runs inside Claude Code itself, not a separate app: when your limits run out, every chat waiting on you, what workflows cost, and fixes for your skills. No server, no sign-up, no API key.">
 <meta property="og:url" content="https://tobebestme.vercel.app/">
-<meta property="og:image" content="https://tobebestme.vercel.app/img/social-card.png">
+<meta property="og:image" content="https://tobebestme.vercel.app/img/social-card-v6.png">
 <meta property="og:image:width" content="2560">
 <meta property="og:image:height" content="1280">
-<meta property="og:image:alt" content="ToBeBestMe: the week's Claude Code use drawn by project, with the line running out on Saturday at 5:21 AM. Sample data.">
+<meta property="og:image:alt" content="ToBeBestMe: a mod inside Claude Code. Know where things stand. Not a separate app: no server, no sign-up, no API key. Beside the headline, the week of Claude Code use drawn by project, with the line running out on Saturday at 5:21 AM. Sample data.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="ToBeBestMe: never leave Claude to know where things stand">
-<meta name="twitter:description" content="The complete dashboard for Claude Code. Limits, waiting chats, workflow costs and skill fixes, beside the chat. Free and local.">
-<meta name="twitter:image" content="https://tobebestme.vercel.app/img/social-card.png">
-<meta name="twitter:image:alt" content="ToBeBestMe: the week's Claude Code use drawn by project, with the line running out on Saturday at 5:21 AM. Sample data.">
+<meta name="twitter:title" content="ToBeBestMe: a mod inside Claude Code, so you always know where things stand">
+<meta name="twitter:description" content="A mod that runs inside Claude Code itself, not a separate app. Limits, waiting chats, workflow costs and skill fixes, beside the chat. No server, no sign-up.">
+<meta name="twitter:image" content="https://tobebestme.vercel.app/img/social-card-v6.png">
+<meta name="twitter:image:alt" content="ToBeBestMe: a mod inside Claude Code. Know where things stand. Not a separate app: no server, no sign-up, no API key. Beside the headline, the week of Claude Code use drawn by project, with the line running out on Saturday at 5:21 AM. Sample data.">
 <link rel="icon" href="img/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="img/icon.svg">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"ToBeBestMe","alternateName":"ToBeBestMe for Claude Code","applicationCategory":"DeveloperApplication","applicationSubCategory":"Claude Code mod","operatingSystem":"Any","softwareRequirements":"Claude Code 2.1.308 or later","description":"A free mod for Claude Code: one dashboard beside the chat that shows when your usage limits will run out, every chat waiting on you across projects, what workflows cost and how to spend less, and fixes for your skills. It runs on your computer and reads Claude Code's own records.","url":"https://tobebestme.vercel.app/","image":"https://tobebestme.vercel.app/img/social-card.png","license":"https://opensource.org/licenses/MIT","isAccessibleForFree":true,"featureList":["Usage limit forecasts with the time each limit runs out","Every chat waiting on you across projects","Workflow cost estimates and ways to spend less","Skills check-up with fixes saved only when you press Save change","A line above the prompt in every session"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+<link rel="icon" href="img/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"ToBeBestMe","alternateName":"ToBeBestMe for Claude Code","applicationCategory":"DeveloperApplication","applicationSubCategory":"Claude Code mod","operatingSystem":"Any","softwareRequirements":"Claude Code 2.1.308 or later","description":"A free mod that runs inside Claude Code itself, not a separate app, service or account. It adds a pane beside the chat, a line above the prompt and a tool Claude answers from, and shows when your usage limits will run out, every chat waiting on you across projects, what workflows cost and how to spend less, and fixes for your skills. It runs on your computer and reads Claude Code’s own records.","url":"https://tobebestme.vercel.app/","image":"https://tobebestme.vercel.app/img/social-card-v6.png","license":"https://opensource.org/licenses/MIT","isAccessibleForFree":true,"featureList":["Usage limit forecasts with the time each limit runs out","Every chat waiting on you across projects","Workflow cost estimates and ways to spend less","Skills check-up with fixes saved only when you press Save change","A line above the prompt in every chat"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
 <style>
 :root {
   color-scheme: dark;
@@ -34,7 +36,7 @@
   --fg: #F4F5F7; --fg-2: #A9AEBA; --fg-3: #8E93A0;
   --amber: #FFB020; --amber-text: #FFB340; --amber-dim: rgba(255,159,10,.30); --on-amber: #1A1100;
   --link: #7DB8FF; --ok: #3DDC84; --bad: #FF5A4F; --idle: #9A9AA3;
-  --p1: #BF5AF2; --p2: #64D2FF; --p3: #00C7BE; --p4: #6E6CF0; --p5: #C4A272; --p6: #FF4F73;
+  --p1: #BF5AF2; --p2: #64D2FF; --p3: #00C7BE; --p4: #6E6CF0; --p5: #C4A272; --p6: #7C8DB5;
   --track: rgba(255,255,255,.10); --past: rgba(255,255,255,.62);
   --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -79,11 +81,20 @@ h3 { font-size: 1.25rem; line-height: 1.25; letter-spacing: -.01em; font-weight:
 .brand { display: flex; align-items: center; gap: 10px; color: var(--fg); font-weight: 700; font-size: 1.0625rem; letter-spacing: -.01em; }
 .brand:hover { text-decoration: none; }
 .brand img { width: 30px; height: 30px; border-radius: 8px; }
-.nav nav { margin-left: auto; }
-.nav nav ul { display: flex; gap: 6px; font-size: .9375rem; }
-.nav nav a { color: var(--fg-2); padding: 8px 12px; border-radius: 980px; display: block; transition: color .2s, background .2s; }
-.nav nav a:hover { color: var(--fg); text-decoration: none; }
-.nav nav a[aria-current="true"] { color: var(--fg); background: rgba(255,255,255,.08); }
+.nav .dnav { margin-left: auto; }
+.nav .dnav ul { display: flex; gap: 6px; font-size: .9375rem; }
+.nav .dnav a { color: var(--fg-2); padding: 8px 12px; border-radius: 980px; display: block; transition: color .2s, background .2s; }
+.nav .dnav a:hover { color: var(--fg); text-decoration: none; }
+.nav .dnav a[aria-current="true"] { color: var(--fg); background: rgba(255,255,255,.08); }
+.nav-r { display: flex; align-items: center; gap: 8px; }
+.nav .menu-btn { display: none; }
+.menu-btn .mx, .menu-btn[aria-expanded="true"] .mb { display: none; }
+.menu-btn[aria-expanded="true"] .mx { display: inline; }
+.mnav { position: absolute; left: 0; right: 0; top: 100%; max-height: calc(100svh - var(--nav-h)); overflow-y: auto; background: var(--bg); border-bottom: 1px solid var(--line-2); box-shadow: 0 30px 60px -20px rgba(0,0,0,.8); }
+.mnav ul { width: var(--wide); margin-inline: auto; padding-block: 6px 12px; display: grid; }
+.mnav a { display: flex; align-items: center; min-height: 48px; margin-inline: -12px; padding: 0 12px; border-radius: 12px; color: var(--fg-2); font-size: 1.0625rem; }
+.mnav a:hover { color: var(--fg); background: rgba(255,255,255,.05); text-decoration: none; }
+.mnav a[aria-current="true"] { color: var(--fg); background: rgba(255,255,255,.08); }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 0 22px; border-radius: 980px; font-weight: 600; font-size: 1rem; border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: transform .2s var(--ease), background .2s, border-color .2s; }
 .btn:hover { text-decoration: none; }
 .btn:active { transform: scale(.97); }
@@ -94,7 +105,8 @@ h3 { font-size: 1.25rem; line-height: 1.25; letter-spacing: -.01em; font-weight:
 .btn svg { width: 18px; height: 18px; flex: none; }
 .nav .btn { min-height: 40px; padding: 0 18px; }
 @media (max-width: 600px) { .kicker::after { display: none; } }
-@media (max-width: 980px) { .nav nav { display: none; } .nav .btn { margin-left: auto; } }
+@media (max-width: 980px) { .nav .dnav { display: none; } .nav-r { margin-left: auto; } .nav .menu-btn:not([hidden]) { display: inline-flex; } }
+@media (min-width: 981px) { .mnav { display: none !important; } }
 
 .hero { position: relative; padding-block: clamp(32px, 4.5vw, 72px) clamp(48px, 7vw, 96px); overflow: hidden; isolation: isolate; }
 .aurora { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
@@ -116,6 +128,7 @@ h3 { font-size: 1.25rem; line-height: 1.25; letter-spacing: -.01em; font-weight:
 .cmd:hover { border-color: rgba(255,176,32,.6); }
 .cmd:active { transform: scale(.985); }
 .cmd code { font-size: .9375rem; line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
+.nb { white-space: nowrap; }
 .cmd .pr { color: var(--amber-text); user-select: none; }
 .cmd .act { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 20px; border-radius: 12px; background: var(--amber); color: var(--on-amber); font-weight: 650; font-size: 1rem; transition: background .25s; }
 .cmd .act svg { width: 18px; height: 18px; }
@@ -149,7 +162,7 @@ h3 { font-size: 1.25rem; line-height: 1.25; letter-spacing: -.01em; font-weight:
 .chip .num { color: var(--fg-2); }
 .chip[aria-pressed="true"] .num { color: #3a3d45; }
 .wk { position: relative; }
-.wk-top { position: relative; height: 26px; font-size: .9375rem; font-weight: 650; }
+.wk-top { position: relative; height: 34px; font-size: .9375rem; font-weight: 650; }
 .wk-top span { position: absolute; top: 0; white-space: nowrap; }
 .wk-top .now { transform: translateX(-50%); }
 .wk-top .runs { color: var(--amber-text); }
@@ -179,8 +192,9 @@ h3 { font-size: 1.25rem; line-height: 1.25; letter-spacing: -.01em; font-weight:
 .day[aria-pressed="true"] .lbl { color: var(--fg); font-weight: 700; background: var(--inset); border-radius: 8px; }
 .dim { opacity: .2; }
 .lbl .short { display: none; }
-@media (max-width: 640px) { .lbl .long { display: none; } .lbl .short { display: inline; } .wk-top .runs, .wk-pill { display: none; } .wk-note { display: block; } .day .pct { font-size: .6875rem; } }
 .wk-note { display: none; font-size: .875rem; font-weight: 600; color: var(--amber-text); margin-top: 8px; }
+@media (max-width: 900px) { .wk-top .runs, .wk-pill { display: none; } .wk-note { display: block; } }
+@media (max-width: 640px) { .lbl .long { display: none; } .lbl .short { display: inline; } .day .pct { font-size: .6875rem; } }
 .scrub { position: absolute; top: -4px; bottom: 26px; width: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity .15s; }
 .scrub.on { opacity: 1; }
 .scrub::before { content: ""; position: absolute; top: 0; bottom: 0; left: -.5px; width: 1px; background: rgba(255,255,255,.55); }
@@ -192,6 +206,8 @@ h3 { font-size: 1.25rem; line-height: 1.25; letter-spacing: -.01em; font-weight:
 .readout { font-size: clamp(1.0625rem, 1vw + .8rem, 1.375rem); line-height: 1.4; min-height: 2.8em; max-width: 38em; }
 .readout b { font-weight: 650; }
 .hint { font-size: .875rem; color: var(--fg-2); }
+.hint .tch { display: none; }
+@media (pointer: coarse) { .hint .hov { display: none; } .hint .tch { display: inline; } }
 .flow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; border-radius: 28px; }
 .foot-note { font-size: .875rem; color: var(--fg-3); }
 
@@ -211,7 +227,12 @@ section.ch { position: relative; padding-block: clamp(80px, 11vw, 168px); }
 .ch-head.center h2 { max-width: 18ch; }
 .glowline { position: absolute; left: 50%; top: -1px; width: min(720px, 80%); height: 1px; transform: translateX(-50%); background: linear-gradient(90deg, transparent, rgba(255,176,32,.7), transparent); }
 .shot { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--line-2); background: #1E1E1E; box-shadow: 0 40px 100px -40px rgba(0,0,0,.9), 0 0 0 1px rgba(0,0,0,.4); }
-.shot img { width: 100%; }
+.shot img { width: 100%; cursor: zoom-in; }
+.zf { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-items: start; }
+.zf > .shot { grid-column: 1 / -1; }
+.zoom-b { grid-column: 2; grid-row: 2; margin-top: 10px; display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 980px; border: 1px solid var(--line-2); background: rgba(255,255,255,.05); color: var(--fg); font-size: .875rem; font-weight: 600; cursor: pointer; transition: background .2s; }
+.zoom-b:hover { background: rgba(255,255,255,.1); }
+.zoom-b svg { width: 16px; height: 16px; flex: none; }
 .win { border-radius: 14px; }
 .win .tb { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; background: #2A2A2C; border-bottom: 1px solid rgba(255,255,255,.08); }
 .win .tb i { width: 12px; height: 12px; border-radius: 50%; background: #5A5A5E; }
@@ -290,7 +311,7 @@ input[type=range] { width: 100%; min-height: 44px; accent-color: var(--amber); b
 .kinds span.d { color: var(--fg-2); display: block; }
 
 .explorer { border-radius: 24px; padding: clamp(18px, 2.6vw, 36px); display: grid; gap: 22px; background: linear-gradient(180deg, rgba(24,27,33,.92), rgba(14,16,20,.92)); border: 1px solid var(--line-2); }
-.seg { display: inline-flex; padding: 4px; border-radius: 980px; background: rgba(255,255,255,.06); border: 1px solid var(--line); gap: 2px; flex-wrap: wrap; justify-self: start; }
+.seg { display: inline-flex; padding: 4px; border-radius: 24px; background: rgba(255,255,255,.06); border: 1px solid var(--line); gap: 2px; flex-wrap: wrap; justify-self: start; }
 .seg button { min-height: 40px; padding: 0 18px; border: 0; border-radius: 980px; background: transparent; color: var(--fg-2); cursor: pointer; font-size: .9375rem; font-weight: 550; transition: background .2s, color .2s; }
 .seg button[aria-pressed="true"] { background: var(--fg); color: #0A0B0D; }
 .seg button:not([aria-pressed="true"]):hover { color: var(--fg); }
@@ -344,13 +365,19 @@ input[type=range] { width: 100%; min-height: 44px; accent-color: var(--amber); b
 .film .play svg { width: 20px; height: 20px; }
 dialog.vid { width: min(1200px, 94vw); max-height: 92vh; padding: 0; border: 1px solid var(--line-2); border-radius: 20px; background: #000; color: var(--fg); overflow: hidden; }
 dialog.vid::backdrop { background: rgba(0,0,0,.82); backdrop-filter: blur(8px); }
-dialog.vid video { width: 100%; max-height: calc(92vh - 60px); background: #000; }
+dialog.vid video { width: 100%; height: auto; aspect-ratio: 16 / 9; max-height: calc(92vh - 60px); background: #000; }
+dialog.zoom { width: min(1600px, 96vw); max-width: 96vw; max-height: 94vh; padding: 0; border: 1px solid var(--line-2); border-radius: 20px; background: #0E1014; color: var(--fg); overflow: hidden; }
+dialog.zoom[open] { display: flex; flex-direction: column; }
+dialog.zoom::backdrop { background: rgba(0,0,0,.82); backdrop-filter: blur(8px); }
+.zoom-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 20px; font-size: .9375rem; color: var(--fg-2); background: #0B0C0F; flex: none; }
+.zoom-body { overflow: auto; overscroll-behavior: contain; max-height: calc(94vh - 60px); touch-action: pan-x pan-y pinch-zoom; }
+.zoom-body img { width: max(100%, 900px); max-width: none; height: auto; }
 .vid-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 20px; font-size: .9375rem; color: var(--fg-2); background: #0B0C0F; }
 
 .req { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 36px; }
 .req li { padding: 8px 16px; border-radius: 980px; border: 1px solid var(--line-2); color: var(--fg-2); font-size: .9375rem; background: rgba(255,255,255,.03); }
 .req li b { color: var(--fg); font-weight: 600; }
-.steps { counter-reset: s; display: grid; gap: 0; max-width: 820px; }
+.steps { counter-reset: s; display: grid; gap: 0; max-width: 960px; }
 .steps > li { counter-increment: s; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 0 20px; padding-bottom: 36px; position: relative; }
 .steps > li::before { content: counter(s); width: 44px; height: 44px; border-radius: 50%; background: var(--inset); border: 1px solid var(--line-2); display: grid; place-items: center; font-weight: 700; z-index: 1; }
 .steps > li::after { content: ""; position: absolute; left: 22px; top: 48px; bottom: 4px; width: 1px; background: var(--line-2); }
@@ -378,6 +405,8 @@ dialog.vid video { width: 100%; max-height: calc(92vh - 60px); background: #000;
 footer { border-top: 1px solid var(--line); padding-block: 40px 64px; font-size: .875rem; color: var(--fg-3); }
 footer .wide { display: grid; gap: 10px; }
 footer a { color: var(--fg-2); }
+.flinks { display: flex; flex-wrap: wrap; gap: 4px 22px; }
+.tap { display: inline-block; }
 
 html.m .rv { opacity: 0; transform: translateY(32px); transition: opacity .9s var(--ease) var(--d, 0s), transform .9s var(--ease) var(--d, 0s); }
 html.m .rv.in { opacity: 1; transform: none; }
@@ -390,12 +419,38 @@ html.m .grow .wk-svg { animation: wipe 1.8s cubic-bezier(.3,.7,.3,1) .3s both; }
 html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: fade .7s ease 1.8s both; }
 @keyframes wipe { from { clip-path: inset(-12px 100% -12px 0); } to { clip-path: inset(-12px -12px -12px 0); } }
 @keyframes fade { from { opacity: 0; } }
+@media (pointer: coarse), (max-width: 600px) {
+  .nav .btn, .chip, .steps-p button, .seg button, .zoom-b, .brand { min-height: 44px; }
+  .tap, .flinks a { display: inline-flex; align-items: center; min-height: 44px; }
+  /* the partial first and last days are narrower than a finger: widen their hit area outward without changing the drawing */
+  .bars .day:first-child::before, .bars .day:last-child::before { content: ''; position: absolute; top: 0; bottom: 0; width: 44px; }
+  .bars .day:first-child::before { right: 0; }
+  .bars .day:last-child::before { left: 0; }
+  /* inline links in running text: a taller hit area that does not change the line */
+  li a[href$="SECURITY.md"] { display: inline-block; padding: 12px 0; margin: -12px 0; }
+  }
+@media (max-width: 600px) {
+  .zf { grid-template-columns: minmax(0, 1fr); }
+  .zoom-b { grid-column: 1; grid-row: auto; justify-self: start; }
+  .nav .wide { gap: 12px; }
+  .nav .menu-btn { padding: 0 14px; }
+  .inst { padding: 16px 14px; border-radius: 22px; }
+  .wk { margin-inline: -6px; }
+  .wk-area .cap { left: 6px; }
+  .wk-note { padding-inline: 6px; }
+}
+@media (pointer: coarse) { dialog .esc { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .progress { display: none; }
 }
 </style>
+<noscript><style>
+#hero-inst .wk, #hero-inst .chips, #hero-inst .readout-row, .runway, .pace, .steps-p, .moment, .cue, .explorer .seg, .explorer .bar, .explorer .bar-l, .explorer .back, .explorer .apply, #ex-note, .film, [data-film], .seg[aria-label="Where to run it"], .cmd .act { display: none !important; }
+.cmd { cursor: text; user-select: text; }
+@media (max-width: 980px) { .nav .dnav { display: block !important; margin-left: 0; } .nav .wide { flex-wrap: wrap; height: auto; padding-block: 8px; gap: 8px 16px; } .nav .dnav ul { flex-wrap: wrap; } }
+</style></noscript>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -403,7 +458,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
 <header class="nav">
   <div class="wide">
     <a class="brand" href="#top"><img src="img/icon.svg" alt="" width="30" height="30">ToBeBestMe</a>
-    <nav aria-label="Sections"><ul>
+    <nav class="dnav" aria-label="Sections"><ul>
       <li><a href="#limits">Limits</a></li>
       <li><a href="#waiting">Waiting chats</a></li>
       <li><a href="#workflows">Workflows</a></li>
@@ -411,8 +466,19 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
       <li><a href="#privacy">Privacy</a></li>
       <li><a href="#faq">FAQ</a></li>
     </ul></nav>
-    <a class="btn btn-amber" href="#install">Install</a>
+    <div class="nav-r">
+      <button class="btn btn-ghost menu-btn" type="button" aria-expanded="false" aria-controls="mnav" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path class="mb" d="M3 6h14M3 10h14M3 14h14"/><path class="mx" d="M5 5l10 10M15 5L5 15"/></svg><span class="lab">Menu</span></button>
+      <a class="btn btn-amber" href="#install">Install</a>
+    </div>
   </div>
+  <nav class="mnav" id="mnav" aria-label="Sections" hidden><ul>
+    <li><a href="#limits">Limits</a></li>
+    <li><a href="#waiting">Waiting chats</a></li>
+    <li><a href="#workflows">Workflows</a></li>
+    <li><a href="#skills">Skills</a></li>
+    <li><a href="#privacy">Privacy</a></li>
+    <li><a href="#faq">FAQ</a></li>
+  </ul></nav>
 </header>
 
 <main id="main">
@@ -420,9 +486,9 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
   <div class="aurora" aria-hidden="true"><i></i></div>
   <div class="wide">
     <div class="hero-copy">
-      <p class="kicker">ToBeBestMe &middot; a free mod for Claude Code</p>
-      <h1 id="hero-title">The complete dashboard. <span class="grad">Never leave Claude.</span></h1>
-      <p class="lede">When your limits run out, every chat waiting on you across projects, what your workflows cost, your skills fixed. <strong>All in one place beside the chat</strong>, so you never leave Claude to know where things stand.</p>
+      <p class="kicker">ToBeBestMe &middot; a mod that runs inside Claude Code</p>
+      <h1 id="hero-title">It lives inside Claude Code. <span class="grad">Know where things stand.</span></h1>
+      <p class="lede"><strong>Not a separate app, service, website or account.</strong> ToBeBestMe changes Claude Code’s own interface: a pane beside the chat, a line above the prompt, a tool Claude answers from, alerts through Claude Code’s own channel. No server, no sign-up, no API key. It shows when your limits run out, every chat waiting on you across projects, what your workflows cost and your skills fixed, so you always know where things stand without leaving the chat.</p>
       <ul class="pain" aria-label="What it catches">
         <li><b>Limits</b> run out on Saturday</li>
         <li><b>Chats</b> wait unseen</li>
@@ -430,21 +496,22 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
       </ul>
       <div class="cta">
         <button class="cmd" type="button" data-copy="/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme" aria-label="Copy the install line: /plugin install tobebestme --marketplace vradulthub-cloud/tobebestme">
-          <code><span class="pr" aria-hidden="true">&gt; </span>/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme</code>
+          <code><span class="pr" aria-hidden="true">&gt; </span>/plugin install tobebestme <span class="nb">--marketplace</span> <span class="nb">vradulthub-cloud/tobebestme</span></code>
           <span class="act"><svg class="cp-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg><svg class="ok-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg><span class="lab">Copy</span></span>
           <span class="burst" aria-hidden="true"></span>
         </button>
         <button class="btn btn-ghost" type="button" data-film><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6 3.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4L7.2 3.1A.8.8 0 0 0 6 3.8z"/></svg>See it in 88 seconds</button>
       </div>
-      <p class="cta-note">Paste it at a Claude Code prompt. Needs Claude Code 2.1.308 or later. Free, and it stays on your computer.</p>
+      <p class="cta-note">Paste it at a Claude Code prompt. Needs Claude Code 2.1.308 or later. Free, and it runs on your computer.</p>
       <p class="sr" id="copy-live" role="status" aria-live="polite"></p>
+      <p class="sr" id="pace-live" role="status" aria-live="polite"></p>
     </div>
 
     <div class="stage">
       <div class="inst grow" id="hero-inst">
         <div class="inst-top">
           <span class="inst-pct num">82%<small>of your weekly limit</small></span>
-          <span class="inst-run"><b class="num">Runs out Sat 5:21 AM</b><span class="num">32 h 38 min before it resets, Sun 2:00 PM</span></span>
+          <span class="inst-run"><b class="num">Runs out Sat 5:21 AM</b><span class="num">about 33 hours before it resets, Sun 2:00 PM</span></span>
           <span class="tag">Sample data</span>
         </div>
         <div class="chips" id="chips" role="group" aria-label="Projects: press one to pick it out"></div>
@@ -454,20 +521,20 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
             <div class="wk-area" aria-hidden="true">
               <span class="cap">100% of the limit</span>
               <div id="wk-vls"></div>
-              <div class="wk-dry" id="wk-dry"><div class="wk-pill num">32 h 38 min without Claude<small>Resets Sun 2:00 PM</small></div></div>
+              <div class="wk-dry" id="wk-dry"><div class="wk-pill num">about 33 hours without Claude<small>Resets Sun 2:00 PM</small></div></div>
               <svg class="wk-svg" viewBox="0 0 1000 100" preserveAspectRatio="none"><defs><linearGradient id="wkg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF9F0A" stop-opacity=".35"/><stop offset="1" stop-color="#FF9F0A" stop-opacity="0"/></linearGradient></defs><path class="wk-fill" id="wk-fill" fill="url(#wkg)"/><path class="wk-line" id="wk-line" pathLength="1"/><path class="wk-proj" id="wk-proj"/></svg>
               <i class="wk-now" id="wk-now"></i><i class="wk-dot" id="wk-dot"></i>
             </div>
             <div class="bars" id="bars" role="group" aria-label="Days of the week"></div>
             <div class="scrub" id="scrub" aria-hidden="true"><i class="sd" id="scrub-d"></i><div class="tip" id="scrub-t"></div></div>
           </div>
-          <p class="wk-note num">32 h 38 min without Claude before it resets, Sun 2:00 PM.</p>
+          <p class="wk-note num">about 33 hours without Claude before it resets, Sun 2:00 PM.</p>
         </div>
         <div class="readout-row">
           <p class="readout" id="readout" aria-live="polite"></p>
-          <p class="hint">Hover the drawing, or press a day or a project.</p>
+          <p class="hint"><span class="hov">Hover the drawing, or press</span><span class="tch">Press</span> a day or a project.</p>
         </div>
-        <p class="foot-note">Sample data, the same week the mod's tests use. Shares of the weekly limit are estimates at list prices, worked out from Claude Code's own records on your computer.</p>
+        <p class="foot-note">Sample data, the same week the mod’s tests use. Shares of the weekly limit are estimates at list prices, worked out from Claude Code’s own records on your computer.</p>
       </div>
     </div>
   </div>
@@ -476,9 +543,9 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
 <div class="strip">
   <ul>
     <li><b class="num">6</b><span>tabs in one pane: Home, Workflows, This session, Usage, Skills, Settings</span></li>
-    <li><b class="num" data-count="103">103</b><span>behaviour tests in Claude Code's own mod test kit</span></li>
-    <li><b class="num" data-count="155">155</b><span>end-to-end checks of every view, at four widths</span></li>
-    <li><b>1 table</b><span>lists everything it reads, writes and sends</span></li>
+    <li><b>Every tab</b><span>has each button pressed by Claude Code’s own mod test kit</span></li>
+    <li><b>Every view</b><span>checked in a browser at four widths, light and dark</span></li>
+    <li><b>4 tables</b><span>list everything it reads, runs, writes and sends</span></li>
   </ul>
 </div>
 
@@ -500,9 +567,9 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
           <p class="cue" aria-hidden="true">Keep scrolling</p>
         </div>
         <figure class="runway-card" aria-labelledby="fc-text">
-          <div class="rc-head"><span class="dot" style="background: var(--amber)"></span><span>Weekly limit</span><span class="tag" id="dry-tag">32 h 38 min without Claude</span></div>
+          <div class="rc-head"><span class="dot" style="background: var(--amber)"></span><span>Weekly limit</span><span class="tag" id="dry-tag">about 33 hours without Claude</span></div>
           <div class="rc-fig"><b class="num">82%</b><span>of your weekly limit, with two days to go</span></div>
-          <p class="forecast" id="fc-text" aria-live="polite">At this pace it runs out <b class="w num">Sat 5:21 AM</b>, 32 h 38 min before it resets.</p>
+          <p class="forecast" id="fc-text">At this pace it runs out <b class="w num">Sat 5:21 AM</b>, about 33 hours before it resets.</p>
           <div class="runway" aria-hidden="true">
             <span class="mlabel top now" id="lab-now">Now</span>
             <span class="mlabel top reset">Resets Sun 2:00 PM</span>
@@ -520,15 +587,16 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
             <input id="pace" type="range" min="10" max="140" step="5" value="100" aria-describedby="pace-out">
             <output id="pace-out" for="pace" class="num">Your pace</output>
           </div>
-          <figcaption style="margin:0" class="small">Sample data. The mod draws this for every limit you have: the weekly limit and any model's own.</figcaption>
+          <figcaption style="margin:0" class="small">Sample data. The mod draws this for every limit you have: the weekly limit and any model’s own.</figcaption>
         </figure>
       </div>
     </div>
   </div>
   <div class="wide" style="margin-top: clamp(48px, 7vw, 112px)">
-    <figure class="scene rv">
-      <div class="shot"><img src="img/week-v2.webp" width="2400" height="853" loading="lazy" alt="Home's week drawing in the real pane. 82% of your weekly limit, past your alert; at this pace it runs out Saturday at 5:21 AM, 32 hours 38 minutes before it resets. Each day from Sunday to today is a bar stacked by project, a solid orange line climbs to Now, a dashed line continues to a pulsing run-out point, and a hatched stretch to the reset reads 32 h 38 min without Claude. The weekly Opus limit sits below at 38%."></div>
+    <figure class="scene rv zf">
+      <div class="shot"><img src="img/week-v6.webp" srcset="img/week-v6-800.webp 800w, img/week-v6-1600.webp 1600w, img/week-v6.webp 3765w" sizes="(min-width: 1900px) 1680px, (max-width: 600px) calc(100vw - 32px), (max-width: 1408px) calc(100vw - 48px), 1360px" data-full="img/week-v6.webp" width="2400" height="893" loading="lazy" alt="Home’s week drawing in the real pane. 82% of your weekly limit, past your alert; at this pace it runs out Saturday at 5:21 AM, about 33 hours before it resets. Each day from Sunday to today is a bar stacked by project, a solid orange line climbs to Now, a dashed line continues to a pulsing run-out point, and a hatched stretch to the reset reads about 33 hours without Claude. The weekly Opus limit sits below at 38%."></div>
       <figcaption>The real pane, drawn from sample data. One drawing carries the weekly figure, the forecast and the stretch you would spend without Claude.</figcaption>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the week drawing"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
     </figure>
   </div>
 </section>
@@ -540,23 +608,25 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
       <div class="stackc">
         <p class="kicker rv"><i>02</i>Chats waiting on you</p>
         <h2 id="wait-title" class="rv" style="--d:.05s">Every chat that needs you. One list.</h2>
-        <p class="lede rv" style="--d:.1s">Run five sessions and one is always stuck on you. ToBeBestMe reads every project on this computer, <strong>including sessions that never ran the mod</strong>, and puts the most urgent first as a card of its own.</p>
+        <p class="lede rv" style="--d:.1s">Run five chats and one is always stuck on you. ToBeBestMe reads every project on this computer, <strong>including chats that never ran the mod</strong>, and puts the most urgent first as a card of its own.</p>
       </div>
       <ul class="kinds rv" style="--d:.15s">
-        <li><span class="dot" style="background: var(--bad)"></span><span><b>Needs your permission.</b><span class="d">A running session stopped on a prompt. It leads as the Now card and says which session to switch to.</span></span></li>
+        <li><span class="dot" style="background: var(--bad)"></span><span><b>Needs your permission.</b><span class="d">A running chat stopped on a prompt. It leads the list as the top card and says which chat to switch to.</span></span></li>
         <li><span class="dot" style="background: var(--amber)"></span><span><b>Waiting for your answer.</b><span class="d">A question or a choice of options, with the reply buttons the chat offered. In the desktop app, answer without switching to it.</span></span></li>
-        <li><span class="dot" style="background: var(--idle)"></span><span><b>Ready to carry on.</b><span class="d">A limit that has since reset, or a pull request waiting for review. In a terminal, copy the resume command.</span></span></li>
+        <li><span class="dot" style="background: var(--idle)"></span><span><b>Ready to carry on.</b><span class="d">A chat that stopped at a limit that has since reset. In a terminal, copy the resume command. Pull requests have their own labels, such as Review requested and Checks failing.</span></span></li>
       </ul>
     </div>
     <div class="split flip top">
-      <figure class="scene rv">
-        <div class="shot"><img src="img/needs.webp" width="1800" height="1496" loading="lazy" alt="The Needs you section. The Now card for Release is on top. Four more are waiting: Notes sync asked which database to use; Checkout redesign waits for an answer to 'Ship the new checkout to staging?' with Ship it, Hold off and Reply buttons; Ledger import is ready to carry on; Docs search has a pull request open."></div>
+      <figure class="scene rv zf">
+        <div class="shot"><img src="img/needs-v6.webp" srcset="img/needs-v6-800.webp 800w, img/needs-v6-1600.webp 1600w, img/needs-v6.webp 2145w" sizes="(max-width: 600px) calc(100vw - 32px), (max-width: 900px) calc(100vw - 48px), 56vw" data-full="img/needs-v6.webp" width="1800" height="1589" loading="lazy" alt="The Needs you section. The lead card, for Release, is on top. Four more are shown, with 4 more behind Show 4 more: Notes sync asked which database to use; Checkout redesign waits for an answer to ‘Ship the new checkout to staging?’ with Ship it, Hold off and Reply buttons; Ledger import is ready to carry on; Add coupon codes has a check failing."></div>
         <figcaption>Four more waiting. Ship it and Hold off answer Checkout redesign without switching to it. Sample data.</figcaption>
-      </figure>
-      <figure class="rv" style="--d:.1s">
-        <div class="shot"><img src="img/now.webp" width="1700" height="501" loading="lazy" alt="The Now card: Needs your permission. Release, in api, just now, wants to run npm publish. Switch to that session to allow or deny it."></div>
-        <figcaption>The Now card. A permission prompt can't be answered from here, so it says where to go.</figcaption>
-      </figure>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the Needs you list"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
+    </figure>
+      <figure class="rv zf" style="--d:.1s">
+        <div class="shot"><img src="img/now-v6.webp" srcset="img/now-v6-800.webp 800w, img/now-v6-1600.webp 1600w, img/now-v6.webp 2067w" sizes="(max-width: 600px) calc(100vw - 32px), (max-width: 900px) calc(100vw - 48px), 38vw" data-full="img/now-v6.webp" width="1700" height="501" loading="lazy" alt="The lead card: Needs your permission. Release, in api, just now, wants to run npm publish. Switch to that chat to allow or deny it."></div>
+        <figcaption>The lead card. A permission prompt can’t be answered from here, so it says where to go.</figcaption>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the lead card"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
+    </figure>
     </div>
   </div>
 </section>
@@ -567,11 +637,12 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <div class="ch-head">
       <p class="kicker rv"><i>03</i>Above the prompt</p>
       <h2 id="band-title" class="rv" style="--d:.05s">One line, always in view.</h2>
-      <p class="lede rv" style="--d:.1s">You do not have to open anything. The headline and its cost sit on one line in every session, then context, the weekly limit, a model’s own weekly limit and what is running, each as a small runway whose ghost shows where your pace lands. A limit turns amber when it runs low and red when it is nearly gone.</p>
+      <p class="lede rv" style="--d:.1s">You do not have to open anything. The headline and its cost sit on one line in every chat, then context, the weekly limit, a model’s own weekly limit and what is running, each as a small runway whose ghost shows where your pace lands. A limit turns amber when it runs low and red when it is nearly gone.</p>
     </div>
-    <figure class="scene rv">
-      <div class="shot"><img src="img/band-v2.webp" width="2300" height="249" loading="lazy" alt="The line above the prompt. The headline reads: Weekly limit runs out 32 h 38 min early, 4 chats are waiting for you, this session 15% of the weekly limit. Below it, runways for context at 85%, the weekly limit at 82% and the weekly Opus limit at 38%, then a running workflow, review-changes, at 0 of 2."></div>
+    <figure class="scene rv zf">
+      <div class="shot"><img src="img/band-v6.webp" srcset="img/band-v6-800.webp 800w, img/band-v6-1600.webp 1600w, img/band-v6.webp 2301w" sizes="(min-width: 1900px) 1680px, (max-width: 600px) calc(100vw - 32px), (max-width: 1408px) calc(100vw - 48px), 1360px" data-full="img/band-v6.webp" width="2300" height="210" loading="lazy" alt="The line above the prompt. The headline reads: Weekly limit on pace to run out about 33 hours early, 9 things are waiting for you, with a See what’s waiting button. Below it, context at 85%, the weekly limit at 82% and the weekly Opus limit at 38%, then a running workflow, review-changes, at 0 of 2."></div>
       <figcaption>The line above the prompt, from sample data.</figcaption>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the line above the prompt"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
     </figure>
   </div>
 </section>
@@ -587,7 +658,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <div class="explorer rv" id="explorer">
       <div class="seg" role="group" aria-label="Choose an example">
         <button type="button" data-ex="0" aria-pressed="true">Workflows</button>
-        <button type="button" data-ex="1" aria-pressed="false">This week's models</button>
+        <button type="button" data-ex="1" aria-pressed="false">This week’s models</button>
       </div>
       <div>
         <p class="bar-l" id="ex-l1"></p>
@@ -596,23 +667,27 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
         <div class="bar" aria-hidden="true"><i id="ex-b2" style="width:100%"></i><i class="gain" id="ex-g" style="left:100%;width:0;opacity:0"></i></div>
         <p class="back off num" id="ex-back" aria-live="polite"></p>
       </div>
-      <button class="btn btn-amber apply" type="button" id="ex-apply" aria-pressed="false">Apply the ideas</button>
+      <button class="btn btn-amber apply" type="button" id="ex-apply">Apply the ideas</button>
       <p class="ex-note" id="ex-note"></p>
+      <noscript><p class="ex-note">In this sample, workflows took 2.9 weeks’ worth. With the ideas applied it would have been about 1.8 weeks’ worth, about 1.1 weeks’ worth back. Turn on JavaScript to try the other example.</p></noscript>
       <p class="foot-note">Sample data. Savings are estimates, scaled from your last 30 days of runs. Two ideas for one stage overlap, so they do not add up.</p>
     </div>
     <div class="proofs">
-      <figure class="scene rv wfull">
-        <div class="shot"><img src="img/workflows.webp" width="2200" height="911" loading="lazy" alt="The Workflows tab. One workflow is running: review-changes, 0 of 2 agents done, with its stages Review and Verify, a note that Verify fans out with no cheaper model named, each agent with its model, and controls for agents at once, model for new agents, and a spending limit. Beside it, the costliest runs and how workflows work."></div>
+      <figure class="scene rv wfull zf">
+        <div class="shot"><img src="img/workflows-v6.webp" srcset="img/workflows-v6-800.webp 800w, img/workflows-v6-1600.webp 1600w, img/workflows-v6.webp 2542w" sizes="(min-width: 1900px) 1680px, (max-width: 600px) calc(100vw - 32px), (max-width: 1408px) calc(100vw - 48px), 1360px" data-full="img/workflows-v6.webp" width="2200" height="962" loading="lazy" alt="The Workflows tab. One workflow is running: review-changes, 0 of 2 agents done, with its stages Review and Verify, a note that Verify fans out with no cheaper model named, each agent with its model, and controls for agents at once, model for new agents, and a run budget. Beside it, the costliest runs and how workflows work."></div>
         <figcaption>The Workflows tab, mid-run: each agent, its model, and the controls beside it. Pause new agents, cap agents at once, change the model for new agents, or stop. Finished work is kept.</figcaption>
-      </figure>
-      <figure class="scene rv">
-        <div class="shot"><img src="img/workflows-savings.webp" width="1420" height="685" loading="lazy" alt="Ways to spend less. As run: 2.8 weeks' worth of your weekly limit. With the ideas applied: about 1.8 weeks' worth, drawn as a shorter bar with a dashed green block. A green label reads about 1.1 weeks' worth back. One idea: run checking stages on Sonnet."></div>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the Workflows tab"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
+    </figure>
+      <figure class="scene rv zf">
+        <div class="shot"><img src="img/workflows-savings-v6.webp" srcset="img/workflows-savings-v6-800.webp 800w, img/workflows-savings-v6.webp 1430w" sizes="(max-width: 600px) calc(100vw - 32px), (max-width: 900px) calc(100vw - 48px), 46vw" data-full="img/workflows-savings-v6.webp" width="1420" height="648" loading="lazy" alt="Ways to spend less. As run: 2.9 weeks’ worth. With the ideas applied: about 1.8 weeks’ worth, drawn as a shorter bar with a dashed green block. A green label reads about 1.1 weeks’ worth back. One idea: run checking stages on Sonnet."></div>
         <figcaption>Each idea says what it would have saved on your last 30 days of runs. Make it a rule… shows the line it would add, and writes it only when you press Save change.</figcaption>
-      </figure>
-      <figure class="scene rv" style="--d:.1s">
-        <div class="shot"><img src="img/standout.webp" width="1800" height="841" loading="lazy" alt="What stands out. Opus 5.5 did 98% of this week's work. At this pace the week ends at about 124%; if half of that ran on Sonnet, about 114%, about 10 points back. storefront did 60% of this week's work."></div>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the ways to spend less"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
+    </figure>
+      <figure class="scene rv zf" style="--d:.1s">
+        <div class="shot"><img src="img/standout-v6.webp" srcset="img/standout-v6-800.webp 800w, img/standout-v6-1600.webp 1600w, img/standout-v6.webp 2145w" sizes="(max-width: 600px) calc(100vw - 32px), (max-width: 900px) calc(100vw - 48px), 46vw" data-full="img/standout-v6.webp" width="1800" height="856" loading="lazy" alt="What stands out. Opus 5.5 did 98% of this week’s work. At this pace the week ends at about 124%; if half of that ran on Sonnet, about 114%, about 10 points back. storefront did 60% of this week’s work."></div>
         <figcaption>On Home, What stands out draws the week as run against the week with the idea applied, before you change anything.</figcaption>
-      </figure>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge What stands out"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
+    </figure>
     </div>
   </div>
 </section>
@@ -623,22 +698,24 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <div class="split" style="margin-bottom: clamp(36px, 5vw, 72px)">
       <div class="stackc">
         <p class="kicker rv"><i>05</i>Skills</p>
-        <h2 id="skills-title" class="rv" style="--d:.05s">Claude can't use a skill it can't see.</h2>
-        <p class="lede rv" style="--d:.1s">Claude picks a skill from a listing of names and descriptions sent with every request. That listing has room for about 1% of the context window. Past it, skills go to Claude as a bare name it cannot match to what you ask, and <strong>nothing says so</strong>. Until now.</p>
+        <h2 id="skills-title" class="rv" style="--d:.05s">Claude can’t use a skill it can’t see.</h2>
+        <p class="lede rv" style="--d:.1s">Claude picks a skill from a listing of names and descriptions sent with every request. That listing has room for about 1% of the context window. Past it, skills go to Claude as a bare name it cannot match to what you ask. Claude Code reports this in <code>/doctor</code> and its debug log, not in the conversation. ToBeBestMe shows it <strong>beside the chat</strong> and fixes it in one place.</p>
         <ul class="ticks rv" style="--d:.15s">
           <li><span class="dot" style="background: var(--amber)"></span><span><b>Whether Claude can see your skills</b>, and what ran in the last 14 days.</span></li>
           <li><span class="dot" style="background: var(--p2)"></span><span><b>A check-up</b> of your own skills, with ways to make room.</span></li>
           <li><span class="dot" style="background: var(--ok)"></span><span><b>Fixes made in the pane, never in the chat.</b> The setting as it is, as it will be, then Save change. A file you edited meanwhile is never written over.</span></li>
         </ul>
       </div>
-      <figure class="scene rv">
-        <div class="shot"><img src="img/skills.webp" width="2200" height="825" loading="lazy" alt="The Skills tab. Claude sees only the name of one skill. The listing takes 1.9k of its 2k-token room on every request, 95% of the listing's room. Three ways to make room: make 3 skills you never run manual-only, turn off plugins you don't use, and give the listing more room."></div>
+      <figure class="scene rv zf">
+        <div class="shot"><img src="img/skills-v6.webp" srcset="img/skills-v6-800.webp 800w, img/skills-v6-1600.webp 1600w, img/skills-v6.webp 2542w" sizes="(max-width: 600px) calc(100vw - 32px), (max-width: 900px) calc(100vw - 48px), 56vw" data-full="img/skills-v6.webp" width="2200" height="927" loading="lazy" alt="The Skills tab. Claude sees only the name of one skill. The listing takes 1.9k of its 2k-token room on every request, 95% of the listing’s room. Three ways to make room: make 3 skills you never run manual-only, turn off plugins you don’t use, and give the listing more room."></div>
         <figcaption>The listing at 95% of its room, with three ways to make room. Sample data.</figcaption>
-      </figure>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the Skills tab"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
+    </figure>
     </div>
-    <figure class="scene rv">
-      <div class="shot"><img src="img/fix.webp" width="2400" height="417" loading="lazy" alt="A new description for /notes, in ~/.claude/skills/notes/SKILL.md. Now: no description. After: Keep running notes for a project: decisions, todos and links. Use when the user says note this, add a note or what did we decide. Its instructions stay as they are. Buttons: Save change and Cancel."></div>
-      <figcaption>Fix description… has the helper model write a new description, shows it beside the old one, and saves it to the skill's front matter when you press Save change. Cancel leaves the file alone.</figcaption>
+    <figure class="scene rv zf">
+      <div class="shot"><img src="img/fix-v6.webp" srcset="img/fix-v6-800.webp 800w, img/fix-v6-1600.webp 1600w, img/fix-v6.webp 3765w" sizes="(min-width: 1900px) 1680px, (max-width: 600px) calc(100vw - 32px), (max-width: 1408px) calc(100vw - 48px), 1360px" data-full="img/fix-v6.webp" width="2400" height="417" loading="lazy" alt="A new description for /notes, in ~/.claude/skills/notes/SKILL.md. Now: no description. After: Keep running notes for a project: decisions, todos and links. Use when the user says note this, add a note or what did we decide. Its instructions stay as they are. Buttons: Save change and Cancel."></div>
+      <figcaption>Fix description… has the helper model write a new description, shows it beside the old one, and saves it to the skill’s front matter when you press Save change. Cancel leaves the file alone.</figcaption>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the skill fix"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
     </figure>
   </div>
 </section>
@@ -649,20 +726,21 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <div class="stackc sticky" style="position: sticky; top: 100px">
       <p class="kicker rv"><i>06</i>All of it, together</p>
       <h2 id="pane-title" class="rv" style="--d:.05s">One pane beside the chat.</h2>
-      <p class="lede rv" style="--d:.1s">Type <code>/tobebestme</code>. Home leads with the week and the chat that needs you most, then what is running, what stands out, projects and open sessions. Six tabs, keys 1 to 6 in the terminal. The same pane and line in the terminal and in the Claude desktop app.</p>
+      <p class="lede rv" style="--d:.1s">Type <code>/tobebestme</code>. Home leads with the week and the chat that needs you most, then what is running, what stands out, projects and open chats. Six tabs, keys 1 to 6 in the terminal. The same pane and line in the terminal and in the Claude desktop app.</p>
       <ul class="ticks rv" style="--d:.15s">
         <li><span class="dot" style="background: var(--amber)"></span><span><b>It reads every project</b> on this computer, so nothing waits unseen.</span></li>
         <li><span class="dot" style="background: var(--p2)"></span><span><b>It uses a cheaper model when things get tight</b>, and a model you choose yourself always wins.</span></li>
-        <li><span class="dot" style="background: var(--ok)"></span><span><b>It writes a handoff note</b> before every compaction, so the next prompt picks up where you were.</span></li>
+        <li><span class="dot" style="background: var(--ok)"></span><span><b>It writes a handoff note</b> before most compactions, so the next prompt picks up where you were. Settings can turn it off.</span></li>
         <li><span class="dot" style="background: var(--p1)"></span><span><b>Every control works from the keyboard</b>, with visible focus and labels for screen readers.</span></li>
       </ul>
     </div>
-    <figure class="scene rv" style="--d:.1s">
+    <figure class="scene rv zf" style="--d:.1s">
       <div class="shot win">
         <div class="tb" aria-hidden="true"><i></i><i></i><i></i><span>ToBeBestMe</span></div>
-        <img src="img/pane-v2.webp" width="1700" height="2193" loading="lazy" alt="The ToBeBestMe Home pane. At the top, 4 chats are waiting and the weekly limit is at 82%, drawn as one week with each day stacked by project and a dashed line to the run-out on Saturday at 5:21 AM. Below are the Now card for the chat that needs permission, the other waiting chats, a running workflow, savings drawn as bars, projects by share of the limit, and open sessions.">
+        <img src="img/pane-v6.webp" srcset="img/pane-v6-800.webp 800w, img/pane-v6-1600.webp 1600w, img/pane-v6.webp 2542w" sizes="(max-width: 600px) calc(100vw - 32px), (max-width: 900px) calc(100vw - 48px), 56vw" data-full="img/pane-v6.webp" width="1700" height="2400" loading="lazy" alt="The ToBeBestMe Home pane. At the top, 4 chats are waiting and the weekly limit is at 82%, drawn as one week with each day stacked by project and a dashed line to the run-out on Saturday at 5:21 AM. Below are the lead card for the chat that needs permission, the other waiting chats, a running workflow, savings drawn as bars, projects by share of the limit, and open chats.">
       </div>
       <figcaption>The real Home pane. Sample data.</figcaption>
+      <button class="zoom-b" type="button" data-zoom aria-label="Enlarge the Home pane"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-5.5 5.5M3 17l5.5-5.5"/></svg><span>Enlarge</span></button>
     </figure>
   </div>
 </section>
@@ -673,35 +751,36 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <div class="ch-head">
       <p class="kicker rv"><i>07</i>Privacy</p>
       <h2 id="priv-title" class="rv" style="--d:.05s">It stays on your computer.</h2>
-      <p class="priv-claim rv" style="--d:.1s">Apart from the prompts you trigger, which go to Claude <em>through your own account</em>, nothing from your transcripts leaves your computer.</p>
+      <p class="priv-claim rv" style="--d:.1s">Apart from what goes to Claude <em>through your own account</em>, and a notification address if you set one, nothing from your transcripts leaves your computer.</p>
     </div>
     <div class="diagram rv">
       <div class="box">
         <span class="bt">On your computer</span>
         <div class="flowrow">
-          <div class="node"><b>Claude Code's records</b><span>~/.claude/projects, git status, your skill files</span></div>
+          <div class="node"><b>Claude Code’s records</b><span>~/.claude/projects, git status, your skill files</span></div>
           <span class="arr" aria-hidden="true">&rarr;</span>
           <div class="node me"><b>ToBeBestMe</b><span>reads, adds up, draws</span></div>
         </div>
         <div class="flowrow">
           <div class="node me"><b>ToBeBestMe</b><span>works out each fix</span></div>
           <span class="arr" aria-hidden="true">&rarr;</span>
-          <div class="node"><b>You press Save change</b><span>the only time it edits a skill, setting or CLAUDE.md</span></div>
+          <div class="node"><b>You press Save change</b><span>the only time it edits a skill you have, a setting or CLAUDE.md</span></div>
         </div>
       </div>
       <div class="out">
-        <div class="outbox"><b>Prompts to Claude</b><span>Through your own Claude Code account, when you press a button that says so, for the handoff note before a compaction, and a five-token check when the cheaper model came back empty.</span></div>
-        <div class="outbox opt"><b>A notification's text</b><span>To an <code>https://</code> address you set. Notifications are off until you turn them on.</span></div>
+        <div class="outbox"><b>Prompts to Claude</b><span>Through your own Claude Code account: when you press Suggest more, Improve it or Fix description…, or draft a skill (each sends text to a model), for the handoff note before a compaction, and for a five-token check when the cheaper model came back empty. Claude can also ask the status tool: its overview gives your limits, your costs, the busiest project of the past seven days and only counts of what waits, and the titles and short excerpts of waiting chats come only when Claude Code asks you first, unless you have allowed the tool yourself.</span></div>
+        <div class="outbox opt"><b>A notification’s text</b><span>To an <code>https://</code> address you set. A waiting chat’s title and a short excerpt are in it, and a public topic can be read by anyone who guesses its name, so use a long, random one. Notifications are off until you turn them on, except the alert when a chat waits for you, which is on by default and can be turned off.</span></div>
       </div>
     </div>
     <div class="ledger">
       <div class="rv">
         <h3><span class="t">Reads</span></h3>
         <ul>
-          <li><b>Claude Code's records</b> in ~/.claude/projects: transcripts, workflow records, per-agent usage.</li>
-          <li><b>Session lists</b> from <code>claude agents --json</code> and the Claude app.</li>
-          <li><b>git status</b> in the folders of recent sessions.</li>
-          <li><b>Your skill and command files</b>, and from Claude Code's settings only <code>skillOverrides</code> and <code>skillListingBudgetFraction</code>.</li>
+          <li><b>Claude Code’s records</b> in ~/.claude/projects: transcripts, workflow records, per-agent usage.</li>
+          <li><b>Chat lists</b> from <code>claude agents --json</code> and the Claude app.</li>
+          <li><b>git status</b> in the folders of recent chats.</li>
+          <li><b>Your open pull requests</b> from <code>gh pr list</code>, only if the GitHub CLI is installed and signed in.</li>
+          <li><b>Your skill and command files</b>, and from Claude Code’s settings only <code>skillOverrides</code> and <code>skillListingBudgetFraction</code>.</li>
         </ul>
       </div>
       <div class="rv" style="--d:.08s">
@@ -709,22 +788,26 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
         <ul>
           <li><code>.claude/tobebestme/handoff.md</code> in the project, with a <code>.gitignore</code> of <code>*</code> beside it.</li>
           <li><code>~/.claude/tobebestme/reports/</code>, for reports you save.</li>
-          <li>Claude Code's store for mods, capped at 4 MiB.</li>
-          <li>A skill, setting or CLAUDE.md rule, <b>only when you press Save change</b>.</li>
+          <li>Claude Code’s store for mods, a JSON file of its own capped at 4 MiB, with short excerpts of prompts, recaps and questions so Home can show what waits. Turn off <b>Read every project</b> to forget them, or press <b>Forget stored data…</b> in Settings to clear it all.</li>
+          <li>A skill’s description, a skill setting or a CLAUDE.md rule, <b>only when you press Save change</b>.</li>
+          <li>A new skill, when you press <b>Save skill</b> or <b>Save /long-run</b>.</li>
+          <li>Its own options, in Claude Code’s settings, when you change one.</li>
+          <li><b>Only when you press a button and confirm:</b> a reply to another chat, archiving a chat, stopping a workflow. Its full list is in <a href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">SECURITY.md</a>.</li>
         </ul>
       </div>
       <div class="rv" style="--d:.16s">
         <h3><span class="t">Never</span></h3>
         <ul>
           <li><b>It never opens <code>.env</code> files or key files.</b></li>
-          <li>Settings files can hold keys: they are parsed for the two skill settings above, and nothing else is kept, shown or sent.</li>
-          <li>Text from transcripts is treated as data: cleaned before it is shown, never run.</li>
+          <li>Settings files can hold keys: they are parsed for the two skill settings above, and nothing else is shown or sent. A file is held in memory only while a setting fix waits for Save change or Cancel.</li>
+          <li>Text from transcripts is treated as data: cleaned of control and invisible characters before it is shown, never run.</li>
         </ul>
       </div>
     </div>
     <div class="verify rv">
       <h3>Check it yourself</h3>
-      <p>Every release comes with SHA-256 checksums (<code>shasum -a 256 -c SHA256SUMS</code>) and, once the repository is public, build provenance signed by GitHub. ToBeBestMe also checks its own files against the release once a day and says the result in Settings. Like any shipped code, it can be read and changed: these checks make tampering visible, they do not hide the code. The full list is in <a href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+      <p>Every release comes with the zip’s own SHA-256, <code>SHA256SUMS</code> for the files inside it (<code>shasum -a 256 -c SHA256SUMS</code>) and build provenance signed by GitHub, which you can check with <code>gh attestation verify</code>. The marketplace install copies the repository’s <code>main</code> branch as it is, so to run exactly one release, verify its download first; SECURITY.md has the commands. Version 1.5.0 has no provenance and is superseded. ToBeBestMe also checks its own files against its manifest once a day and says the result in Settings. Like any shipped code, it can be read and changed: these checks make tampering visible, they do not hide the code.</p>
+      <p><a class="tap" href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">Read the full list in SECURITY.md</a></p>
     </div>
   </div>
 </section>
@@ -738,9 +821,10 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
       <p class="lede rv" style="--d:.1s">The week, the forecast, the chat that needs you, the line above the prompt, savings and fixes, and how to install. With captions.</p>
     </div>
     <button class="film rv" type="button" data-film aria-label="Play the 88-second tour, with captions">
-      <img src="img/overview-poster-v2.webp" width="1600" height="900" loading="lazy" alt="">
+      <img src="img/overview-poster-v7.webp" width="1600" height="900" loading="lazy" alt="">
       <span class="play"><span><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M6 3.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4L7.2 3.1A.8.8 0 0 0 6 3.8z"/></svg>Play, 1 min 28 s</span></span>
     </button>
+    <noscript><p class="lede" style="margin: 24px auto 0; text-align: center"><a class="tap" href="img/overview-v7.mp4">Watch the 88-second tour (video)</a></p></noscript>
   </div>
 </section>
 
@@ -750,20 +834,20 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     <div class="ch-head">
       <p class="kicker rv"><i>09</i>Install</p>
       <h2 id="inst-title" class="rv" style="--d:.05s">Running in a minute.</h2>
-      <p class="lede rv" style="--d:.1s">It installs for your user, so it runs in every project and every session, in the terminal and in the desktop app.</p>
+      <p class="lede rv" style="--d:.1s">It installs for your user, so it runs in every project and every chat, in the terminal and in the desktop app.</p>
     </div>
     <ul class="req rv" aria-label="Requirements">
       <li><b>Claude Code 2.1.308</b> or later</li>
-      <li>A Pro or Max plan, or an API key</li>
+      <li>Claude Code signed in with a Pro or Max plan or an API key (ToBeBestMe itself needs no key)</li>
       <li>Nothing else to set up</li>
     </ul>
     <ol class="steps">
       <li class="rv"><div class="body"><h3>Check your version</h3><p>Run <code>claude update</code> if you are behind.</p>
         <button class="cmd" type="button" data-copy="claude --version" aria-label="Copy: claude --version"><code><span class="pr" aria-hidden="true">$ </span>claude --version</code><span class="act"><svg class="cp-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg><svg class="ok-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg><span class="lab">Copy</span></span><span class="burst" aria-hidden="true"></span></button></div></li>
       <li class="rv"><div class="body"><h3>Install the mod</h3>
-        <div class="seg" role="group" aria-label="Where to run it"><button type="button" data-mode="p" aria-pressed="true">At a Claude Code prompt</button><button type="button" data-mode="t" aria-pressed="false">In a terminal</button></div>
-        <button class="cmd" type="button" id="inst-cmd" data-copy="/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme" aria-label="Copy the install line"><code><span class="pr" aria-hidden="true" id="inst-pr">&gt; </span><span id="inst-txt">/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme</span></code><span class="act"><svg class="cp-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg><svg class="ok-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg><span class="lab">Copy</span></span><span class="burst" aria-hidden="true"></span></button></div></li>
-      <li class="rv"><div class="body"><h3>Open it</h3><p>Quit and reopen the Claude app, or start a new terminal session. Then type <code>/tobebestme</code>. The first time, it reads the last 14 days of Claude Code's records, once. That takes under a minute.</p></div></li>
+        <div class="seg" role="group" aria-label="Where to run it"><button type="button" data-mode="p" aria-pressed="true">In Claude Code</button><button type="button" data-mode="t" aria-pressed="false">In a terminal</button></div>
+        <button class="cmd" type="button" id="inst-cmd" data-copy="/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme" aria-label="Copy the install line"><code><span class="pr" aria-hidden="true" id="inst-pr">&gt; </span><span id="inst-txt">/plugin install tobebestme <span class="nb">--marketplace</span> <span class="nb">vradulthub-cloud/tobebestme</span></span></code><span class="act"><svg class="cp-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg><svg class="ok-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg><span class="lab">Copy</span></span><span class="burst" aria-hidden="true"></span></button></div></li>
+      <li class="rv"><div class="body"><h3>Open it</h3><p>Quit and reopen the Claude app, or start a new terminal session. Then type <code>/tobebestme</code>. The first time, it reads the last 14 days of Claude Code’s records, once. That takes under a minute.</p></div></li>
     </ol>
   </div>
 </section>
@@ -773,13 +857,13 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
   <div class="wide">
     <div class="ch-head"><h2 id="faq-title" class="rv">Questions</h2></div>
     <div class="faq rv">
-      <details><summary>Is this made by Anthropic?</summary><p>No. ToBeBestMe is an independent project. It uses the mod interface Claude Code provides, and nothing else.</p></details>
+      <details><summary>Is this made by Anthropic?</summary><p>No. ToBeBestMe is an independent project. It is a Claude Code mod and runs inside Claude Code. It also reads Claude Code’s own records on your computer and runs a few commands, such as <code>git</code> and, if you use it, <code>gh</code>. SECURITY.md lists them all.</p></details>
       <details><summary>Which plans does it work with?</summary><p>On a Claude plan it shows the weekly limit, and a model’s own weekly limit where there is one. On an API key or team billing it shows what each request costs. Context size shows for everyone.</p></details>
-      <details><summary>Does it cost anything?</summary><p>No. It is free and MIT licensed. The few buttons that ask Claude something run through your own account and say so on the button.</p></details>
-      <details><summary>Does it send my transcripts anywhere?</summary><p>Apart from the prompts that go to Claude through your own account, nothing from your transcripts leaves your computer. The ways text from your chats can travel are a prompt you trigger, a handoff note Claude writes before a compaction, and, if you set an <code>https://</code> address, a notification's title and text. The full list is in <a href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">SECURITY.md</a>.</p></details>
-      <details><summary>Does it change my files or settings?</summary><p>Only when you press <b>Save change</b>, on a preview that shows what is there now and what it becomes: a skill's description, a skill setting, or a rule in your CLAUDE.md. Otherwise it writes only its own store, the reports you save, and a handoff note in the project.</p></details>
-      <details><summary>Where do the forecasts come from?</summary><p>From the limits Claude Code reports and how fast you have been using them. A limit's pace is its own average: use so far over the time the week has run. The mod labels an estimate wherever it shows one.</p></details>
-      <details><summary>Does it see sessions on other computers?</summary><p>No. Home covers this computer only. Sessions on other computers or in the cloud are not included.</p></details>
+      <details><summary>Does it cost anything?</summary><p>No. It is free and MIT licensed. The few buttons that send text to a model (Suggest more, Improve it, Fix description… and drafting a skill) run through your own Claude Code account.</p></details>
+      <details><summary>Does it send my transcripts anywhere?</summary><p>Apart from what goes to Claude through your own account, nothing from your transcripts leaves your computer. The ways text from your chats can travel are a prompt you trigger, a handoff note Claude writes before a compaction, what Claude asks the status tool for (its overview gives counts; the titles and short excerpts of the chats waiting on you come only after Claude Code asks you, unless you have allowed the tool yourself), and, if you set an <code>https://</code> address, a notification’s title and text.</p><p><a class="tap" href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">Read the full list in SECURITY.md</a></p></details>
+      <details><summary>Does it change my files or settings?</summary><p>It edits a skill’s description, a skill setting or a rule in your CLAUDE.md only when you press <b>Save change</b>, on a preview that shows what is there now and what it becomes. It also saves a skill when you press <b>Save skill</b> or <b>Save /long-run</b>, and writes its own options to Claude Code’s settings when you change one. Otherwise it writes only its own store, the reports you save, and a handoff note in the project.</p></details>
+      <details><summary>Where do the forecasts come from?</summary><p>From the limits Claude Code reports and how fast you have been using them. A limit’s pace is its own average: use so far over the time the week has run. The mod labels an estimate wherever it shows one.</p></details>
+      <details><summary>Does it see chats on other computers?</summary><p>No. Home covers this computer only. Chats on other computers or in the cloud are not included.</p></details>
     </div>
   </div>
 </section>
@@ -787,10 +871,10 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
 <section class="closing" aria-labelledby="close-title">
   <div class="aurora" aria-hidden="true"><i></i></div>
   <div class="wide">
-    <h2 id="close-title" class="rv">Never leave Claude to know where things stand.</h2>
-    <p class="lede rv" style="--d:.08s">Limits, waiting chats, workflow costs and skills, in one dashboard beside the chat. One line to install.</p>
+    <h2 id="close-title" class="rv">Know where things stand without leaving the chat.</h2>
+    <p class="lede rv" style="--d:.08s">A mod inside Claude Code: limits, waiting chats, workflow costs and skills, beside the chat. One line to install.</p>
     <div class="cta rv" style="--d:.16s">
-      <button class="cmd" type="button" data-copy="/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme" aria-label="Copy the install line: /plugin install tobebestme --marketplace vradulthub-cloud/tobebestme"><code><span class="pr" aria-hidden="true">&gt; </span>/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme</code><span class="act"><svg class="cp-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg><svg class="ok-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg><span class="lab">Copy</span></span><span class="burst" aria-hidden="true"></span></button>
+      <button class="cmd" type="button" data-copy="/plugin install tobebestme --marketplace vradulthub-cloud/tobebestme" aria-label="Copy the install line: /plugin install tobebestme --marketplace vradulthub-cloud/tobebestme"><code><span class="pr" aria-hidden="true">&gt; </span>/plugin install tobebestme <span class="nb">--marketplace</span> <span class="nb">vradulthub-cloud/tobebestme</span></code><span class="act"><svg class="cp-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg><svg class="ok-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg><span class="lab">Copy</span></span><span class="burst" aria-hidden="true"></span></button>
       <a class="btn btn-ghost" href="https://github.com/vradulthub-cloud/tobebestme">View the source on GitHub</a>
     </div>
   </div>
@@ -798,17 +882,22 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
 </main>
 
 <dialog class="vid" id="film" aria-label="ToBeBestMe in 88 seconds">
-  <video controls playsinline preload="metadata" poster="img/overview-poster-v2.webp" width="1920" height="1080" aria-label="ToBeBestMe in 88 seconds: an animated tour with captions.">
-    <source src="img/overview-v2.mp4" type="video/mp4">
-    <track kind="captions" srclang="en" label="English" src="img/overview-v2.vtt" default>
+  <video controls playsinline preload="metadata" poster="img/overview-poster-v7.webp" width="1920" height="1080" aria-label="ToBeBestMe in 88 seconds: an animated tour with captions.">
+    <source src="img/overview-v7.mp4" type="video/mp4">
+    <track kind="captions" srclang="en" label="English" src="img/overview-v7.vtt" default>
   </video>
-  <div class="vid-bar"><span>ToBeBestMe in 88 seconds. Captions on. Esc closes.</span><button class="btn btn-ghost" type="button" id="film-close">Close</button></div>
+  <div class="vid-bar"><span>ToBeBestMe in 88 seconds. Captions on.<span class="esc"> Esc closes.</span></span><button class="btn btn-ghost" type="button" id="film-close">Close</button></div>
+</dialog>
+
+<dialog class="zoom" id="zoom" aria-label="Full-size picture">
+  <div class="zoom-bar"><span>Scroll or pinch to look around.<span class="esc"> Esc closes.</span></span><button class="btn btn-ghost" type="button" id="zoom-close">Close</button></div>
+  <div class="zoom-body" tabindex="0" role="region" aria-label="Full-size picture, scrollable"><img id="zoom-img" alt=""></div>
 </dialog>
 
 <footer>
   <div class="wide">
     <p>ToBeBestMe is an independent open-source project, not affiliated with or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC. Pictures on this page show sample data.</p>
-    <p>MIT License &middot; <a href="https://github.com/vradulthub-cloud/tobebestme">Source on GitHub</a> &middot; <a href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">Security</a></p>
+    <p class="flinks"><a href="https://github.com/vradulthub-cloud/tobebestme/blob/main/LICENSE">MIT License</a><a href="https://github.com/vradulthub-cloud/tobebestme">Source on GitHub</a><a href="https://github.com/vradulthub-cloud/tobebestme/blob/main/SECURITY.md">Security</a></p>
   </div>
 </footer>
 
@@ -827,7 +916,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
   var H = 3600e3, TOTAL = (RESET - START) / H, ELAPSED = (NOW - START) / H, USED = 82, RATE = 18 / 12.361;
   var pos = function (h) { return (h / TOTAL) * 100; };
   var fmt = function (d) { return d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); };
-  var dur = function (h) { var m = Math.floor(h * 60); return Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; };
+  var dur = function (h) { var min = h * 60; if (min < 60) { var r = Math.round(min / 5) * 5; return r < 5 ? 'a few minutes' : 'about ' + r + ' min'; } if (min < 360) { var q = Math.round(min / 15) * 15; return 'about ' + Math.floor(q / 60) + ' h' + (q % 60 ? ' ' + (q % 60) + ' min' : ''); } var hr = Math.round(h); return hr < 48 ? 'about ' + hr + ' hours' : 'about ' + Math.round(hr / 24) + ' days'; };
   var nowPct = pos(ELAPSED);
 
   // ---------- The hero drawing ----------
@@ -883,7 +972,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
   function draw() {
     qa('.chip', chips).forEach(function (c) { c.setAttribute('aria-pressed', String(c.dataset.key === state.project)); });
     qa('.day', bars).forEach(function (b, i) {
-      if (W[i].v) b.setAttribute('aria-pressed', String(state.day === i));
+      if (W[i].v && !b.disabled) b.setAttribute('aria-pressed', String(state.day === i));
       var st = b.querySelector('.stack');
       st.classList.toggle('dim', state.day >= 0 && state.day !== i);
       qa('i', st).forEach(function (seg) { seg.classList.toggle('dim', !!state.project && seg.dataset.key !== state.project); });
@@ -902,6 +991,18 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     }
   }
   draw();
+  // On a phone the first, part-day column is under 44 px wide, too narrow to press; its project chip picks it out instead.
+  var tinyQ = matchMedia('(pointer: coarse), (max-width: 600px)');
+  function narrowDay() {
+    var b = bars.children[0], small = tinyQ.matches && b.offsetWidth < 44;
+    if (small === b.disabled) return;
+    b.disabled = small;
+    var base = b.getAttribute('aria-label').replace(/ Too narrow.*$/, '');
+    b.setAttribute('aria-label', small ? base + ' Too narrow to press on this screen; press its project instead.' : base);
+    if (small) { b.removeAttribute('aria-pressed'); if (state.day === 0) { state.day = -1; draw(); } }
+    else b.setAttribute('aria-pressed', String(state.day === 0));
+  }
+  narrowDay(); addEventListener('resize', narrowDay);
 
   var pts = [[0, 0]], cum = 0;
   W.forEach(function (d, i) { if (d.v && i < 5) { cum += sum(d.v); pts.push([starts[i] + HRS[i], cum]); } });
@@ -1022,6 +1123,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     var label = m === 1 ? 'Your pace' : Math.round(m * 100) + '% of your pace';
     $('pace-out').textContent = label; pace.setAttribute('aria-valuetext', label);
     qa('.steps-p button').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.dataset.pace) === Number(pace.value))); });
+    if (userPace) $('pace-live').textContent = $('fc-text').textContent;
   }
   var userPace = false;
   pace.addEventListener('input', function () { userPace = true; update(); });
@@ -1042,8 +1144,8 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
 
   // ---------- Savings explorer ----------
   var EX = [
-    { l1: 'As run: 2.8 weeks’ worth of your weekly limit', l2: 'With the ideas applied: about 1.8 weeks’ worth', w2: 64.3, back: 'about 1.1 weeks’ worth back',
-      note: 'Workflows took 2.8 weeks’ worth of your weekly limit in this sample. One idea: run checking stages on Sonnet. Verify started 5 or more agents on Opus in 2 runs, and that is routine checking and reading.' },
+    { l1: 'As run: 2.9 weeks’ worth', l2: 'With the ideas applied: about 1.8 weeks’ worth', w2: 62.1, back: 'about 1.1 weeks’ worth back',
+      note: 'Workflows took 2.9 weeks’ worth in this sample. One idea: run checking stages on Sonnet. Verify started 5 or more agents on Opus in 2 runs, and that is routine checking and reading.' },
     { l1: 'At this pace: the week ends at about 124%', l2: 'If half of that ran on Sonnet: about 114%', w2: 91.9, back: 'about 10 points back',
       note: 'Opus did 98% of this sample week’s work. With half of it on Sonnet, the run-out moves from Sat 5:21 AM to Sat 1:15 PM.' }
   ];
@@ -1055,7 +1157,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
     var g = $('ex-g'); g.style.left = (applied ? d.w2 : 100) + '%'; g.style.width = (applied ? 100 - d.w2 : 0) + '%'; g.style.opacity = applied ? 1 : 0;
     var bk = $('ex-back'); bk.textContent = applied ? d.back : ''; bk.classList.toggle('off', !applied);
     $('ex-note').textContent = d.note;
-    var ap = $('ex-apply'); ap.setAttribute('aria-pressed', String(applied)); ap.textContent = applied ? 'Back to as run' : 'Apply the ideas';
+    var ap = $('ex-apply'); ap.textContent = applied ? 'Back to as run' : 'Apply the ideas';
     ap.className = 'btn apply ' + (applied ? 'btn-ghost' : 'btn-amber');
     qa('[data-ex]').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.dataset.ex) === ex)); });
   }
@@ -1074,7 +1176,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
       var t = b.dataset.mode === 't', cmd = $('inst-cmd');
       var line = 'tobebestme --marketplace vradulthub-cloud/tobebestme';
       var full = t ? 'claude plugin install ' + line : '/plugin install ' + line;
-      $('inst-txt').textContent = full; $('inst-pr').textContent = t ? '$ ' : '> ';
+      $('inst-txt').innerHTML = full.replace(/ (--marketplace) (vradulthub-cloud\/tobebestme)$/, ' <span class="nb">$1</span> <span class="nb">$2</span>'); $('inst-pr').textContent = t ? '$ ' : '> ';
       cmd.dataset.copy = full; cmd.setAttribute('aria-label', 'Copy the install line: ' + full);
       qa('[data-mode]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
     });
@@ -1108,6 +1210,37 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
   dlg.addEventListener('close', function () { vid.pause(); });
   dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
 
+  // ---------- Pictures at full size ----------
+  var zd = $('zoom'), zi = $('zoom-img');
+  function openZoom(im) {
+    var src = im.getAttribute('data-full') || im.currentSrc;
+    if (typeof zd.showModal !== 'function') { window.open(src, '_blank', 'noopener'); return; }
+    zi.setAttribute('width', im.getAttribute('width')); zi.setAttribute('height', im.getAttribute('height'));
+    zi.alt = im.alt; zi.src = src;
+    zd.showModal(); zd.querySelector('.zoom-body').scrollTo(0, 0);
+  }
+  qa('figure.zf').forEach(function (sh) {
+    var im = sh.querySelector('.shot img'), bt = sh.querySelector('[data-zoom]');
+    if (!im || !bt) return;
+    bt.addEventListener('click', function () { openZoom(im); });
+    im.addEventListener('click', function () { openZoom(im); });
+  });
+  $('zoom-close').addEventListener('click', function () { zd.close(); });
+  zd.addEventListener('click', function (e) { if (e.target === zd) zd.close(); });
+  zd.addEventListener('close', function () { zi.removeAttribute('src'); });
+
+  // ---------- Section menu on narrow screens ----------
+  var mbtn = document.querySelector('.menu-btn'), mnav = $('mnav');
+  if (mbtn && mnav) {
+    var setMenu = function (open) { mnav.hidden = !open; mbtn.setAttribute('aria-expanded', String(open)); };
+    mbtn.hidden = false;
+    mbtn.addEventListener('click', function () { setMenu(mnav.hidden); });
+    qa('a', mnav).forEach(function (a) { a.addEventListener('click', function () { setMenu(false); }); });
+    addEventListener('keydown', function (e) { if (e.key === 'Escape' && !mnav.hidden) { setMenu(false); mbtn.focus(); } });
+    document.addEventListener('click', function (e) { if (!mnav.hidden && !e.target.closest('.nav')) setMenu(false); });
+    addEventListener('resize', function () { if (innerWidth > 980 && !mnav.hidden) setMenu(false); });
+  }
+
   // ---------- Page-level: progress, nav, reveals, scene tilt, counts ----------
   var prog = document.querySelector('.progress'), links = qa('.nav nav a'), secs = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
   var scenes = qa('.scene'), ticking = false;
@@ -1135,7 +1268,7 @@ html.m .grow .wk-dot, html.m .grow .wk-dry, html.m .grow .wk-pill { animation: f
   }
 
   // Images below the fold wait for the page, then load in the background so nothing is blank when you get there.
-  function warm() { qa('img[loading="lazy"]').forEach(function (i) { i.loading = 'eager'; }); }
+  function warm() { if (innerWidth < 640 || (navigator.connection && navigator.connection.saveData)) return; qa('img[loading="lazy"]').forEach(function (i) { i.loading = 'eager'; }); }
   if (document.readyState === 'complete') setTimeout(warm, 600); else addEventListener('load', function () { setTimeout(warm, 600); });
 })();
 </script>
