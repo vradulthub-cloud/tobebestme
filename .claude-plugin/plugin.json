@@ -1,7 +1,10 @@
 {
   "name": "tobebestme",
-  "version": "1.5.1",
-  "description": "ToBeBestMe: one dashboard for keeping several Claude Code projects going: which chats wait for your answer, where each project got to, every workflow Claude runs (explained as it starts or held for your go-ahead, steered while it runs, with ways to spend less), and your usage limits, spending and context: where you stand, how long you can keep going and what to do, with budgets, a cheaper model when things get tight, handoff notes before compaction, and a skill builder",
+  "version": "1.6.0",
+  "description": "A mod that runs inside Claude Code itself, not a separate app: what waits for you, your week's limits and what workflows cost. Independent; not made by Anthropic.",
+  "homepage": "https://tobebestme.vercel.app",
+  "repository": "https://github.com/vradulthub-cloud/tobebestme",
+  "license": "MIT",
   "author": {
     "name": "ToBeBestMe contributors"
   },
@@ -9,22 +12,22 @@
   "userConfig": {
     "sessionBudget": {
       "type": "number",
-      "title": "ToBeBestMe: session budget ($)",
-      "description": "What this session may cost. 0 means no budget.",
+      "title": "ToBeBestMe: budget for each chat ($)",
+      "description": "What this chat may cost. 0 means no budget.",
       "required": false,
       "default": 0
     },
     "dailyBudget": {
       "type": "number",
       "title": "ToBeBestMe: daily budget ($)",
-      "description": "What every session on this machine may cost today, together. 0 means no budget.",
+      "description": "What every chat on this machine may cost today, together. 0 means no budget.",
       "required": false,
       "default": 0
     },
     "atBudget": {
       "type": "string",
       "title": "ToBeBestMe: when a budget is reached",
-      "description": "warn: a notice only. cheaper: every request switches to the cheaper model. hold: new prompts wait until you raise the budget.",
+      "description": "warn: a notice only. cheaper: every request switches to the cheaper model, helpers and workflow agents too, except a model you chose yourself. hold: your new prompts wait until you raise the budget; notifications and scheduled runs still arrive.",
       "required": false,
       "default": "cheaper",
       "options": [
@@ -36,7 +39,7 @@
     "costAlertEvery": {
       "type": "number",
       "title": "ToBeBestMe: cost alert every ($)",
-      "description": "A notice each time the session passes another multiple of this. 0 means off.",
+      "description": "A notice each time this chat passes another multiple of this. 0 means off.",
       "required": false,
       "default": 0
     },
@@ -90,7 +93,7 @@
     "handoffBeforeCompact": {
       "type": "boolean",
       "title": "ToBeBestMe: handoff note before compacting",
-      "description": "Write a note with the goal and next steps before every compaction.",
+      "description": "Write a note with the goal and next steps before a compaction. It is skipped when the chat is nearly full, or idle for a compaction you did not ask for.",
       "required": false,
       "default": true
     },
@@ -104,7 +107,7 @@
     "mode": {
       "type": "string",
       "title": "ToBeBestMe: cheaper model mode",
-      "description": "automatic: helpers switch when context, a limit or a budget gets tight. always: everything uses the cheaper model, the conversation too (a model you switch to with /model still wins). off: never switch.",
+      "description": "automatic: helpers switch when context, a limit or a budget gets tight. always: everything uses the cheaper model, the chat too (a model you switch to with /model still wins). off: never switch.",
       "required": false,
       "default": "automatic",
       "options": [
@@ -116,7 +119,7 @@
     "cheapModel": {
       "type": "string",
       "title": "ToBeBestMe: cheaper model",
-      "description": "A /model name such as haiku or sonnet, or a full model id.",
+      "description": "A /model name such as haiku or sonnet, or a full model id. The model work switches to: helpers when things get tight, and the whole chat at a reached budget or in Always mode. Choose sonnet for a smaller step down from Opus or Fable.",
       "required": false,
       "default": "haiku"
     },
@@ -129,15 +132,15 @@
     },
     "mainToo": {
       "type": "boolean",
-      "title": "ToBeBestMe: switch the main conversation too",
-      "description": "In automatic mode, switch the main conversation as well as helpers.",
+      "title": "ToBeBestMe: switch the main chat too",
+      "description": "In automatic mode, switch the main chat as well as helpers.",
       "required": false,
       "default": false
     },
     "lowerEffort": {
       "type": "boolean",
       "title": "ToBeBestMe: think less past the warning",
-      "description": "Lower the thinking effort once context passes the warning.",
+      "description": "Lower the thinking effort once context passes the warning. The next request re-reads the chat once, because a change of effort empties the cache, so it suits setting before long work.",
       "required": false,
       "default": false
     },
@@ -166,8 +169,8 @@
     },
     "workflowBudget": {
       "type": "number",
-      "title": "ToBeBestMe: pause a workflow past ($)",
-      "description": "Once a run costs this much, new agents wait until you raise the limit or resume. 0 means no limit.",
+      "title": "ToBeBestMe: run budget, then pause new agents ($)",
+      "description": "Once a run costs this much, new agents wait until you raise the budget or resume. 0 means no budget.",
       "required": false,
       "default": 0
     },
@@ -181,7 +184,7 @@
     "turnLine": {
       "type": "boolean",
       "title": "ToBeBestMe: line under each answer",
-      "description": "Context, session cost and the turn's cost under every answer.",
+      "description": "Context, this chat's cost and the turn's cost under every answer.",
       "required": false,
       "default": true
     },
@@ -202,7 +205,7 @@
     "notifyVia": {
       "type": "string",
       "title": "ToBeBestMe: notify through",
-      "description": "both: Claude Code's channel and the system notification centre. system: only the notification centre. claude: only Claude Code's channel.",
+      "description": "both: Claude Code's channel and the system Notification Center. system: only Notification Center. claude: only Claude Code's channel.",
       "required": false,
       "default": "both",
       "options": [
@@ -221,7 +224,8 @@
     "notifyUrl": {
       "type": "string",
       "title": "ToBeBestMe: also notify this web address",
-      "description": "An https address that takes a POST, such as an ntfy topic (https://ntfy.sh/your-topic), to reach your phone. Only the notification's words are sent.",
+      "description": "An https address that receives each notification, to reach your phone: for example an ntfy topic (https://ntfy.sh/a-long-random-topic) with its free app. Each notification's words are sent there, and they can include a waiting chat's title and a short excerpt, so use a long topic name nobody could guess: anyone who knows it can read them.",
+      "sensitive": true,
       "required": false,
       "default": ""
     },
@@ -234,22 +238,22 @@
     },
     "openOnStart": {
       "type": "boolean",
-      "title": "ToBeBestMe: open the dashboard in every session",
-      "description": "Open the dashboard beside the chat in every session: at the start in a wide window, otherwise with your first message.",
+      "title": "ToBeBestMe: open the dashboard in every chat",
+      "description": "Open the dashboard beside the chat in every chat: at the start in a wide window, otherwise with your first message.",
       "required": false,
       "default": false
     },
     "band": {
       "type": "boolean",
-      "title": "ToBeBestMe: summary above the prompt",
-      "description": "One line in every session: what needs you, context, limits and cost, with a button that opens the dashboard.",
+      "title": "ToBeBestMe: line above the prompt",
+      "description": "One line in every chat: what needs you, context, limits and cost, with a button that opens the dashboard.",
       "required": false,
       "default": true
     },
     "scanProjects": {
       "type": "boolean",
       "title": "ToBeBestMe: read every project",
-      "description": "Add up each project's use from Claude Code's own transcripts on this computer, for the All projects view.",
+      "description": "Reads every project's transcripts on this computer and keeps short excerpts of prompts, recaps and questions in ToBeBestMe's store, to show on Home what is waiting and what each project used. Turning it off forgets them.",
       "required": false,
       "default": true
     },
@@ -270,7 +274,7 @@
     "suggestNext": {
       "type": "boolean",
       "title": "ToBeBestMe: suggest the next prompt",
-      "description": "Near compaction or after a limit warning, the useful next prompt shows dim in the prompt box. Nothing is typed for you.",
+      "description": "Once context passes its warning (60% by default) or after a limit warning, the useful next prompt shows dim in the prompt box. Nothing is typed for you.",
       "required": false,
       "default": true
     },

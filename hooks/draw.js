@@ -1,6 +1,21 @@
 // tobebestme: the dashboard. Drawn from plain data (d) and actions (act) that
 // hooks/register.js hands in; nothing here keeps state or calls $.
 //
+// Map of this file, in the order the sections run (search for the banner `// ---- name`):
+//   (before any banner)   TABS and `kit`: the rows, cards, buttons and drawings every tab is built from
+//   the frame             drawDashboard: the tab bar and which tab is drawn
+//   This session          the chat's headline, its one main button, and the handoff, compact and fresh cards
+//   Context               what fills the window
+//   Usage                 what can run out, then what this chat spent (drawLobby, the phone's view, sits in here);
+//                         the plan's limits
+//   Skills, Settings      the two tabs that edit things
+//   Home (helpers)        small helpers shared by Home's cards
+//   Home (needs you)      what waits for you, and where each project got to
+//   workflows             live runs, their agents and approvals, finished runs, savings, the Workflows tab
+//   Home (the rest)       the week, the projects, the chats, the tour, and allTab, the tab itself
+//   the band              the line above the prompt
+//   calm                  what runs on its own, the right model and long runs (Settings cards)
+//
 // Layout rules: the answer first (one headline and its one best action). Every section is a
 // card with an icon in its colour, a title and, where it helps, a line saying what it is for.
 // Figures explain themselves on hover; the controls sit beside the figures they change;
@@ -9,26 +24,31 @@
 // (gap), in the surface's own steps, so the desktop breathes and the terminal stays compact.
 
 import {
+  cleanText,
+  skillDraftRisks,
   SETTINGS,
   HANDOFF_PATH,
-  REPORT_DIR,
   HEX,
   CATEGORY_HEX,
   TINT,
   RING_HEX,
   WINDOW_MS,
   kindOfLabel,
-  MODES,
   fmtTokens,
   fmtUsd,
   plural,
   fmtSpan,
+  roughSpan,
   fmtTurnTime,
   fmtClock,
-  shortModel,
   toolName,
   titleCase,
   limitLabel,
+  limitName,
+  canRaiseListingBudget,
+  nextListingBudget,
+  fmtFraction,
+  modeWords,
   settingSpec,
   settingWords,
   isEarly,
@@ -40,6 +60,8 @@ import {
   svgBars,
   svgRunway,
   runwayOf,
+  drawTime,
+  timelineTime,
   textRunway,
   svgForecast,
   svgWindow,
@@ -51,6 +73,8 @@ import {
   modelHex,
   dayKey,
   dailyShare,
+  dayShareWords,
+  spendRates,
   shareSentence,
   modelAdvice,
   MODEL_ROLES,
@@ -79,8 +103,23 @@ import {
   paceWords,
   midHex,
   svgFigure,
+  figureHues,
   settleMotion,
   FLUID_PX,
+  dayClip,
+  pctText,
+  pctAbout,
+  shownPct,
+  meterCells,
+  fmtUsdRange,
+  holdRange,
+  holdSpan,
+  noForecastWords,
+  waitingCount,
+  waitingParts,
+  waitingTitle,
+  DAY_MS,
+  MIN_MS,
 } from './lib.js'
 import { lobbyData, reportAlt, reportData, svgReportCard } from './extras.js'
 
@@ -112,13 +151,19 @@ const CHART_SLOTS = 24
 // From this many columns a tab is two columns: the work on the left, the figures and controls it
 // concerns beside it. Narrower, it is one column in the order a day goes.
 const SPLIT_AT = 116
+// Under this many columns a gauge in the line above the prompt is too short for the run-out drawing (the
+// hatched stretch, the strand and the stop pile into a clump): it keeps the fill and the playhead alone.
+const COMPACT_GAUGE_BELOW = 100
 // Hover cards are dark in either theme, like the system's own tooltips, so they read the same
 // over light and dark panes; rows under the pointer take a faint tint that suits both.
 const TIP = { bg: '#2C2C2E', border: '#545458', text: '#F2F2F7', dim: '#D1D1D6', good: '#30D158' }
 const ROW_HOVER = '#8E8E931F'
-// A section's body sits on a faint grey fill, the system grey at 8%, which reads on a dark and on a
+// A section's body sits on a faint grey fill, the system grey at 12%, which reads on a dark and on a
 // light pane alike: the page has depth without every section boxed in its own colour.
 const GROUP_BG = '#8E8E931F'
+// A segmented control's track inside a section: half that fill, since it is drawn over the section's own, so
+// the dim names of the choices not picked keep 4.5:1 against it in a dark pane (12% over 12% falls to 4.3:1).
+const SEGMENT_BG = '#8E8E9310'
 
 // Drops undefined props: a drawn tree carries only what it sets.
 function clean(props) {
@@ -137,9 +182,31 @@ function tint(hex, level) {
   return level === 'warning' || level === 'error' ? HEX[level] : hex
 }
 
+// What each drawing was last handed in a tab visit (the visit's token is `e.motionVisit`), by place in
+// the page, so a redraw of an unchanged drawing hands the app the same markup again.
+const SHOWN = new Map()
+const SHOWN_CAP = 400
+function settledOnce(e, p, seen) {
+  if (!e.motionVisit) return settleMotion(p.source, e.motionAge)
+  // a visit replaces the one before it in the same place (the pane or the band), so nothing piles up
+  const place = e.motionVisit.split(/[:@]/)[0]
+  for (const [key, v] of SHOWN) if (v.place === place && v.visit !== e.motionVisit) SHOWN.delete(key)
+  // the same words and width can head more than one drawing: the nth of them is its own slot
+  const slot = String(p.alt) + '|' + (p.width || '')
+  const n = seen.get(slot) || 0
+  seen.set(slot, n + 1)
+  const key = e.motionVisit + '|' + slot + '|' + n
+  const was = SHOWN.get(key)
+  if (was && was.raw === p.source) return was.out
+  const out = settleMotion(p.source, e.motionAge)
+  if (SHOWN.size >= SHOWN_CAP) SHOWN.clear()
+  SHOWN.set(key, { place, visit: e.motionVisit, raw: p.source, out })
+  return out
+}
+
 // The surface's elements and the shapes the dashboard is built from.
 export function kit(el, e, primary = { isTaken: false }) {
-  const { Text, Button, Markdown, Input, Link } = el
+  const { Text, Button, Markdown, Code, Input, Link } = el
   // A box may shrink below its longest unbreakable line, as the terminal's do: in the app a long
   // session title or branch name would otherwise hold its column open and push the next one past
   // the pane's edge. Long text truncates or wraps inside the room it is given instead.
@@ -154,9 +221,13 @@ export function kit(el, e, primary = { isTaken: false }) {
   // the browser's 300px. A drawing stretched to its slot (preserveAspectRatio none) is given a width
   // wider than any slot, which the app caps at the slot; any other keeps the size it was made at.
   // Its motion is settled to how long its tab has been open (settleMotion), so a redraw carries an
-  // animation on instead of playing it again from the start.
+  // animation on instead of playing it again from the start. A drawing whose markup is the same as the
+  // last redraw's in this visit is handed the markup it was handed then, byte for byte: settling writes
+  // the tab's age into it, so settling it afresh would change a drawing nothing changed in and the app
+  // would swap its image or rebuild its frame (a frame blinks and every loop starts over).
+  const seen = e.motionSeen || (e.motionSeen = new Map()) // shared with a sub-kit, which copies `e`
   const Svg = (p) => {
-    const source = settleMotion(p.source, e.motionAge)
+    const source = settledOnce(e, p, seen)
     const root = (/<svg\b[^>]*>/.exec(source) || [''])[0]
     const own = (name) => {
       const m = new RegExp('\\s' + name + '="([\\d.]+)"').exec(root)
@@ -168,7 +239,8 @@ export function kit(el, e, primary = { isTaken: false }) {
     const height = p.height ?? own('height') ?? (box && width && !isFluid ? Math.round((width * Number(box[2])) / Number(box[1])) : undefined)
     return el.Svg(clean({ ...p, source, width, height }))
   }
-  const text = (s, props = {}) => Text(clean({ ...props, children: [s] }))
+  // apostrophes inside a word are drawn curly everywhere
+  const text = (s, props = {}) => Text(clean({ ...props, children: [typeof s === 'string' ? s.replace(/(\w)'(\w)/g, '$1’$2') : s] }))
   const footnote = (s, props = {}) => text(s, { size: 'footnote', dimColor: true, wrap: 'wrap', ...props })
   // guidance a person acts on is body size in a quiet colour; the small footnote size is for captions and labels
   const guide = (s, props = {}) => text(s, { dimColor: true, wrap: 'wrap', ...props })
@@ -206,18 +278,23 @@ export function kit(el, e, primary = { isTaken: false }) {
   // keyboard, a screen reader, a touch screen, or anyone who'd rather read it all at once.
   const inlineDetails = (t) => {
     const lines = t ? [...(t.lines || []).filter(Boolean), ...(t.good ? ['↓ ' + t.good] : [])] : []
-    return lines.length || (t && t.el) ? [Box({ flexDirection: 'column', rowGap: 'xs', paddingLeft: isTerminal ? 2 : 'md', children: [...lines.map((l) => footnote(l)), ...(t.el ? [t.el] : [])] })] : []
+    // on the desktop they start at the edge of what they explain, never indented past its heading
+    return lines.length || (t && t.el) ? [Box(clean({ flexDirection: 'column', rowGap: 'xs', paddingLeft: isTerminal ? 2 : undefined, children: [...lines.map((l) => footnote(l)), ...(t.el ? [t.el] : [])] }))] : []
   }
 
   const k = {
-    Box, Text, Button, Markdown, Input, Link, Svg, isTerminal, hasSvg, columns, px, text, footnote, guide,
+    Box, Text, Button, Markdown, Code, Input, Link, Svg, isTerminal, hasSvg, columns, px, text, footnote, guide,
     isRoomy: columns >= 90,
     // the look of a grouped body, for a row of tiles that is one group
     groupProps: isTerminal ? {} : { paddingX: 'md', paddingY: 'md', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true },
     // Keyboard shortcuts show as chips on desktop buttons; there they're noise, so only the terminal gets them.
     hotkey: (key) => (isTerminal ? key : undefined),
+    // Words that tell a pointer user to point: left out on the terminal, and with Show details on, where what
+    // the hover cards say is already in place and nobody needs to point.
+    hint: (words) => (isTerminal || k.showDetails ? '' : words),
     // A Box that explains itself on hover: a faint tint under the pointer and a card above it.
     showDetails: false,
+    details: inlineDetails,
     hoverBox: (key, props, children, t) => {
       // with Show details on, a row's words go under the row, never beside it in a sliver
       if (k.showDetails && t && props.flexDirection !== 'column') {
@@ -243,14 +320,22 @@ export function kit(el, e, primary = { isTaken: false }) {
       const subtitle = extra.keepCaption || k.showDetails ? subtitleIn : null
       const head = title
         ? [
+            // the title and its accessory share a row; the line under them has the full width, so a long
+            // one never squeezes the accessory into a sliver beside it
             Box({
-              flexDirection: 'row',
-              columnGap: 'sm',
-              alignItems: subtitle ? 'flex-start' : 'center',
+              flexDirection: 'column',
               paddingX: isTerminal ? 0 : 'xs',
               children: [
-                Box({ flexDirection: 'column', flexGrow: 1, flexShrink: 1, children: [text(title, { size: 'heading', weight: 'semibold', wrap: 'wrap' }), ...(subtitle ? [footnote(subtitle)] : [])] }),
-                ...(extra.accessory ? [extra.accessory] : []),
+                Box({
+                  flexDirection: 'row',
+                  columnGap: 'sm',
+                  alignItems: 'center',
+                  children: [
+                    Box({ flexGrow: 1, flexShrink: 1, children: [text(title, { size: 'heading', weight: 'semibold', wrap: 'wrap' })] }),
+                    ...(extra.accessory ? [extra.accessory] : []),
+                  ],
+                }),
+                ...(subtitle ? [footnote(subtitle)] : []),
               ],
             }),
           ]
@@ -276,21 +361,31 @@ export function kit(el, e, primary = { isTaken: false }) {
     },
     // The kits of a main column and a side column that share this one's width.
     split: () => {
-      const main = Math.floor(px * 0.58)
-      return [k.sub(main), k.sub(px - main - 16)]
+      // from 160 columns the two are even, so a label stays near its value instead of a hand's breadth from it
+      const share = k.columns >= 160 ? 0.5 : 0.58
+      const main = Math.floor(px * share)
+      const parts = [k.sub(main), k.sub(px - main - 16)]
+      for (const kk of parts) kk.mainShare = share
+      return parts
     },
-    // Two columns side by side: `main` beside `aside`, each stacked with the same gap as a page.
-    layout: (main, aside) =>
-      Box({
+    // Two columns side by side: `main` beside `aside`, each stacked with the same gap as a page. With
+    // nothing for the main column the aside is the page, in one column of the full width, so a lone card
+    // never sits at the right of a blank half (callers that can draw it at the full width do that first).
+    layout: (main, aside) => {
+      const left = main.filter(Boolean)
+      const right = aside.filter(Boolean)
+      if (!left.length) return Box({ flexDirection: 'column', rowGap: 'lg', width: '100%', children: right })
+      return Box({
         flexDirection: 'row',
         columnGap: 'lg',
         alignItems: 'flex-start',
         width: '100%',
         children: [
-          Box({ flexDirection: 'column', rowGap: 'lg', width: '58%', flexShrink: 0, children: main.filter(Boolean) }),
-          Box({ flexDirection: 'column', rowGap: 'lg', flexGrow: 1, flexShrink: 1, children: aside.filter(Boolean) }),
+          Box({ flexDirection: 'column', rowGap: 'lg', width: Math.round((k.mainShare || 0.58) * 100) + '%', flexShrink: 0, children: left }),
+          Box({ flexDirection: 'column', rowGap: 'lg', flexGrow: 1, flexShrink: 1, children: right }),
         ],
-      }),
+      })
+    },
     // A table row: the first cell takes the room left, the others are right-aligned at their
     // width. With `extra.key` the row explains itself on hover (`extra.tip`).
     // A cell may hold an element (`el`, such as a bar) in place of text.
@@ -311,6 +406,14 @@ export function kit(el, e, primary = { isTaken: false }) {
       if (extra.key && k.showDetails && extra.tip) return Box({ key: extra.key, flexDirection: 'column', width: '100%', children: [Box({ ...box, children }), ...inlineDetails(extra.tip)] })
       return extra.key ? k.hoverBox(extra.key, box, children, extra.tip) : Box({ ...box, children })
     },
+    // Label and value pairs, one per row: the value at the right on a wide pane, under its label on a narrow one,
+    // so the label that says what the number is is never the part cut short.
+    facts: (pairs, valueWidth = 40) =>
+      Box({
+        flexDirection: 'column',
+        rowGap: 'xs',
+        children: pairs.map(([label, value]) => (columns < 60 ? Box({ flexDirection: 'column', children: [text(label, { dimColor: true, wrap: 'wrap' }), text(value, { wrap: 'wrap', tabular: true })] }) : k.row([{ text: label, props: { dimColor: true } }, { text: value, width: valueWidth }]))),
+      }),
     // The cells of a row that fit the pane: on a narrow pane the last columns go, so the first
     // keeps room to be read and nothing runs off the side; headings drop the same ones.
     fit: (cells) => {
@@ -329,8 +432,8 @@ export function kit(el, e, primary = { isTaken: false }) {
     // A slim bar in a table cell: `value` of `max`, in a colour that names what it measures.
     bar: (value, max, hex, alt) => {
       if (hasSvg) return Box({ width: '100%', children: [Svg({ source: svgMeter([{ value, hex }], max, [], true), alt, height: 6 })] })
-      const cells = max > 0 ? Math.max(value > 0 ? 1 : 0, Math.round((value / max) * 10)) : 0
-      return Text({ children: [Text({ color: 'suggestion', children: ['▬'.repeat(cells)] }), Text({ dimColor: true, children: ['·'.repeat(10 - cells)] })] })
+      const cells = meterCells(value, max, 10)
+      return Text({ children: [Text({ color: 'suggestion', children: ['▬'.repeat(cells)] }), Text({ dimColor: true, children: ['·'.repeat(Math.max(0, 10 - cells))] })] })
     },
     // A table's column headings, in the same widths as its rows. A heading over two of a row's
     // columns (a bar and its figure) is as wide as both and the gutter between them, so the columns a
@@ -346,8 +449,10 @@ export function kit(el, e, primary = { isTaken: false }) {
       if (hasSvg) return Svg({ source: svgMeter(parts, total, markers, thin), alt, height: thin ? 6 : 14, isInteractive: parts.some((p) => p.title) ? true : undefined })
       const width = thin ? 14 : Math.max(10, Math.min(60, columns - 6))
       let used = 0
+      // the cells are all filled only when the parts add up to the whole
+      const room = parts.reduce((n, p) => n + p.value, 0) >= total ? width : width - 1
       const runs = parts.map((p) => {
-        const cells = total > 0 ? Math.max(0, Math.min(width - used, Math.round((p.value / total) * width))) : 0
+        const cells = Math.max(0, Math.min(room - used, meterCells(p.value, total, width)))
         used += cells
         return Text(clean({ color: p.color, dimColor: p.dim, children: [(p.glyph || '█').repeat(cells)] }))
       })
@@ -358,25 +463,47 @@ export function kit(el, e, primary = { isTaken: false }) {
       hasSvg ? Svg(clean({ source: svgBars(values, slots, extra), alt, height, isInteractive: extra.titles ? true : undefined })) : text(sparkline(values, slots), { color: 'suggestion' }),
     // A view has one primary button, the first one drawn: a later one asking for it is drawn as the others are.
     // `isTab` marks the open tab on the terminal, which is not the view's action.
+    // `about` is the item a repeated button belongs to ("Set aside" on one of several chats), and `name` is the whole
+    // name where the item is not what it needs: either is the button's name for a screen reader, while the short
+    // words stay what is drawn.
     button: (key, label, onPress, props = {}) => {
-      const { isTab, ...rest } = props
+      const { isTab, about, name, ...rest } = props
       if (rest.variant === 'primary' && !isTab) {
         if (primary.isTaken) rest.variant = undefined
         primary.isTaken = true
       }
-      return Button(clean({ key, label, onPress, ...rest }))
+      const named = name || (about ? label.replace(/[…›]$/, '') + ': ' + String(about).slice(0, 80) : '')
+      return Button(clean(named && named !== label ? { key, label: named, onPress, children: [label], ...rest } : { key, label, onPress, ...rest }))
     },
     buttons: (children) => Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', children }),
-    // A segmented control: one Button per option; the one in force is checked and drawn at full
-    // strength, the others dim until the pointer or the focus is on them.
-    segmented: (prefix, options, current, onPick) =>
-      Box({
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        columnGap: 'sm',
-        rowGap: 'sm',
-        children: options.map((o) => Button(clean({ key: prefix + '-' + o.value, label: (o.value === current ? '✓ ' : '') + o.label, dimColor: o.value === current ? undefined : true, onPress: () => onPick(o.value) }))),
-      }),
+    // The track a segmented control sits in: one rounded group, the open choice filled and the others quiet text. The
+    // tab bar and every choice in the pane (On and Off, a preset, a view of a list) are drawn in it, so a choice
+    // looks the same wherever it is made.
+    track: (children, props = {}) =>
+      Box(clean({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'xs', paddingX: 'xs', paddingY: 'xs', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true, ...props, children })),
+    // A segmented control: one Button per option. On desktop the one in force is the filled one; the terminal has no
+    // fill, so it checks it and dims the others until the pointer or the focus is on them.
+    // `group` names what the choice is for ("Send notifications"): on desktop the drawn words stay "On" and
+    // "Off", while the button's name for a screen reader is "Send notifications: On, selected".
+    segmented: (prefix, options, current, onPick, group = '') => {
+      const buttons = options.map((o) => {
+        const isOn = o.value === current
+        const named = group ? group + ': ' + o.label + (isOn ? ', selected' : '') : isOn ? o.label + ', selected' : o.label
+        return Button(clean(isTerminal ? { key: prefix + '-' + o.value, label: (isOn ? '✓ ' : '') + o.label, dimColor: isOn ? undefined : true, onPress: () => onPick(o.value) } : { key: prefix + '-' + o.value, label: named, children: [o.label], plain: isOn ? undefined : true, dimColor: isOn ? undefined : true, onPress: () => onPick(o.value) }))
+      })
+      // in a row of its own, so the track is as wide as its buttons and not as wide as the column it is in
+      if (isTerminal) return Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', children: buttons })
+      // four or more choices do not fit one row of a phone: two rows of two, so a name is never split from its control
+      if (columns < 60 && buttons.length >= 4) {
+        const half = Math.ceil(buttons.length / 2)
+        // every cell as wide as the longest choice, in characters, so the two rows line up in columns
+        const cellCh = Math.max(...options.map((o) => String(o.label).length)) + 4
+        // both rows have the same number of equal cells, the short one padded, so the choices sit in columns
+        const line = (cells) => Box({ flexDirection: 'row', columnGap: 'sm', children: [...cells, ...Array(half - cells.length).fill(null)].map((b) => Box({ flexGrow: 1, flexShrink: 1, width: cellCh, alignItems: 'center', justifyContent: 'center', children: b ? [b] : [] })) })
+        return Box({ flexDirection: 'row', children: [k.track([Box({ flexDirection: 'column', rowGap: 'xs', flexGrow: 1, children: [line(buttons.slice(0, half)), line(buttons.slice(half))] })], { flexGrow: 1, backgroundColor: SEGMENT_BG })] })
+      }
+      return Box({ flexDirection: 'row', children: [k.track(buttons, { backgroundColor: SEGMENT_BG })] })
+    },
     dot: (level) => text('● ', level === 'info' || level === 'success' ? { dimColor: true } : { color: level }),
     // A line with a hanging glyph: the glyph in its own column, the words wrapping beside it.
     hang: (glyph, words, trailing) =>
@@ -392,14 +519,17 @@ export function kit(el, e, primary = { isTaken: false }) {
 
 // ---- the frame ------------------------------------------------------------------------------
 
+// The context's fullness to the fraction: the dashboard's own percent is rounded, and a rounded 100 reads as full.
+function withExactPct(d) {
+  return d.tokens > 0 && d.window > 0 ? { ...d, pct: Math.min(100, (d.tokens / d.window) * 100) } : d
+}
+
 export function drawDashboard(k, d, act) {
-  // today includes this session: the ledger can lag the session's own count by a turn
-  if (d.today < d.usd) d = { ...d, today: d.usd }
+  d = withExactPct(d)
   SHARE = costShare(d)
   k.showDetails = !!d.view.showDetails
   const wanted = OLD_TABS[d.view.tab] || d.view.tab
   const tab = TABS.some((t) => t.id === wanted) ? wanted : 'all'
-  k.hues = TAB_HUES[tab]
   const body =
     tab === 'all' ? allTab(k, d, act)
     : tab === 'usage' ? usageTab(k, d, act)
@@ -413,6 +543,7 @@ export function drawDashboard(k, d, act) {
   // the white primary button stays the one main action of the view. The terminal marks the open tab.
   const tabs = TABS.map((t) =>
     k.button('tab-' + t.id, t.label, () => act.setView({ tab: t.id, confirm: '', editing: '' }), {
+      name: !k.isTerminal && t.id === tab ? t.label + ', open' : undefined,
       hotkey: k.hotkey(t.hotkey),
       variant: k.isTerminal && t.id === tab ? 'primary' : undefined,
       isTab: true,
@@ -423,13 +554,26 @@ export function drawDashboard(k, d, act) {
   // what hover cards say, drawn in place instead: for keyboards, screen readers and touch
   const details = k.button('details', d.view.showDetails ? '✓ Show details' : 'Show details', () => act.setView({ showDetails: !d.view.showDetails }), { hotkey: k.hotkey('d'), dimColor: d.view.showDetails ? undefined : true })
   // on desktop the tabs sit in one rounded track, the open one filled; the terminal marks the open one
-  const track = k.isTerminal ? k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', children: tabs }) : k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'xs', paddingX: 'xs', paddingY: 'xs', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true, children: tabs })
+  // on a phone six names do not fit one row: they are laid out as two rows of three, in columns, so no name
+  // is left alone on a line, and Show details has the row under them to itself
+  const isPhone = !k.isTerminal && k.columns < 60
+  const track = k.isTerminal
+    ? k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', children: tabs })
+    : isPhone
+      ? k.track(tabs.map((t) => k.Box({ width: '33%', children: [t] })), { width: '100%', columnGap: undefined })
+      : k.track(tabs)
   return k.Box({
     flexDirection: 'column',
     paddingX: k.isTerminal ? 0 : 'md',
     paddingY: k.isTerminal ? 0 : 'sm',
     rowGap: k.isTerminal ? 'md' : 'lg',
-    children: [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', alignItems: 'center', children: [track, k.Box({ flexGrow: 1 }), details] }), changeCard(k, d, act, tab), ...body.filter(Boolean)],
+    children: [
+      isPhone ? k.Box({ flexDirection: 'column', rowGap: 'sm', children: [track, k.Box({ flexDirection: 'row', justifyContent: 'flex-end', children: [details] })] }) : k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', alignItems: 'center', children: [track, k.Box({ flexGrow: 1 }), details] }),
+      // the terminal marks the open tab by its look alone, so the keys that move between them are said once
+      ...(k.isTerminal ? [k.footnote('Keys 1–6 switch tabs, d shows details.')] : []),
+      changeCard(k, d, act, tab),
+      ...body.filter(Boolean),
+    ],
   })
 }
 
@@ -458,42 +602,35 @@ function changeCard(k, d, act, tab) {
 
 // A runway for one item: an SVG on desktop, block characters on the terminal. Its words say the
 // same thing, so it never rests on colour alone.
-// Each tab has its own two colours, used for the gradient of its big figure and its bloom: identity only. Amber and red are left to status, and take over a figure that has passed an alert.
-const TAB_HUES = {
-  all: ['#0A84FF', '#BF5AF2'],
-  workflows: ['#BF5AF2', '#FF375F'],
-  overview: ['#64D2FF', '#00C7BE'],
-  usage: ['#0A84FF', '#00C7BE'],
-  skills: ['#5E5CE6', '#BF5AF2'],
-  settings: ['#64D2FF', '#8E8E93'],
-}
-const STATUS_HUES = { warning: ['#FFB340', '#FF9F0A'], error: ['#FF6961', '#FF453A'] }
 
-// The big figure of a head, drawn in a gradient on desktop: a limit past its alert is amber and one nearly
-// out is red, every other figure takes its tab's colours. Null on the terminal, and where the value would
-// not fit its half of the row (the plain text figure truncates there instead).
-function heroFigure(k, value, { size = 34, level, hues, align } = {}) {
+// The big figure of a head, drawn on desktop in a gradient, with a glow under the digits while it is live. Its colours are its status's
+// (figureHues): amber once what it measures is past its alert, red when it is nearly out, green when all is well,
+// the neutral accent when it is information and no status. It is bold and it says something; a colour is never
+// chosen for the look of it. Null on the terminal, which stays plain, and where the value would not fit its half of
+// the row (the plain text figure truncates there instead).
+function heroFigure(k, value, { size = 34, level, align, isLive } = {}) {
   if (!k.hasSvg) return null
   const room = Math.floor(k.px * (k.columns >= 90 ? 0.5 : 0.9))
   const fit = Math.min(size, Math.floor(room / Math.max(1, String(value).length * 0.62)))
   if (fit < 20) return null
-  const status = level === 'warning' || level === 'error' ? STATUS_HUES[level] : null
-  const src = svgFigure(value, { size: fit, align: align || (k.columns >= 90 ? 'end' : 'start'), hexes: status || hues || k.hues || TAB_HUES.all })
+  // the glow marks what is live now: something working, or a limit at its critical level; a settled value has the gradient alone
+  const src = svgFigure(value, { size: fit, align: align || 'start', hexes: figureHues(level), isGlowing: !!isLive || level === 'error' })
   return k.drawing(src, String(value))
 }
 
 function runwayBar(k, it, where, widthPx) {
   const r = it.runway
-  const words = it.label + ' ' + it.valueText + (r.runOut !== null && r.runOut !== undefined ? ', runs out before it resets' : r.projected !== null && r.projected !== undefined ? ', on pace for about ' + Math.round(r.projected) + '% by the reset' : r.elapsed !== null && r.elapsed !== undefined ? ', ' + Math.round(r.elapsed) + '% of the window gone' : '')
+  const words = it.label + ' ' + it.valueText + (r.runOut !== null && r.runOut !== undefined ? ', runs out before it resets' : r.projected !== null && r.projected !== undefined ? ', on pace for ' + pctAbout(r.projected) + ' by the reset' : r.elapsed !== null && r.elapsed !== undefined ? ', ' + pctText(r.elapsed, true) + ' of the window gone' : '')
   // the calendar is drawn at the column's reckoned width, at exactly the size it was made
   if (k.hasSvg && it.window && widthPx && widthPx >= 280) return k.Box({ width: '100%', children: [k.drawing(svgWindow({ ...r, hex: it.hex, ...it.window, days: it.days }, { width: Math.round(widthPx) }), words + (it.daysAlt || ''), { isInteractive: it.days ? true : undefined })] })
   // a runway has no words in it, so it is made wide and drawn at whatever width its slot has
-  if (k.hasSvg) return k.Box({ width: '100%', children: [k.Svg({ source: svgRunway({ ...r, hex: it.hex }, { width: widthPx || 4000, height: 14, isFluid: true }), alt: words, height: 14, ...(widthPx ? { width: widthPx } : {}) })] })
+  if (k.hasSvg) return k.Box({ width: '100%', children: [k.Svg({ source: svgRunway({ ...r, hex: it.hex }, { width: widthPx || 4000, height: 14, isFluid: true, isCompact: where === 'band' && k.columns < COMPACT_GAUGE_BELOW }), alt: words, height: 14, ...(widthPx ? { width: widthPx } : {}) })] })
   return k.Text({ children: textRunway(r, where === 'band' ? 10 : 20).map(([t, c]) => k.text(t, c ? { color: c } : {})) })
 }
 
 function levelAt(d, pct) {
-  return pct >= d.opts.cheaperModelAt ? 'error' : pct >= d.opts.contextWarnAt ? 'warning' : 'success'
+  const shown = shownPct(pct)
+  return shown >= d.opts.cheaperModelAt ? 'error' : shown >= d.opts.contextWarnAt ? 'warning' : 'success'
 }
 
 function ctxLevel(d) {
@@ -510,7 +647,8 @@ function compactAt(d) {
 // below, the drawing that shows it. A tab has one of these and nothing above it but its tab bar.
 //   o: { eyebrow?, glyph, headline, facts?, factsTip?, figure?: { value, caption, level, tip? }, visual: node[] }
 function lead(k, o) {
-  const isWide = k.columns >= 90
+  // the figure sits under the headline at every width, as on Home, so a tab never moves it
+  const isWide = false
   const factsText = o.facts && o.facts !== '.' ? k.text(o.facts, { dimColor: true, wrap: 'wrap' }) : null
   const words = k.Box({
     flexDirection: 'column',
@@ -524,22 +662,23 @@ function lead(k, o) {
     ],
   })
   const f = o.figure
+  // a status colours the plain text figure and its caption too (the terminal's); good and information leave them as they are
   const figureLevel = f && f.level && f.level !== 'success' && f.level !== 'info' ? f.level : undefined
-  const big = f ? heroFigure(k, f.value, { size: 36, level: figureLevel }) : null
+  const big = f ? heroFigure(k, f.value, { size: 36, level: f.level, isLive: f.isLive || o.isLive }) : null
   const figureBody = f
     ? [
         big || k.text(f.value, { size: 'title', weight: 'semibold', tabular: true, color: figureLevel, wrap: 'truncate-end' }),
         k.footnote(f.caption, { wrap: 'truncate-end', ...(figureLevel ? { color: figureLevel, dimColor: undefined } : {}) }),
-        ...(f.sub ? [k.footnote(f.sub, { wrap: 'truncate-end', tabular: true })] : []),
+        ...(f.sub ? [k.footnote(f.sub, { wrap: 'wrap', tabular: true })] : []),
       ]
     : []
   const figure = f
     ? k.Box({
         flexDirection: 'column',
         alignItems: isWide ? 'flex-end' : 'flex-start',
-        flexShrink: 0,
-        ...(isWide ? { paddingLeft: 'lg' } : { paddingTop: 'xs' }),
-        children: f.tip ? [k.hoverBox('lead-figure', { flexDirection: 'column', alignItems: isWide ? 'flex-end' : 'flex-start' }, figureBody, f.tip)] : figureBody,
+        ...(isWide ? { flexShrink: 0, paddingLeft: 'lg' } : { flexShrink: 1, width: '100%', paddingTop: 'xs' }), // a long line under a figure wraps in the pane's width
+        // its card opens on the side the figure sits on: toward the pane's edge on a wide one, from the left under the words on a narrow one
+        children: f.tip ? [k.hoverBox('lead-figure', { flexDirection: 'column', alignItems: isWide ? 'flex-end' : 'flex-start' }, figureBody, { ...f.tip, align: isWide ? 'right' : 'left' })] : figureBody,
       })
     : null
   return k.Box({
@@ -560,7 +699,7 @@ function tile(k, key, label, value, detail, extra = {}) {
     [
       k.footnote(label, { wrap: 'truncate-end' }),
       k.text(value, { size: 'title', weight: 'semibold', tabular: true, color: extra.color }),
-      ...(extra.meter ? [k.meter([{ value: extra.meter.value, hex: extra.meter.level === 'success' ? HEX.bar : HEX[extra.meter.level], color: extra.meter.level === 'success' ? 'suggestion' : extra.meter.level }], 100, [], label + ' ' + Math.round(extra.meter.value) + '%', true)] : []),
+      ...(extra.meter ? [k.meter([{ value: extra.meter.value, hex: extra.meter.level === 'success' ? HEX.bar : HEX[extra.meter.level], color: extra.meter.level === 'success' ? 'suggestion' : extra.meter.level }], 100, [], label + ' ' + pctText(extra.meter.value), true)] : []),
       k.footnote(detail, { tabular: true }),
     ],
     extra.tip ? { align: extra.align || 'right', ...extra.tip } : null, // a left tile's card opens on the right
@@ -572,10 +711,11 @@ function tiles(k, list) {
 }
 
 const CONFIRMS = {
-  compact: ['Shrink this conversation to a summary? A handoff note is written first.', 'Compact conversation', 'compact'],
-  fresh: ['Start a fresh conversation? A handoff note is written, the conversation is cleared, and the prompt box asks Claude to carry on from the note.', 'Start fresh', 'fresh'],
-  reset: ["Clear this session's numbers? Spending history across days is kept.", 'Reset numbers', 'reset'],
-  defaults: ['Put every setting back to its default?', 'Restore defaults', 'restoreDefaults'],
+  compact: ['Shrink this chat to a summary? A handoff note is written first.', 'Compact chat', 'compact'],
+  fresh: ['Start a fresh chat? A handoff note is written, the chat is cleared, and the prompt box asks Claude to carry on from the note.', 'Start fresh', 'fresh'],
+  reset: ["Clear this chat's numbers? Spending history across days is kept.", 'Reset numbers', 'reset'],
+  defaults: ['Put every setting back to its default? Claude Code reloads ToBeBestMe after each one it changes, so this takes a few seconds and the dashboard may blink.', 'Restore defaults', 'restoreDefaults'],
+  forget: ['Forget everything ToBeBestMe stored on this computer? That is spending by chat, excerpts of prompts, recaps and questions read from your projects, and its readings. Your settings and Claude Code’s own files stay.', 'Forget stored data', 'forgetStored'],
 }
 
 // The confirmation for whichever of `kinds` is waiting, if any.
@@ -592,22 +732,28 @@ function confirmRows(k, d, act, kinds) {
 
 function noteStatus(d) {
   const at = d.note.at ? Date.parse(d.note.at) : NaN
-  if (Number.isNaN(at)) return 'No handoff note yet. One is written before every compaction.'
+  if (Number.isNaN(at)) return 'No handoff note yet. One is written before a compaction.'
   return 'Handoff note written ' + fmtSpan(d.now - at) + ' ago' + (d.note.reason ? ', ' + d.note.reason : '') + '.'
 }
 
-// Write a note, start fresh, compact: the three ways to carry on with less, wherever they show.
-function shrinkBody(k, d, act, skipConfirm) {
+// Write a note, start fresh, compact: the three ways to carry on with less, in one card on This session and
+// nowhere else. `primary` is the one the headline asks for ('fresh', 'compact' or 'handoff'), drawn as the
+// view's main button.
+const SHRINK_KEYS = ['fresh', 'compact', 'note']
+function shrinkBody(k, d, act, primary) {
+  const main = (key) => (primary === key ? { variant: 'primary' } : {})
   return [
     k.text(noteStatus(d), { wrap: 'wrap' }),
+    k.footnote('It is saved in this project, at ' + HANDOFF_PATH + '.'),
     k.buttons([
-      k.button('handoff', 'Write handoff note', act.writeNote, { hotkey: k.hotkey('n') }),
-      k.button('fresh', 'Start fresh…', () => act.setView({ confirm: 'fresh' }), { hotkey: k.hotkey('f') }),
-      k.button('compact', 'Compact now…', () => act.setView({ confirm: 'compact' }), { hotkey: k.hotkey('c') }),
+      k.button('handoff', 'Write handoff note', act.writeNote, { hotkey: k.hotkey('n'), ...main('handoff') }),
+      k.button('fresh', 'Start fresh…', () => act.setView({ confirm: 'fresh' }), { hotkey: k.hotkey('f'), ...main('fresh') }),
+      k.button('compact', 'Compact now…', () => act.setView({ confirm: 'compact' }), { hotkey: k.hotkey('c'), ...main('compact') }),
       ...(d.note.text ? [k.button('note', d.view.showNote ? 'Hide note' : 'Show note', act.toggleNote, { hotkey: k.hotkey('s'), dimColor: true })] : []),
     ]),
-    ...(skipConfirm ? [] : confirmRows(k, d, act, ['compact', 'fresh'])),
+    ...confirmRows(k, d, act, ['compact', 'fresh']),
     ...(d.note.text && d.view.showNote ? [k.Box({ borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, paddingX: k.isTerminal ? 0 : 'md', children: [k.Markdown({ key: 'note-text', text: d.note.text })] })] : []),
+    ...(d.note.text && d.view.showNote && d.note.isCut ? [k.footnote('Preview only. The full note is at ' + HANDOFF_PATH + '.')] : []),
   ]
 }
 
@@ -623,7 +769,7 @@ function gainLine(k, gain) {
 // The first thing to run out, as a sentence: "Weekly limit runs out around Sat 5:21 AM".
 function rowVerdict(r) {
   const turns = /^about (.+) away$/.exec(r.value)
-  if (r.label === 'Auto-compaction') return turns ? 'Claude Code compacts this conversation in about ' + turns[1] : 'Claude Code is likely to compact this conversation within a turn'
+  if (r.label === 'Auto-compaction') return turns ? 'Claude Code compacts this chat in about ' + turns[1] : 'Claude Code is likely to compact this chat within a turn'
   if (r.label === 'Context' && turns) return 'The window fills in about ' + turns[1]
   if (/^(runs out|reached)/.test(r.value)) return r.label + ' ' + r.value
   if (/^(about|likely)/.test(r.value)) return r.label + ' is ' + r.value
@@ -636,7 +782,7 @@ function contextVisual(k, d, pace, level) {
   if (!(d.window > 0)) return null
   const cAt = compactAt(d)
   const hex = tint(RING_HEX.context, level)
-  const words = 'Context window, ' + d.pct + '% full: ' + fmtTokens(d.tokens) + ' of ' + fmtTokens(d.window) + ' tokens' + (cAt ? '. Claude Code compacts at ' + fmtTokens(cAt) : '') + (pace && pace.turns !== null ? ', about ' + plural(pace.turns, 'turn', 'turns') + ' away at this pace' : '') + '.'
+  const words = 'Context window, ' + pctText(d.pct) + ' full: ' + fmtTokens(d.tokens) + ' of ' + fmtTokens(d.window) + ' tokens' + (cAt ? '. Claude Code compacts at ' + fmtTokens(cAt) : '') + (pace && pace.turns !== null ? ', about ' + plural(pace.turns, 'turn', 'turns') + ' away at this pace' : '') + '.'
   if (k.hasSvg) {
     const series = d.turns.filter((t) => t.context > 0).slice(-CHART_SLOTS)
     const src = svgContext(
@@ -651,7 +797,7 @@ function contextVisual(k, d, pace, level) {
         per: pace ? pace.per : null,
         ahead: 6,
         // each turn's bar takes the colour its own fullness had: cyan, then amber and red as it crossed the alerts
-        turns: series.map((t) => ({ context: t.context, hex: tint(RING_HEX.context, levelAt(d, (t.context / d.window) * 100)), title: fmtClock(t.at, d.now) + ': ' + fmtTokens(t.context) + ' tokens (' + Math.round((t.context / d.window) * 100) + '%)' })),
+        turns: series.map((t) => ({ context: t.context, hex: tint(RING_HEX.context, levelAt(d, (t.context / d.window) * 100)), title: fmtClock(t.at, d.now) + ': ' + fmtTokens(t.context) + ' tokens (' + pctText((t.context / d.window) * 100) + ')' })),
         labels: { now: 'Now ' + fmtTokens(d.tokens), compact: cAt ? 'Compacts at ' + fmtTokens(cAt) : '', end: fmtTokens(d.window) },
       },
       { width: Math.round(k.px - 8) },
@@ -661,74 +807,114 @@ function contextVisual(k, d, pace, level) {
   return k.Text({ children: textRunway({ used: d.pct, elapsed: null, runOut: null, ticks: [d.opts.contextWarnAt, cAt ? Math.round((cAt / d.window) * 100) : d.opts.cheaperModelAt] }, 30).map(([t, c]) => k.text(t, c ? { color: c } : {})) })
 }
 
+// What answers the headline: the suggestion about whatever is first to run out (for the context, starting fresh),
+// so the view's one main button is the fix for what the headline says. Null when nothing says how to fix it.
+function headlineFix(d, first) {
+  if (first.label === 'Auto-compaction' || first.label === 'Context') {
+    const own = (key) => d.advice.find((a) => a.action && a.action.key === key)
+    return (
+      own('fresh') ||
+      own('compact') || {
+        level: first.level,
+        title: 'Start fresh from a handoff note',
+        detail: 'Every request sends the whole chat again. A fresh start, with a note of the goal and next steps, makes each later turn cheaper, and Claude Code does not have to compact at a moment you did not choose.',
+        action: { key: 'fresh', label: 'Start fresh…' },
+      }
+    )
+  }
+  return d.advice.find((a) => a.title.startsWith(first.label)) || null
+}
+
+// Where a suggestion's button lives when this tab has a control for the same thing: the suggestion says so and links
+// to it, so each control has one home. [the card it is in, the key of its button there]
+const ADVICE_HOMES = {
+  'fresh|Start fresh…': ['Make the chat smaller', 'handoff'],
+  'compact|Compact now…': ['Make the chat smaller', 'handoff'],
+  'note|Write handoff note': ['Make the chat smaller', 'handoff'],
+  'mcp|Manage MCP servers': ['Always loaded', 'manage-mcp'],
+  'skills|Review skills': ['Always loaded', 'review-skills'],
+}
+
 function overviewTab(k, d, act) {
   const h = d.health
   const hc = homeContext(d)
-  const heroConfirms = h.action ? confirmRows(k, d, act, [h.action.key]) : []
   const pace = contextPace(d)
   const first = d.outlook.find((r) => r.isFirst)
   const level = ctxLevel(d)
+  // a workflow asking for its go-ahead blocks work until it is answered, so it is the headline, as it is on Home
+  const approval = d.flows && d.flows.approval
 
   // the verdict: whichever of the context window, a limit or a budget is first to run out, else room
-  const verdict = first ? rowVerdict(first) : pace && pace.turns !== null && pace.turns > 3 ? 'Room for about ' + plural(pace.turns, 'more turn', 'more turns') : pace && pace.free > 0 ? 'Room to keep going' : d.window > 0 ? 'The window is full' : 'Waiting for the first answer'
-  const vLevel = first ? first.level : level === 'success' ? 'success' : level
-  const since = d.startedAt > 0 ? d.now - d.startedAt : 0
+  // (past the context's own warning with no turn count to give, the window's fullness is what it says: never "room" in a warning colour)
+  const verdict = approval ? 'A workflow is waiting for your go-ahead' : first ? rowVerdict(first) : pace && pace.turns !== null && pace.turns > 3 ? 'Room for about ' + plural(pace.turns, 'more turn', 'more turns') : d.window > 0 && level !== 'success' ? 'The window is ' + pctText(d.pct) + ' full' : pace && pace.free > 0 ? 'Room to keep going' : d.window > 0 ? 'The window is full' : 'Waiting for the first answer'
+  const vLevel = approval ? 'warning' : first ? first.level : level === 'success' ? 'success' : level
+  // what to do about it: the fix for the headline when there is one, else the most pressing suggestion, and no
+  // "all good" over a problem the headline names. A headline about the context window (its alert, with or without
+  // a row of its own) is fixed by a smaller conversation.
+  const about = first || (!approval && d.window > 0 && level !== 'success' && !(pace && pace.turns !== null && pace.turns > 3) ? { label: 'Context', level } : null)
+  const fix = !approval && about ? headlineFix(d, about) : null
+  const item = approval ? null : fix || h.item
+  const isShrink = !!item && !!item.action && SHRINK_KEYS.includes(item.action.key)
+  const rates = spendRates(d)
   const last = d.turns[d.turns.length - 1]
   const facts = [
-    d.window > 0 ? fmtTokens(d.tokens) + ' of ' + fmtTokens(d.window) + ' tokens (' + d.pct + '%)' : '',
+    d.window > 0 ? fmtTokens(d.tokens) + ' of ' + fmtTokens(d.window) + ' tokens (' + pctText(d.pct) + ')' : '',
     compactAt(d) ? 'compacts at ' + fmtTokens(compactAt(d)) : '',
-    since >= 2 * 60_000 ? cost(d.usd / (since / 3_600_000)) + ' an hour' : '',
+    rates.average !== null ? (SHARE ? 'this chat uses about ' + cost(rates.average) + ' of the weekly limit an hour' : cost(rates.average) + ' an hour on average') : '',
   ].filter(Boolean)
   const budgetLevel = d.opts.sessionBudget > 0 && d.usd >= d.opts.sessionBudget ? 'error' : d.opts.sessionBudget > 0 && d.usd >= d.opts.sessionBudget * 0.8 ? 'warning' : 'success'
+  // the suggestion as a line of words: its dot, its title, what it says and what it saves
+  const said = (kk, a, more = []) =>
+    kk.hang(
+      kk.dot(a.level),
+      kk.Box({
+        flexDirection: 'column',
+        rowGap: 'xs',
+        children: [kk.text(a.title, { weight: 'semibold', wrap: 'wrap' }), kk.guide(a.detail), ...(a.gain ? [gainLine(kk, a.gain)] : []), ...more],
+      }),
+    )
+  const goAhead = () => k.hang(
+    k.dot('warning'),
+    k.Box({
+      flexDirection: 'column',
+      rowGap: 'xs',
+      children: [
+        k.text('Claude wants to run ' + (approval && approval.preview.name ? '“' + approval.preview.name + '”' : 'a workflow'), { weight: 'semibold', wrap: 'wrap' }),
+        k.guide('It will not start until you answer in the chat: Run workflow, Run every agent on Sonnet or Don’t run.'),
+        k.Box({ marginTop: 'xs', children: [k.buttons([k.button('flow-answer', 'Go to the chat to answer', act.answerInChat, { variant: 'primary' }), k.button('flow-see', 'Open Workflows', act.openWorkflows, { plain: true, dimColor: true })])] }),
+      ],
+    }),
+  )
+  // a button for the headline's fix, or the suggestion's own button: main only when it answers what the headline says
+  const fixButton = (a, isMain) => (a.action && !isShrink ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('hero-action', a.action.label, () => act.run(a.action.key), isMain ? { variant: 'primary' } : {})])] })] : [])
   const head = lead(k, {
     glyph: vLevel === 'success' || vLevel === 'info' ? k.text('✓ ', { color: 'success' }) : k.text('● ', { color: vLevel }),
     headline: verdict,
     facts: facts.join(' · ') + '.',
-    factsTip: { title: 'Context, ' + d.pct + '% full', lines: ['Everything Claude re-reads on each turn: the fuller it is, the more a turn costs.', 'The cost is Claude Code’s own count, as /cost shows it: on a subscription the API-price equivalent, not a bill.', d.modelWindow && d.window && d.window < d.modelWindow ? 'Measured against the ' + fmtTokens(d.window) + ' window compaction works to, not the model’s ' + fmtTokens(d.modelWindow) + '.' : '', pace && pace.per ? 'Recent turns added about ' + fmtTokens(pace.per) + ' tokens each.' : 'A turn count shows after a few turns.'], align: 'left' },
-    figure: { value: cost(d.usd), caption: (SHARE ? 'of your weekly limit · ' : '') + 'this session' + (last ? ' · +' + cost(last.usd || 0) + ' last turn' : ''), sub: Math.abs(d.today - d.usd) >= 0.005 ? 'Today ' + cost(d.today) : '', level: budgetLevel },
+    factsTip: { title: 'Context, ' + pctText(d.pct) + ' full', lines: ['Everything Claude re-reads on each turn: the fuller it is, the more a turn costs.', 'The cost is Claude Code’s own count, as /cost shows it: on a subscription the API-price equivalent, not a bill.', d.modelWindow && d.window && d.window < d.modelWindow ? 'Measured against the ' + fmtTokens(d.window) + ' window compaction works to, not the model’s ' + fmtTokens(d.modelWindow) + '.' : '', pace && pace.per ? 'Recent turns added about ' + fmtTokens(pace.per) + ' tokens each.' : 'A turn count shows after a few turns.'], align: 'left' },
+    figure: { value: cost(d.usd), caption: (SHARE && !/worth$/.test(cost(d.usd)) ? 'of your weekly limit · ' : '') + 'this chat' + (last ? ' · +' + cost(last.usd || 0) + ' last turn' : ''), sub: Math.abs(d.today - d.usd) >= 0.005 ? 'Today, ' + todayScope(d).short + ': ' + cost(d.today) : '', level: d.opts.sessionBudget > 0 ? budgetLevel : 'info', isLive: !!d.isTurnRunning },
     visual: [
       contextVisual(k, d, pace, level),
       ...hc.windows.map((x, i) => limitRow(k, d, hc, x, i)),
-      // what to do about it: the advice with the most to gain, and its one button
-      k.hang(
-        k.dot(h.level),
-        k.Box({
-          flexDirection: 'column',
-          rowGap: 'xs',
-          children: [
-            k.text(h.title, { weight: 'semibold', wrap: 'wrap' }),
-            k.guide(h.detail),
-            ...(h.item && h.item.gain ? [gainLine(k, h.item.gain)] : []),
-            ...shareLines(k, d),
-            ...(h.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('hero-action', h.action.label, () => act.run(h.action.key), { variant: 'primary' })])] })] : []),
-            ...heroConfirms,
-          ],
-        }),
-      ),
+      ...shareLines(k, d),
+      // what to do about it: the one suggestion that answers the headline, with its one main button
+      ...(approval ? [goAhead()] : item && !isShrink ? [said(k, item, fixButton(item, !!fix))] : !first && !h.item ? [said(k, { level: h.level, title: h.title, detail: h.detail })] : []),
     ].filter(Boolean),
   })
 
   // each section is drawn by a function of the kit, so a wide pane can draw it for its own column
   const ways = (kk) => {
-    const more = d.advice.filter((a) => a !== h.item)
+    // a note to write is said by the card that writes it (it shows whether there is one), so it is not said twice
+    const more = d.advice.filter((a) => a !== item && !(a.action && a.action.key === 'note'))
     if (!more.length) return null
     const shown = d.view.showMore ? more : more.slice(0, 3)
     return kk.card('More ways to save', null, [
-      ...shown.map((a, i) =>
-        kk.hang(
-          kk.dot(a.level),
-          kk.Box({
-            flexDirection: 'column',
-            rowGap: 'xs',
-            children: [
-              kk.text(a.title, { weight: 'semibold', wrap: 'wrap' }),
-              kk.guide(a.detail),
-              ...(a.gain ? [gainLine(kk, a.gain)] : []),
-              ...(a.action ? [kk.Box({ marginTop: 'xs', children: [kk.buttons([kk.button('advice-' + i, a.action.label, () => act.run(a.action.key))])] })] : []),
-            ],
-          }),
-        ),
-      ),
+      ...shown.map((a, i) => {
+        const home = a.action && ADVICE_HOMES[a.action.key + '|' + a.action.label]
+        // a control this tab already has is linked to, not drawn twice
+        const button = !a.action ? [] : home ? [kk.button('advice-' + i, home[0] + ' ›', () => act.setView({ focus: home[1] }), { plain: true, dimColor: true })] : [kk.button('advice-' + i, a.action.label, () => act.run(a.action.key))]
+        return said(kk, a, button.length ? [kk.Box({ marginTop: 'xs', children: [kk.buttons(button)] })] : [])
+      }),
       ...(more.length > 3 ? [kk.buttons([kk.button('advice-more', d.view.showMore ? 'Show fewer' : 'Show all ' + more.length, act.toggleMore, { dimColor: true })])] : []),
     ], { gap: 'md' })
   }
@@ -750,14 +936,20 @@ function overviewTab(k, d, act) {
     )
   const winsCard = (kk) => {
     const won = wins(d)
-    return won.length ? kk.card('Wins this session', 'What ToBeBestMe has saved you so far.', won.map((w) => kk.hang(kk.text('✓', { color: 'success' }), kk.text(w, { wrap: 'wrap' })))) : null
+    return won.length ? kk.card('Wins this chat', 'What ToBeBestMe has saved you so far.', won.map((w) => kk.hang(kk.text('✓', { color: 'success' }), kk.text(w, { wrap: 'wrap' })))) : null
   }
-  const shrink = (kk) => kk.card('Make the conversation smaller', 'A handoff note keeps the goal and next steps, so a smaller conversation picks up where you left off.', shrinkBody(kk, d, act, heroConfirms.length > 0))
+  // the one home of write a note, start fresh and compact. When the headline's fix is one of them it is drawn first,
+  // with the reason for it and its button as the view's main one
+  const shrink = (kk) =>
+    kk.card('Make the chat smaller', 'A handoff note keeps the goal and next steps, so a smaller chat picks up where you left off.', [
+      ...(isShrink ? [said(kk, item)] : []),
+      ...shrinkBody(kk, d, act, isShrink && fix ? (item.action.key === 'note' ? 'handoff' : item.action.key) : undefined),
+    ], { gap: 'md' })
   const recent = (kk) => {
     if (!d.activity.length) return null
     const all = [...d.activity].reverse()
     const shown = d.view.showAllActivity ? all : all.slice(0, 4)
-    return kk.card('Recent activity', 'What happened this session, with each figure as it was at the time.', [
+    return kk.card('Recent activity', 'What happened this chat, with each figure as it was at the time.', [
       ...shown.map((a) => kk.hang(kk.dot(a.level), kk.text(a.text, { wrap: 'wrap' }), kk.footnote(fmtClock(a.at, d.now), { tabular: true, wrap: 'truncate-end' }))),
       kk.buttons([...(all.length > 4 ? [kk.button('activity-more', d.view.showAllActivity ? 'Show fewer' : 'Show all ' + all.length, act.toggleActivity, { dimColor: true })] : []), kk.button('activity-clear', 'Clear activity', act.clearActivity, { dimColor: true })]),
     ], { keepCaption: true })
@@ -766,12 +958,13 @@ function overviewTab(k, d, act) {
   // what fills the window sits on this tab too, below the things to act on
   if (k.isTerminal || k.columns < SPLIT_AT) {
     const c = contextBlocks(k, d, act)
-    return [head, ways(k), modelCard(k, d, act), longRunCard(k, d, act), howLong(k), c.context, c.per, c.loaded, winsCard(k), shrink(k), recent(k)].filter(Boolean)
+    return [head, ...(isShrink ? [shrink(k)] : []), ways(k), modelCard(k, d, act), longRunCard(k, d, act), howLong(k), c.context, c.per, c.loaded, winsCard(k), ...(isShrink ? [] : [shrink(k)]), recent(k)].filter(Boolean)
   }
   const [km, ka] = k.split()
   const cm = contextBlocks(km, d, act)
   const ca = contextBlocks(ka, d, act)
-  return [head, km.layout([ways(km), modelCard(km, d, act), longRunCard(km, d, act), cm.context, cm.loaded], [howLong(ka), ca.per, winsCard(ka), shrink(ka), recent(ka)])]
+  // the two columns end together: the model card and what is always loaded sit beside the long run and the context
+  return [head, km.layout([...(isShrink ? [shrink(km)] : []), ways(km), longRunCard(km, d, act), cm.context], [howLong(ka), modelCard(ka, d, act), ca.per, winsCard(ka), ...(isShrink ? [] : [shrink(ka)]), recent(ka), ca.loaded])]
 }
 
 // Today's share of the weekly limit, said calmly: the pace that lasts, and where today stands.
@@ -779,20 +972,20 @@ function shareLines(k, d) {
   const l = d.limits.find((x) => x.r.kind === 'seven_day') || d.limits.find((x) => /seven_day/.test(x.r.kind))
   const s = l ? dailyShare(l, (d.limitHistory && d.limitHistory[l.r.kind]) || [], d.now) : null
   if (!s) return []
-  return [k.Text({ wrap: 'wrap', children: [k.text(s.isOver ? '● ' : '✓ ', s.isOver ? { color: 'warning' } : { color: 'success' }), k.text('Weekly limit: ' + shareSentence(s), { size: 'footnote' })] })]
+  return [k.Text({ wrap: 'wrap', children: [...(s.isOver ? [k.text('● ', { color: 'warning' })] : []), k.text('Weekly limit: ' + shareSentence(s), { size: 'footnote' })] })]
 }
 
 // What tobebestme has actually saved this session, in its own words.
 function wins(d) {
   const out = []
-  if (d.wins.compactions) out.push(plural(d.wins.compactions, 'compaction', 'compactions') + (d.wins.tokensFreed ? ' freed ' + fmtTokens(d.wins.tokensFreed) + ' tokens from every later turn' : ' kept the conversation lean'))
+  if (d.wins.compactions) out.push(plural(d.wins.compactions, 'compaction', 'compactions') + (d.wins.tokensFreed ? ' freed ' + fmtTokens(d.wins.tokensFreed) + ' tokens from every later turn' : ' kept the chat lean'))
   if (d.routing.spawnsForced) out.push(plural(d.routing.spawnsForced, 'helper', 'helpers') + ' ran on ' + titleCase(d.opts.cheapModel) + ' instead of a pricier model')
   if (d.routing.rerouted) out.push(plural(d.routing.rerouted, 'main request', 'main requests') + ' went to ' + titleCase(d.opts.cheapModel))
   if (d.routing.effortLowered) out.push(plural(d.routing.effortLowered, 'request', 'requests') + ' thought less once context got large')
   const totals = Object.values(d.models).reduce((t, r) => ({ requests: t.requests + r.requests, input: t.input + r.input + r.cacheRead + r.cacheWrite, cacheRead: t.cacheRead + r.cacheRead }), { requests: 0, input: 0, cacheRead: 0 })
-  if (totals.requests >= 3 && totals.input > 0 && totals.cacheRead / totals.input >= 0.6) out.push(Math.round((totals.cacheRead / totals.input) * 100) + '% of input came from the cache, at about a tenth of the price')
+  if (totals.requests >= 3 && totals.input > 0 && totals.cacheRead / totals.input >= 0.6) out.push(pctText((totals.cacheRead / totals.input) * 100) + ' of input came from the cache, at a tenth of the price or less')
   // counted as they happen, not from the activity list, which can be cleared
-  if (d.wins.notes) out.push(plural(d.wins.notes, 'handoff note', 'handoff notes') + ' saved, so nothing is lost when the conversation shrinks')
+  if (d.wins.notes) out.push(plural(d.wins.notes, 'handoff note', 'handoff notes') + ' saved, so nothing is lost when the chat shrinks')
   if (d.wins.skills) out.push(plural(d.wins.skills, 'skill', 'skills') + ' saved for work you repeat')
   return out
 }
@@ -812,8 +1005,7 @@ function contextParts(d) {
 // More about one category than its row can hold: what it is, its share, what fills it, how to shrink it.
 function categoryTip(d, r, total) {
   const info = categoryInfo(r.name)
-  const share = total > 0 ? Math.max(r.tokens / total < 0.01 ? 0 : 1, Math.round((r.tokens / total) * 100)) : 0
-  const lines = [info.what, fmtTokens(r.tokens) + ' tokens, ' + (share ? share + '%' : 'under 1%') + ' of the window.']
+  const lines = [info.what, fmtTokens(r.tokens) + ' tokens, ' + pctText(total > 0 ? (r.tokens / total) * 100 : 0, true) + ' of the window.']
   const b = d.breakdown
   if (/^messages/i.test(r.name)) {
     const big = Object.keys(d.tools).map((n) => ({ n, t: d.tools[n].chars / 4 })).sort((a, z) => z.t - a.t).slice(0, 3)
@@ -825,7 +1017,7 @@ function categoryTip(d, r, total) {
     lines.push(b.memoryFiles.map((m) => (m.path.split('/').pop() || m.path) + ' ' + fmtTokens(m.tokens)).join(', ') + '.')
   } else if (/skills/i.test(r.name) && b && b.skills) {
     const used = Object.keys(d.skillUse || {}).length
-    lines.push(plural(b.skills.includedSkills, 'skill', 'skills') + ' listed, ' + plural(used, 'skill', 'skills') + ' used this session.')
+    lines.push(plural(b.skills.includedSkills, 'skill', 'skills') + ' listed, ' + plural(used, 'skill', 'skills') + ' used this chat.')
   }
   if (info.how) lines.push(info.how)
   return { title: r.name, lines }
@@ -837,7 +1029,7 @@ function contextBlocks(k, d, act) {
   const used = parts.rows.reduce((s, r) => s + r.tokens, 0)
   // free space is everything not in use, the part kept back for compaction included, so it reads the same here as in Claude Code's own count
   const free = Math.max(0, parts.total - used)
-  const share = (n) => (parts.total > 0 ? Math.round((n / parts.total) * 100) + '%' : '')
+  const share = (n) => (parts.total > 0 ? pctText((n / parts.total) * 100) : '')
   const b = d.breakdown
   const cAt = compactAt(d)
   const swatch = (hex, color) => k.text(hex ? '■ ' : '□ ', hex ? { color: k.isTerminal ? color : midHex(hex) } : { dimColor: true })
@@ -846,7 +1038,7 @@ function contextBlocks(k, d, act) {
   const legend = [k.heads([{ text: 'What fills it' }, { text: '', width: barW }, { text: 'Tokens', width: 9 }, { text: 'Share', width: 7 }])]
   parts.rows.forEach((r, i) => legend.push(k.row([{ parts: [swatch(r.hex, r.color), r.name] }, { el: k.bar(r.tokens, biggest, r.hex, r.name + ' ' + fmtTokens(r.tokens)), width: barW }, { text: fmtTokens(r.tokens), width: 9 }, { text: share(r.tokens), width: 7 }], {}, { key: 'cat-' + i, tip: categoryTip(d, r, parts.total) })))
   if (parts.rows.length) legend.push(k.row([{ parts: [swatch(null), 'Free space'] }, { text: '', width: barW }, { text: fmtTokens(free), width: 9 }, { text: share(free), width: 7 }], { dimColor: true }, { key: 'cat-free', tip: { title: 'Free space', lines: [categoryInfo('Free space').what, cAt && cAt > d.tokens ? 'Claude Code compacts after another ' + fmtTokens(cAt - d.tokens) + ' tokens.' : ''] } }))
-  if (parts.buffer) legend.push(k.row([{ parts: [swatch(null), k.columns >= 60 ? 'Of that, kept for compaction' : 'Kept for compaction'] }, { text: '', width: barW }, { text: fmtTokens(parts.buffer), width: 9 }, { text: share(parts.buffer), width: 7 }], { dimColor: true }, { key: 'cat-buffer', tip: { title: 'Kept free for compaction', lines: [categoryInfo('Autocompact buffer').what] } }))
+  if (parts.buffer) legend.push(k.row([{ parts: [swatch(null), k.columns >= 60 ? 'Of that, kept for compaction' : 'Held back'] }, { text: '', width: barW }, { text: fmtTokens(parts.buffer), width: 9 }, { text: share(parts.buffer), width: 7 }], { dimColor: true }, { key: 'cat-buffer', tip: { title: 'Kept free for compaction', lines: [categoryInfo('Autocompact buffer').what] } }))
 
   const markers = [
     { at: o.contextWarnAt, title: 'Warning at ' + o.contextWarnAt + '%' },
@@ -863,9 +1055,9 @@ function contextBlocks(k, d, act) {
         [...parts.rows.map((r) => ({ value: r.tokens, hex: r.hex, color: r.color, title: r.name + ': ' + fmtTokens(r.tokens) + ' tokens (' + share(r.tokens) + ')' })), ...(parts.buffer ? [{ value: parts.buffer, hex: HEX.buffer, color: 'inactive', glyph: '▒', dim: true, title: 'Kept free for compaction: ' + fmtTokens(parts.buffer) }] : [])],
         parts.total,
         markers,
-        'Context ' + d.pct + '% full: ' + parts.rows.map((r) => r.name + ' ' + fmtTokens(r.tokens)).join(', '),
+        'Context ' + pctText(d.pct) + ' full: ' + parts.rows.map((r) => r.name + ' ' + fmtTokens(r.tokens)).join(', '),
       ),
-      k.footnote('Marks: warning at ' + o.contextWarnAt + '% · cheaper model at ' + o.cheaperModelAt + '%' + (cAt ? ' · auto-compaction at ' + fmtTokens(cAt) : '') + (k.isTerminal ? '' : '. Point at a part or a row for more.')),
+      k.footnote('Marks: warning at ' + o.contextWarnAt + '% · cheaper model at ' + o.cheaperModelAt + '%' + (cAt ? ' · auto-compaction at ' + fmtTokens(cAt) : '') + k.hint('. Point at a part or a row for more.')),
       k.Box({ flexDirection: 'column', marginTop: 'sm', children: legend }),
       ...(parts.isMeasured ? [] : [k.footnote('The breakdown by category appears once Claude Code has measured it.')]),
     ]),
@@ -874,11 +1066,11 @@ function contextBlocks(k, d, act) {
   const withSize = d.turns.filter((t) => t.context > 0)
   const last = d.turns[d.turns.length - 1]
   const lastInput = last ? (last.input || 0) + (last.cacheRead || 0) + (last.cacheWrite || 0) : 0
-  const reuse = last && lastInput > 0 && typeof last.cacheRead === 'number' ? Math.round((last.cacheRead / lastInput) * 100) : null
+  const reuse = last && lastInput > 0 && typeof last.cacheRead === 'number' ? (last.cacheRead / lastInput) * 100 : null
   const shownSize = withSize.slice(-CHART_SLOTS)
   put('per',
     !(reuse !== null || shownSize.length >= 4) ? null : k.card('Per request', 'About ' + fmtTokens(d.tokens) + ' tokens go with every request now.', [
-      ...(reuse !== null ? [k.footnote(reuse + "% of the last turn's input came from the cache, which costs about a tenth as much.")] : []),
+      ...(reuse !== null ? [k.footnote(pctText(reuse) + " of the last turn's input came from the cache, which costs a tenth as much or less.")] : []),
       // on a surface that draws, the turns' history is the lead's own drawing; the terminal keeps its sparkline here
       ...(shownSize.length >= 4 && !k.hasSvg
         ? [
@@ -903,7 +1095,7 @@ function contextBlocks(k, d, act) {
     }
     const memory = Array.isArray(b.memoryFiles) ? [...b.memoryFiles].sort((a, z) => z.tokens - a.tokens).slice(0, 5) : []
     if (memory.length) {
-      groups.push(group(k, 'Memory files', memory.map((m, i) => k.row([{ text: (m.path.split('/').pop() || m.path) + ' (' + m.type + ')' }, loadedBar(m.tokens, m.path), { text: fmtTokens(m.tokens), width: 9 }], {}, { key: 'memory-' + i, tip: { title: m.path.split('/').pop() || m.path, lines: [m.path, fmtTokens(m.tokens) + ' tokens, read at the start of every session.'] } })), [k.button('edit-memory', 'Edit memory', () => act.run('memory'))]))
+      groups.push(group(k, 'Memory files', memory.map((m, i) => k.row([{ text: (m.path.split('/').pop() || m.path) + ' (' + m.type + ')' }, loadedBar(m.tokens, m.path), { text: fmtTokens(m.tokens), width: 9 }], {}, { key: 'memory-' + i, tip: { title: m.path.split('/').pop() || m.path, lines: [m.path, fmtTokens(m.tokens) + ' tokens, read at the start of every chat.'] } })), [k.button('edit-memory', 'Edit memory', () => act.run('memory'))]))
     }
     const listed = []
     if (b.skills) listed.push(k.row([{ text: plural(b.skills.includedSkills, 'skill', 'skills') }, loadedBar(b.skills.tokens, 'Skills'), { text: fmtTokens(b.skills.tokens), width: 9 }], {}, { key: 'listed-skills', tip: { title: 'Skills', lines: [categoryInfo('Skills').what, 'The Skills tab shows which cost the most.'] } }))
@@ -931,10 +1123,16 @@ function limitList(d, h) {
   if (d.limits.length) return d.limits
   return h.windows.map((w) => {
     const kind = kindOfLabel(w.label)
-    const r = { kind, percentUsed: w.pct, resetsAt: w.resetsAt ? new Date(w.resetsAt).toISOString() : undefined }
-    const o = limitOutlook(r, null, d.now)
+    // the window's own label stays on it: two weekly windows (all models, one model) are not one limit
+    const r = { kind, label: w.label, percentUsed: w.pct, resetsAt: w.resetsAt ? new Date(w.resetsAt).toISOString() : undefined }
+    const o = limitOutlook(r, null, drawTime(d.now))
     return { r, o, level: limitLevel(r, o, d.opts) }
   })
+}
+
+// A limit's colour: a plan window by its own label, any other by its kind.
+function limitHex(r) {
+  return r.label ? planHex(r.label) : RING_HEX[r.kind] || planHex(r.kind)
 }
 
 // The one that matters most: the soonest to run out early, else the fullest.
@@ -944,12 +1142,14 @@ function leadLimit(limits) {
 }
 
 // A bar split into parts with its legend under it, for "where it went": each part says what it is on
-// hover, and the legend says it in words with the share.
-function splitBar(k, title, parts, alt) {
+// hover, and the legend says it in words with the share. The bar's own name says the same shares, on the
+// same basis the title names (the share of the week's work, not of the limit).
+function splitBar(k, title, parts) {
   const total = parts.reduce((n, p) => n + p.value, 0)
   if (!(total > 0)) return null
   const glyphs = ['█', '▓', '▒', '░', '▪']
-  const pct = (v) => (v / total < 0.01 ? '<1' : String(Math.round((v / total) * 100))) + '%'
+  const pct = (v) => pctText((v / total) * 100)
+  const alt = title + ': ' + parts.map((p) => p.name + ' ' + pctText((p.value / total) * 100, true)).join(', ') + '.'
   return k.Box({
     flexDirection: 'column',
     rowGap: 'xs',
@@ -963,7 +1163,7 @@ function splitBar(k, title, parts, alt) {
 
 // Where the last seven days went: each day stacked by project in its colour (as Home's calendar is),
 // then the same days by model.
-function usageWhere(k, d, h) {
+function usageWhere(k, d, h, hasWindow = false) {
   if (!h.has) return []
   const { u, now } = h
   const days = u.days.slice(-7)
@@ -988,7 +1188,8 @@ function usageWhere(k, d, h) {
         flexDirection: 'column',
         rowGap: 'xs',
         children: [
-          k.footnote('Each of the past 7 days, by project'),
+          // the days are a rolling week ending today, not the limit's own window (which begins when it last reset); the dashed line is the mean
+          k.footnote('Each of the past 7 days, by project: a rolling week ending today' + (hasWindow ? ', not the limit’s window above' : '') + '. The dashed line is the average, ' + cost(mean) + ' a day.', { wrap: 'wrap' }),
           k.bars(days, 7, 'Use each day over the past 7 days: ' + keys.map((key, i) => dayWords(key, now) + ' ' + cost(days[i])).join(', ') + '.', 64, { stacks, titles: keys.map((key, i) => dayWords(key, now) + ': ' + cost(days[i])), average: true, averageTitle: 'Average: ' + cost(mean) + ' a day' }),
           k.Box({
             flexDirection: 'row',
@@ -1002,7 +1203,7 @@ function usageWhere(k, d, h) {
   const byProject = u.projects.filter((p) => p.week > 0)
   const shownProjects = byProject.slice(0, 5)
   const rest = byProject.slice(5).reduce((n, p) => n + p.week, 0)
-  const projects = splitBar(k, 'Projects, past 7 days', [...shownProjects.map((p) => ({ name: p.name, value: p.week, hex: hueOf(h, p.key) })), ...(rest > 0 ? [{ name: 'other projects', value: rest, hex: OTHER_HEX }] : [])], 'Past 7 days by project: ' + shownProjects.map((p) => p.name + ' ' + cost(p.week)).join(', '))
+  const projects = splitBar(k, 'Share of the past 7 days’ work, by project', [...shownProjects.map((p) => ({ name: p.name, value: p.week, hex: hueOf(h, p.key) })), ...(rest > 0 ? [{ name: 'other projects', value: rest, hex: OTHER_HEX }] : [])])
   const families = {}
   for (const [m, usd] of u.models) {
     const name = modelName(m).replace(/ [\d.]+$/, '')
@@ -1010,10 +1211,10 @@ function usageWhere(k, d, h) {
     families[name].value += usd
   }
   const helped = u.kinds.helpers + u.kinds.workflows
-  const models = splitBar(k, 'Models, past 7 days', Object.values(families).sort((a, z) => z.value - a.value), 'Past 7 days by model: ' + Object.values(families).map((f) => f.name + ' ' + cost(f.value)).join(', '))
+  const models = splitBar(k, 'Share of the past 7 days’ work, by model', Object.values(families).sort((a, z) => z.value - a.value))
   if (projects) out.push(projects)
   if (models) out.push(models)
-  if (helped > 0) out.push(k.footnote('Helpers and workflow agents did ' + Math.round((helped / Math.max(0.0001, u.kinds.main + helped)) * 100) + '% of the week’s work.'))
+  if (helped > 0) out.push(k.footnote('Helpers and workflow agents did ' + pctText((helped / Math.max(0.0001, u.kinds.main + helped)) * 100) + ' of the week’s work.'))
   return out
 }
 
@@ -1028,56 +1229,73 @@ function usageLead(k, d, act, h, limits, main) {
   let chart = null
   if (main) {
     const { r, o } = main
-    const p = Math.round(r.percentUsed)
+    const p = pctText(r.percentUsed)
     const what = 'week'
     level = main.level
-    if (isEarly(r, o)) {
-      headline = limitLabel(r.kind) + ' runs out ' + fmtClock(o.fullAt, d.now)
-      facts = [o.resetAt !== null ? fmtSpan(o.resetAt - o.fullAt) + ' before it resets' : '', o.resetAt !== null ? 'resets ' + fmtClock(o.resetAt, d.now) : '']
+    if (o.isUsedUp) {
+      headline = limitName(r) + ' is used up until it resets'
+      facts = [o.resetAt !== null ? 'resets ' + fmtClock(o.resetAt, d.now) : '']
+    } else if (isEarly(r, o)) {
+      headline = limitName(r) + ' on pace to run out ' + fmtClock(o.fullAt, d.now)
+      facts = [o.resetAt !== null ? roughSpan(o.resetAt - o.fullAt) + ' before it resets' : '', o.resetAt !== null ? 'resets ' + fmtClock(o.resetAt, d.now) : '']
     } else if (o.atReset !== null) {
-      headline = 'On pace to end the ' + what + ' at about ' + Math.min(100, Math.round(o.atReset)) + '%'
-      facts = [limitLabel(r.kind) + ' is ' + p + '% used', o.resetAt !== null ? 'resets ' + fmtClock(o.resetAt, d.now) : '']
+      headline = 'On pace to end the ' + what + ' at ' + pctAbout(Math.min(100, o.atReset))
+      facts = [limitName(r) + ' is ' + p + ' used', o.resetAt !== null ? 'resets ' + fmtClock(o.resetAt, d.now) : '']
     } else {
-      headline = limitLabel(r.kind) + ' is ' + p + '% used'
-      facts = ['The pace shows once the window has run a quarter of an hour']
+      headline = limitName(r) + ' is ' + p + ' used'
+      facts = [noForecastWords(r, o).replace(/\.$/, '')]
     }
     glyph = level === 'success' || level === 'info' ? k.text('✓ ', { color: 'success' }) : k.text('● ', { color: level })
     chart = limitChart(k, d, main)
   } else {
-    const budget = d.opts.dailyBudget > 0 ? { label: 'Daily budget', cap: d.opts.dailyBudget, spent: d.today } : d.opts.sessionBudget > 0 ? { label: 'Session budget', cap: d.opts.sessionBudget, spent: d.usd } : null
+    const budget = d.opts.dailyBudget > 0 ? { label: 'Daily budget', cap: d.opts.dailyBudget, spent: d.todayBudget, counted: ' counted toward it today' } : d.opts.sessionBudget > 0 ? { label: 'Chat budget', cap: d.opts.sessionBudget, spent: d.usd, counted: '' } : null
     level = budget ? (budget.spent >= budget.cap ? 'error' : budget.spent >= budget.cap * 0.8 ? 'warning' : 'success') : 'success'
-    headline = budget ? (budget.spent >= budget.cap ? budget.label + ' reached' : fmtUsd(budget.cap - budget.spent) + ' left of the ' + budget.label.toLowerCase()) : d.today > 0 ? cost(d.today) + ' today' : 'No spending yet today'
-    facts = [budget ? fmtUsd(budget.spent) + ' of ' + fmtUsd(budget.cap) : '', 'No plan limits reported yet']
-    glyph = level === 'success' ? k.text('✓ ', { color: 'success' }) : k.text('● ', { color: level })
+    headline = budget ? (budget.spent >= budget.cap ? budget.label + ' reached' : fmtUsd(budget.cap - budget.spent) + ' left of the ' + budget.label.toLowerCase()) : d.today > 0 ? 'Spending today' + (todayScope(d).all ? ', on this computer' : ', in chats running ToBeBestMe') : 'No spending yet today'
+    facts = [budget ? fmtUsd(budget.spent) + ' of ' + fmtUsd(budget.cap) + budget.counted : '', 'No plan limits reported yet']
+    // a tick that says all is well is not earned while other chats' spending is unread: it is drawn quiet
+    const isPartial = !budget && d.today > 0 && !todayScope(d).all
+    glyph = level === 'success' ? k.text('✓ ', isPartial ? { dimColor: true } : { color: 'success' }) : k.text('● ', { color: level })
   }
   const factsLine = facts.filter(Boolean).join(' · ')
-  const where = usageWhere(k, d, h)
+  const where = usageWhere(k, d, h, !!main)
   return lead(k, {
     glyph,
     headline,
     facts: factsLine ? factsLine + '.' : '',
     factsTip: u ? { title: 'The past 7 days, in every project', lines: ['What the week’s answers would cost at list prices, helpers and workflow agents included.', 'On a plan the limits are what you spend; this shows how heavy the work was.'], align: 'left' } : undefined,
-    figure: u ? { value: cost(u.week.usd), caption: SHARE ? 'of your weekly limit · past 7 days' : 'of work in the past 7 days', sub: u.today.usd > 0 ? 'Today ' + cost(u.today.usd) : '' } : { value: cost(d.today), caption: 'today on this machine', sub: 'This session ' + cost(d.usd) },
+    // the figure answers the headline: how much of the limit it is about is used, in the colour of its status. The past
+    // 7 days' work, which is a different measure, is said under it
+    figure: main
+      ? {
+          value: pctText(main.r.percentUsed),
+          caption: limitName(main.r) + ' used' + (main.o.isUsedUp ? ' · used up' : main.level === 'error' ? ' · nearly out' : isEarly(main.r, main.o) ? ' · runs out early' : main.level === 'warning' ? ' · past your alert' : ''),
+          sub: u ? 'Past 7 days of work, estimated: ' + cost(u.week.usd) + (SHARE ? ' of the limit' : '') + (d.today > 0 ? ' · today ' + cost(d.today) : '') : '',
+          level: main.level,
+          tip: u && SHARE ? { title: 'Past 7 days of work', lines: ['What the week’s answers would cost at list prices, as a share of your weekly limit: an estimate.', 'The reading above is the limit itself, from Claude Code.'] } : undefined,
+        }
+      : u ? { value: cost(u.week.usd), caption: SHARE ? 'of a weekly limit, estimated from list prices · past 7 days' : 'of work in the past 7 days', sub: d.today > 0 ? 'Today ' + cost(d.today) : '' } : { value: cost(d.today), caption: 'today, ' + todayScope(d).in, sub: [todayScope(d).why ? '(' + todayScope(d).why + ')' : '', Math.abs(d.today - d.usd) >= 0.005 ? 'This session ' + cost(d.usd) : ''].filter(Boolean).join(' · ') },
     visual: [chart, ...where].filter(Boolean),
   })
 }
 
-// The week as one picture to keep and post: drawn in the pane (desktop and VS Code, where a drawing
-// shows), saved as an SVG and, where the computer has a converter, a PNG, with a few lines to paste.
+// The week as one picture to keep and post: saved as an SVG and, where the computer has a converter, a PNG, with a few
+// lines to paste. On desktop and VS Code, where a drawing shows, the picture can be looked at first; it is one row
+// of buttons until then, so the limits and the spending above are what the tab opens on.
 function reportCard(k, d, act) {
   if (!k.hasSvg || !d.usage || d.usage.isEmpty) return null
   const r = reportData(d, { hideNames: !!d.view.cardHide })
   if (!r) return null
+  const isOpen = !!d.view.showCard
   const W = Math.max(240, Math.min(720, Math.round(k.px - 44)))
-  const src = svgReportCard(r, { width: W, isAnimated: true })
   return k.card('Weekly report card', 'Your week as one picture: saved as an image file, with a few lines to paste beside it.', [
-    k.Box({ flexDirection: 'column', alignSelf: 'flex-start', children: [k.Svg({ source: src, alt: reportAlt(r) })] }),
     k.buttons([
       k.button('card-save', 'Save report card', (ev) => act.saveCard(ev && ev.surface)),
       k.button('card-copy', 'Copy text summary', (ev) => act.copyCardText(ev && ev.surface)),
-      k.button('card-names', d.view.cardHide ? 'Show project names' : 'Hide project names', act.toggleCardNames, { plain: true, dimColor: true }),
+      k.button('card-preview', isOpen ? 'Hide preview' : 'Show preview', () => act.setView({ showCard: !isOpen }), { dimColor: true }),
+      k.button('card-names', d.view.cardHide ? '✓ Project names hidden' : 'Hide project names', act.toggleCardNames, { dimColor: d.view.cardHide ? undefined : true }),
     ]),
-    k.footnote('Saves an SVG to ~/.claude/tobebestme/reports, and a PNG too when rsvg-convert, ImageMagick, Inkscape or macOS Quick Look is on this computer. Nothing is uploaded.'),
+    ...(isOpen ? [k.Box({ flexDirection: 'column', alignSelf: 'center', children: [k.Svg({ source: svgReportCard(r, { width: W, isAnimated: true }), alt: reportAlt(r) })] })] : []),
+    k.footnote('Saves an SVG to ' + d.reportDir + ', and a PNG too when rsvg-convert, ImageMagick, Inkscape or macOS Quick Look is on this computer. Nothing is uploaded.'),
   ], { keepCaption: true })
 }
 
@@ -1085,50 +1303,66 @@ function reportCard(k, d, act) {
 // that binds first and when it runs out, and what is running. The mobile app draws no field, so a
 // reply is one of the suggested buttons, shown whole and confirmed before it is sent.
 export function drawLobby(k, d, act) {
+  d = withExactPct(d)
   const L = lobbyData(d)
   const w = d.waiting
   const c = d.view.confirm || ''
-  const head = L.chats ? plural(L.chats, 'chat', 'chats') + (L.chats === 1 ? ' is' : ' are') + ' waiting for you' : L.prs ? plural(L.prs, 'pull request', 'pull requests') + (L.prs === 1 ? ' needs' : ' need') + ' a look' : 'Nothing is waiting for you'
+  // the headline and its notes are Home's: one count, the same words
+  const read = waitingRead(d, { has: !!(d.usage && !d.usage.isEmpty), sc: d.scan || {} })
+  const [head, glyph] = homeHeadline(L.tally, read)
+  const notes = waitNotes(L.tally, read)
+  const firstAnswer = L.needs.findIndex((x) => canAnswer(w, x))
+  const card = (key, children) => k.Box({ key, flexDirection: 'column', rowGap: 'sm', paddingX: 'md', paddingY: 'md', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true, children })
   const out = [
-    k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('ToBeBestMe'), k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'flex-start', children: [k.text(L.chats ? '● ' : '✓ ', L.chats ? { color: 'warning' } : { color: 'success' }), k.Box({ flexShrink: 1, children: [k.text(head, { size: 'title', weight: 'semibold', wrap: 'wrap' })] })] })] }),
+    k.Box({
+      flexDirection: 'column',
+      rowGap: 'xs',
+      children: [k.footnote('ToBeBestMe'), k.hang(k.Box({ paddingTop: 'xs', children: [k.text(glyph[0], glyph[1])] }), k.text(head, { size: 'title', weight: 'semibold', wrap: 'wrap' })), ...(notes.length ? [k.text(notes.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : [])],
+    }),
   ]
+  // a workflow asking for its go-ahead in this chat: asked in the chat's own dialog, so it says where to answer
+  if (L.approval) {
+    out.push(
+      card('lobby-approval', [
+        k.Text({ wrap: 'wrap', children: [k.text('●  ', { color: 'warning' }), k.text('Waiting for your go-ahead', { size: 'footnote', weight: 'semibold', color: 'warning' })] }),
+        k.text('Claude wants to run ' + (L.approval.preview.name ? '“' + L.approval.preview.name + '”' : 'a workflow'), { weight: 'semibold', wrap: 'wrap' }),
+        k.guide('Answer in the chat: Run workflow, Run every agent on Sonnet or Don’t run.'),
+      ]),
+    )
+  }
   L.needs.forEach((x, i) => {
     const [label, level] = needWords(x)
     const asking = c.startsWith('reply:' + x.key + ':') ? Number(c.slice(('reply:' + x.key + ':').length)) : -1
     const canSend = canAnswer(w, x)
     const pending = asking >= 0 && asking < x.replies.length ? x.replies[asking].message || x.replies[asking].label : ''
-    const text = (x.text || x.recap || '').length > 180 ? (x.text || x.recap).slice(0, 179).replace(/\s+\S*$/, '') + '…' : x.text || x.recap || ''
+    const said = needAsk(x) || x.recap || ''
+    const text = said.length > 180 ? said.slice(0, 179).replace(/\s+\S*$/, '') + '…' : said
     const buttons = []
-    if (canSend && asking < 0) x.replies.slice(0, 3).forEach((r, j) => buttons.push(k.button('lobby-' + i + '-r' + j, r.label, () => act.setView({ confirm: 'reply:' + x.key + ':' + j, replying: '' }))))
+    if (canSend && asking < 0) x.replies.slice(0, 3).forEach((r, j) => buttons.push(k.button('lobby-' + i + '-r' + j, r.label, () => act.setView({ confirm: 'reply:' + x.key + ':' + j, replying: '' }), { variant: i === firstAnswer && j === 0 ? 'primary' : undefined, about: x.title })))
     if (x.prUrl && k.Link) buttons.push(k.Link({ href: x.prUrl, label: 'Open pull request #' + x.prNumber }))
+    // as on the desktop, any of them can be set aside; it comes back if that chat asks again
+    if (asking < 0) buttons.push(k.button('lobby-' + i + '-later', 'Set aside', () => act.dismissNeed(x), { plain: true, dimColor: true, about: x.title }))
+    const how = needHow(w, x, canSend)
     out.push(
-      k.Box({
-        key: 'lobby-need-' + i,
-        flexDirection: 'column',
-        rowGap: 'sm',
-        paddingX: 'md',
-        paddingY: 'md',
-        backgroundColor: GROUP_BG,
-        borderStyle: 'round',
-        borderDimColor: true,
-        children: [
-          k.Text({ wrap: 'wrap', children: [k.text('●  ', { color: level === 'success' ? 'success' : level === 'info' ? undefined : level, dimColor: level === 'info' ? true : undefined }), k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) })] }),
-          k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
-          k.footnote([x.project, ago(d.now - x.at)].filter(Boolean).join(' · '), { wrap: 'wrap' }),
-          ...(text ? [k.text(text, { wrap: 'wrap' })] : []),
-          ...(asking >= 0
-            ? [k.text('Send this to “' + x.title + '”?', { weight: 'medium', wrap: 'wrap' }), k.Box({ paddingX: 'md', paddingY: 'sm', borderStyle: 'round', borderDimColor: true, children: [k.text(pending, { wrap: 'wrap' })] }), k.buttons([k.button('reply-go', 'Send reply', () => act.sendReply(x, pending), { variant: 'primary' }), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }))])]
-            : buttons.length
-              ? [k.buttons(buttons)]
-              : !canSend && x.kind !== 'pr' ? [k.guide(x.kind === 'permission' ? 'Allow or deny it in that session.' : 'Open that session to answer.')] : []),
-        ],
-      }),
+      card('lobby-need-' + i, [
+        k.Text({ wrap: 'wrap', children: [k.text('●  ', { color: level === 'success' ? 'success' : level === 'info' ? undefined : level, dimColor: level === 'info' ? true : undefined }), k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) })] }),
+        k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
+        k.footnote([x.project, ago(d.now - x.at)].filter(Boolean).join(' · '), { wrap: 'wrap' }),
+        ...(text ? [k.text(text, { wrap: 'wrap' })] : []),
+        ...(how ? [k.guide(how)] : []),
+        ...(asking >= 0
+          ? [k.text('Send this to “' + x.title + '”?', { weight: 'medium', wrap: 'wrap' }), k.Box({ paddingX: 'md', paddingY: 'sm', borderStyle: 'round', borderDimColor: true, children: [k.text(pending, { wrap: 'wrap' })] }), k.buttons([k.button('reply-go', 'Send reply', () => act.sendReply(x, pending), { variant: 'primary', autoFocus: true }), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }))])]
+          : buttons.length
+            ? [k.buttons(buttons)]
+            : []),
+      ]),
     )
   })
-  if (L.more) out.push(k.footnote('and ' + L.more + ' more, in ToBeBestMe on your computer.'))
+  // as the card on Home counts them: this many shown of all the chats and pull requests waiting
+  if (L.more) out.push(k.footnote('Showing ' + L.needs.length + ' of ' + w.needs.length + '. The rest are in ToBeBestMe on your computer.', { wrap: 'wrap' }))
   const t = L.tight
   if (t) {
-    const level = t.pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : t.pct >= d.opts.limitAlertAt || t.early ? 'warning' : 'success'
+    const level = shownPct(t.pct) >= Math.max(90, d.opts.limitAlertAt) ? 'error' : shownPct(t.pct) >= d.opts.limitAlertAt || t.early ? 'warning' : 'success'
     const hex = level === 'success' ? planHex(t.label) : HEX[level]
     out.push(
       k.Box({
@@ -1136,9 +1370,9 @@ export function drawLobby(k, d, act) {
         flexDirection: 'column',
         rowGap: 'xs',
         children: [
-          k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(t.label, { weight: 'semibold', wrap: 'truncate-end' })] }), k.text(Math.round(t.pct) + '%', { tabular: true, weight: 'semibold', color: quiet(level) })] }),
-          k.bar(t.pct, 100, hex, t.label + ' ' + Math.round(t.pct) + '% used'),
-          k.footnote(t.early ? 'Runs out ' + fmtClock(t.fullAt, d.now) + ', ' + fmtSpan(t.resetsAt - t.fullAt) + ' before it resets.' : t.resetsAt ? 'Resets ' + fmtClock(t.resetsAt, d.now) + ', in ' + fmtSpan(t.resetsAt - d.now) + '.' : '', { wrap: 'wrap', ...(t.early ? { color: 'warning' } : {}) }),
+          k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(t.label, { weight: 'semibold', wrap: 'truncate-end' })] }), k.text(pctText(t.pct), { tabular: true, weight: 'semibold', color: quiet(level) })] }),
+          k.bar(t.pct, 100, hex, t.label + ' ' + pctText(t.pct) + ' used'),
+          k.footnote(t.pct >= 100 && t.resetsAt ? 'Used up until it resets ' + fmtClock(t.resetsAt, d.now) + ', in ' + fmtSpan(t.resetsAt - d.now) + '.' : t.early ? 'Runs out ' + fmtClock(t.fullAt, d.now) + ', ' + roughSpan(t.resetsAt - t.fullAt) + ' before it resets.' : t.resetsAt ? 'Resets ' + fmtClock(t.resetsAt, d.now) + ', in ' + fmtSpan(t.resetsAt - d.now) + '.' : '', { wrap: 'wrap', ...(t.early ? { color: 'warning' } : {}) }),
         ],
       }),
     )
@@ -1150,12 +1384,13 @@ export function drawLobby(k, d, act) {
         rowGap: 'xs',
         children: [
           k.text('Running now', { weight: 'semibold' }),
-          ...L.runs.map((r) => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Text({ wrap: 'wrap', children: [k.text('● ', { color: 'success' }), k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  ' + r.progress.done + ' of ' + plural(r.progress.total, 'agent', 'agents') + (r.paused ? ', paused' : ''), { size: 'footnote', dimColor: true })] }), k.bar(r.progress.done, Math.max(1, r.progress.total), HEX.success, (r.name || 'Workflow') + ': ' + r.progress.done + ' of ' + r.progress.total + ' agents done')] })),
+          // the dot is the desktop's: blue and pulsing while it works, an amber pause when held
+          ...L.runs.map((r) => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', children: [r.paused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running'), k.Box({ flexShrink: 1, children: [k.Text({ wrap: 'wrap', children: [k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  ' + r.progress.done + ' of ' + plural(r.progress.total, 'agent', 'agents') + (r.paused ? ', paused' : ''), { size: 'footnote', dimColor: true })] })] })] }), k.bar(r.progress.done, Math.max(1, r.progress.total), r.paused ? HEX.warning : HEX.bar, (r.name || 'Workflow') + ': ' + r.progress.done + ' of ' + r.progress.total + ' agents done')] })),
         ],
       }),
     )
   }
-  out.push(k.footnote('Context in this session: ' + d.pct + '%. The full dashboard is in ToBeBestMe on your computer.', { wrap: 'wrap' }))
+  out.push(k.footnote('Context in this chat: ' + pctText(d.pct) + '. The full dashboard is in ToBeBestMe on your computer.', { wrap: 'wrap' }))
   return k.Box({ flexDirection: 'column', rowGap: 'lg', width: '100%', paddingX: 'xs', paddingY: 'sm', children: out })
 }
 
@@ -1164,22 +1399,23 @@ function usageTab(k, d, act) {
   const limits = limitList(d, h)
   const main = leadLimit(limits)
   const head = usageLead(k, d, act, h, limits, main)
-  if (k.isTerminal || k.columns < SPLIT_AT) {
+  const oneColumn = () => {
     const spent = spendingTab(k, d, act, h)
-    return [head, reportCard(k, d, act), ...(limits.length ? limitsTab(k, d, act, limits, main) : []), ...(limits.length ? [limitsSettings(k, d, act)] : []), spent.glance, spent.turns, spent.budgets, spent.models, spent.tools, spent.week, spent.share].filter(Boolean)
+    return [head, ...(limits.length ? limitsTab(k, d, act, limits, main) : []), ...(limits.length ? [limitsSettings(k, d, act)] : []), spent.glance, spent.turns, spent.budgets, spent.models, spent.tools, spent.week, reportCard(k, d, act), spent.share].filter(Boolean)
   }
+  if (k.isTerminal || k.columns < SPLIT_AT) return oneColumn()
   // wide: the record of what was spent on the left, the controls and the glance beside them
   const [km, ka] = k.split()
   const spentMain = spendingTab(km, d, act, h)
+  const record = [...(limits.length ? limitsTab(km, d, act, limits, main) : []), spentMain.turns, spentMain.models, spentMain.tools, spentMain.week].filter(Boolean)
+  // with no record yet (no limits reported, no turns) the controls are the page, so they take the full width
+  if (!record.length) return oneColumn()
   const spentSide = spendingTab(ka, d, act, h)
-  return [
-    head,
-    reportCard(k, d, act),
-    km.layout(
-      [...(limits.length ? limitsTab(km, d, act, limits, main) : []), spentMain.turns, spentMain.models, spentMain.tools, spentMain.week].filter(Boolean),
-      [spentSide.glance, ...(limits.length ? [limitsSettings(ka, d, act)] : []), spentSide.budgets, spentSide.share].filter(Boolean),
-    ),
-  ]
+  // the card is a row of buttons in the side column; opened, its picture is as tall as both columns' ends, so it
+  // takes a row of its own under them rather than leaving the left column empty beside it
+  const isCardOpen = !!d.view.showCard
+  const side = [spentSide.glance, ...(limits.length ? [limitsSettings(ka, d, act)] : []), spentSide.budgets, ...(isCardOpen ? [] : [reportCard(ka, d, act)]), spentSide.share].filter(Boolean)
+  return [head, km.layout(record, side), ...(isCardOpen ? [reportCard(k, d, act)] : [])].filter(Boolean)
 }
 
 // Dollars or a share of the weekly limit, beside the figures it changes, with what the share is
@@ -1201,21 +1437,25 @@ function spendingTab(k, d, act, h) {
   const last = t[t.length - 1]
   const since = d.startedAt > 0 ? d.now - d.startedAt : 0
   // Four tiles, never the same figure twice: on the first day, today and the week equal the session.
-  const list = [tile(k, 'tile-session', 'This session', cost(d.usd), since > 0 ? 'since ' + fmtClock(d.startedAt, d.now) : plural(t.length, 'turn', 'turns') + ' recorded', { tip: { title: 'This session', lines: ["Claude Code's own count, as /cost shows it.", 'On a subscription it is the API-price equivalent, not a bill.', plural(t.length, 'turn', 'turns') + ' recorded since tobebestme started watching.'] } })]
+  // with no turn yet the tile would repeat the figure above it in a column too narrow for its words: one full-width line instead
+  const hasTurns = t.length > 0
+  const list = hasTurns ? [tile(k, 'tile-session', 'This session', cost(d.usd), since > 0 ? 'since ' + fmtClock(d.startedAt, d.now) : plural(t.length, 'turn', 'turns') + ' recorded', { tip: { title: 'This session', lines: ["Claude Code's own count, as /cost shows it.", 'On a subscription it is the API-price equivalent, not a bill.', plural(t.length, 'turn', 'turns') + ' recorded since ToBeBestMe started watching.'] } })] : []
   if (last) list.push(tile(k, 'tile-last', 'Last turn', last ? cost(last.usd || 0) : '–', last ? fmtTurnTime(last.ms) + ' · ' + modelName(last.model) : 'none yet', { tip: last ? { title: 'Last turn', lines: ['Ended ' + fmtClock(last.at, d.now) + ' after ' + fmtTurnTime(last.ms) + '.', fmtTokens(last.output || 0) + ' tokens of output.'] } : null }))
-  if (since >= 2 * 60_000) list.push(tile(k, 'tile-rate', 'Spending rate', cost(d.usd / (since / 3_600_000)) + '/h', 'since the session started', { tip: { title: 'Spending rate', lines: ['This session’s cost over the time it has run.'] }, align: 'left' }))
-  const average = () => tile(k, 'tile-avg', 'Average turn', cost(avg(t.map((x) => x.usd || 0))), 'over ' + plural(t.length, 'turn', 'turns') + ' recorded', { tip: { title: 'Average turn', lines: ['What a turn has cost on average since tobebestme started watching.'] }, align: 'left' })
-  const hasAverage = since < 2 * 60_000 && t.length > 0
+  // two rates, named for what they average: the whole session here, the last turns under Turns (spendRates measures both)
+  const rates = spendRates(d)
+  if (rates.average !== null) list.push(tile(k, 'tile-rate', 'Average rate', cost(rates.average) + ' an hour', SHARE ? 'of the weekly limit, over the whole chat' : 'over the whole chat', { tip: { title: 'Average rate', lines: ['This chat’s cost over the time it has run, an hour at a time.', 'Recent rate, under Turns, is the last few turns on their own.'] }, align: 'left' }))
+  const average = () => tile(k, 'tile-avg', 'Average turn', cost(avg(t.map((x) => x.usd || 0))), 'over ' + plural(t.length, 'turn', 'turns') + ' recorded', { tip: { title: 'Average turn', lines: ['What a turn has cost on average since ToBeBestMe started watching.'] }, align: 'left' })
+  const hasAverage = since < 2 * MIN_MS && t.length > 0
   if (hasAverage) list.push(average())
-  if (Math.abs(d.today - d.usd) >= 0.005 || o.dailyBudget > 0) list.push(tile(k, 'tile-today', 'Today', cost(d.today), o.dailyBudget > 0 ? 'of ' + fmtUsd(o.dailyBudget) + ' budget' : plural(Math.max(1, d.ledger.sessionsToday), 'session', 'sessions'), { tip: { title: 'Today', lines: ['Every session on this machine that runs tobebestme.'] }, align: 'left' }))
-  if (list.length < 4 && d.ledger.week - d.today >= 0.005) list.push(tile(k, 'tile-week', 'Past 7 days', cost(d.ledger.week), 'on this machine', { tip: { title: 'Past 7 days', lines: ['Every session on this machine that runs tobebestme.'] }, align: 'left' }))
+  if (Math.abs(d.today - d.usd) >= 0.005) list.push(tile(k, 'tile-today', 'Today', cost(d.today), plural(Math.max(1, h && h.has ? h.u.today.sessions : d.ledger.sessionsToday), 'chat', 'chats'), { tip: { title: 'Today', lines: [h && h.has ? 'Every project on this computer, from Claude Code’s own records.' : 'Every chat on this machine that runs ToBeBestMe.'] }, align: 'left' }))
+  if (list.length < 4 && d.ledger.week - d.today >= 0.005) list.push(tile(k, 'tile-week', 'Past 7 days', cost(d.ledger.week), 'on this machine', { tip: { title: 'Past 7 days', lines: ['Every chat on this machine that runs ToBeBestMe.'] }, align: 'left' }))
   if (list.length < 4 && t.length && !hasAverage) list.push(average())
 
   const out = {}
   const put = (name, node) => {
     out[name] = node
   }
-  put('glance', k.card('This session at a glance', null, [tiles(k, list.slice(0, 4)), costUnitRow(k, d, act), ...(t.length === 0 ? [k.footnote("Turns appear here after Claude's next answer.")] : []), ...(d.limits.length ? [] : [k.footnote('No usage limits reported yet. On a Claude plan they show here after the first reply; with an API key you pay per request instead.')])]))
+  put('glance', k.card('This session at a glance', null, [...(hasTurns ? [tiles(k, list.slice(0, 4))] : [k.footnote('This session: ' + cost(d.usd) + (since > 0 ? ', since ' + fmtClock(d.startedAt, d.now) : '') + ". Claude Code's own count, as /cost shows it; on a subscription it is the API-price equivalent, not a bill."), ...(list.length ? [tiles(k, list.slice(0, 4))] : [])]), costUnitRow(k, d, act), ...(t.length === 0 ? [k.footnote("No turns recorded yet. They appear here after Claude's next answer.")] : []), ...(d.limits.length ? [] : [k.footnote('No usage limits reported yet. On a Claude plan they show here after the first reply; with an API key you pay per request instead.')])]))
 
   // Every turn as a row with a bar for its cost, in its model's colour: it reads at one turn
   // and at sixty. Past eight turns a chart of the trend joins it.
@@ -1228,10 +1468,8 @@ function spendingTab(k, d, act, h) {
     const most = Math.max(0.0001, ...recentRows.map((x) => x.usd || 0))
     const priciest = t.reduce((a, x) => ((x.usd || 0) > (a.usd || 0) ? x : a), t[0])
     const families = [...new Set(shown.map((x) => modelName(x.model)))]
-    const recent = t.slice(-8)
-    const span = recent.length >= 3 ? recent[recent.length - 1].at - recent[0].at : 0
     const facts = [['Most expensive', cost(priciest.usd || 0) + ' at ' + fmtClock(priciest.at, d.now)]]
-    if (span >= 2 * 60_000) facts.push(['Recent pace', cost(recent.slice(1).reduce((n, x) => n + (x.usd || 0), 0) / (span / 3_600_000)) + ' an hour over the last ' + plural(recent.length, 'turn', 'turns')])
+    if (rates.recent !== null) facts.push(['Recent rate', cost(rates.recent) + ' an hour over the last ' + plural(rates.turns, 'turn', 'turns')])
     const barW = k.columns >= 72 ? 18 : 10
     put('turns',
       k.card('Turns', t.length > recentRows.length ? 'The last ' + recentRows.length + ' of ' + t.length + ', newest first.' : 'Newest first.', [
@@ -1250,16 +1488,16 @@ function spendingTab(k, d, act, h) {
           rowGap: 'xs',
           children: [
             k.heads([{ text: 'Ended' }, { text: '', width: barW }, { text: 'Cost', width: 9 }, { text: 'Took', width: 9 }, { text: 'Output', width: 8 }]),
-            ...recentRows.map((x, i) => k.row([{ text: fmtClock(x.at, d.now) }, { el: k.bar(x.usd || 0, most, modelHex(x.model), cost(x.usd || 0)), width: barW }, { text: cost(x.usd || 0), width: 9 }, { text: fmtTurnTime(x.ms), width: 9 }, { text: fmtTokens(x.output || 0), width: 8 }], {}, { key: 'turn-' + i, tip: turnTip(x, d.now) })),
+            ...recentRows.map((x, i) => k.row([{ text: fmtClock(x.at, d.now) }, { el: k.bar(x.usd || 0, most, modelHex(x.model), 'Turn ' + (t.length - i) + ': ' + cost(x.usd || 0)), width: barW }, { text: cost(x.usd || 0), width: 9 }, { text: fmtTurnTime(x.ms), width: 9 }, { text: fmtTokens(x.output || 0), width: 8 }], {}, { key: 'turn-' + i, tip: turnTip(x, d.now) })),
           ],
         }),
         k.Box({
           flexDirection: 'row',
           flexWrap: 'wrap',
           columnGap: 'md',
-          children: [...families.map((f) => k.Text({ children: [k.text('● ', { color: k.isTerminal ? 'suggestion' : midHex(modelHex(f)) }), k.text(f, { size: 'footnote', dimColor: true })] })), ...(k.isTerminal ? [] : [k.footnote('Point at a turn for its tokens and cache.')])],
+          children: [...families.map((f) => k.Text({ children: [k.text('● ', { color: k.isTerminal ? 'suggestion' : midHex(modelHex(f)) }), k.text(f, { size: 'footnote', dimColor: true })] })), ...(k.isTerminal ? [] : [k.footnote((k.hint('Point at a turn for its tokens and cache.') + (values.length >= 8 ? ' The dashed line is the average turn, ' + cost(avg(values)) + '.' : '')).trim())])],
         }),
-        k.Box({ flexDirection: 'column', rowGap: 'xs', children: facts.map(([a, b]) => k.row([{ text: a, props: { dimColor: true } }, { text: b, width: 46 }])) }),
+        k.facts(facts, 46),
       ], { gap: 'md' }),
     )
   }
@@ -1268,12 +1506,16 @@ function spendingTab(k, d, act, h) {
   const budgetRows = []
   const progress = (label, spent, cap) => {
     const level = spent >= cap ? 'error' : spent >= cap * 0.8 ? 'warning' : 'success'
-    return k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.row([{ text: label }, { text: fmtUsd(spent) + ' of ' + fmtUsd(cap) + (spent < cap ? ' · ' + fmtUsd(cap - spent) + ' left' : ' · reached'), width: 34, color: quiet(level) }]), k.meter([{ value: Math.min(cap, spent), hex: level === 'success' ? RING_HEX.spending : HEX[level], color: level === 'success' ? 'success' : level }], cap, [80], label + ': ' + fmtUsd(spent) + ' of ' + fmtUsd(cap))] })
+    const said = fmtUsd(spent) + ' of ' + fmtUsd(cap) + (spent < cap ? ' · ' + fmtUsd(cap - spent) + ' left' : ' · reached')
+    return k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.columns < 60 ? k.Box({ flexDirection: 'column', children: [k.text(label, { wrap: 'wrap' }), k.text(said, { wrap: 'wrap', tabular: true, color: quiet(level) })] }) : k.row([{ text: label }, { text: said, width: 34, color: quiet(level) }]), k.meter([{ value: Math.min(cap, spent), hex: level === 'success' ? RING_HEX.spending : HEX[level], color: level === 'success' ? 'success' : level }], cap, [80], label + ': ' + fmtUsd(spent) + ' of ' + fmtUsd(cap))] })
   }
   if (o.sessionBudget > 0) budgetRows.push(progress('This session', d.usd, o.sessionBudget))
-  if (o.dailyBudget > 0) budgetRows.push(progress('Today', d.today, o.dailyBudget))
+  if (o.dailyBudget > 0) {
+    budgetRows.push(progress('Counted toward the daily budget', d.todayBudget, o.dailyBudget))
+    if (Math.abs(d.todayBudget - d.today) >= 0.005) budgetRows.push(k.footnote('The daily budget counts what the chats running ToBeBestMe report, so it can differ from Today, which reads every project’s records.'))
+  }
   budgetRows.push(...['sessionBudget', 'dailyBudget', 'atBudget'].map((f) => settingRow(k, d, act, settingSpec(f))))
-  put('budgets',k.card('Budgets', 'A limit for this session or the day, and what happens when it is reached.', budgetRows, { gap: 'md' }))
+  put('budgets',k.card('Budgets', 'How much one chat or a day may cost, and what happens when it is reached.', budgetRows, { gap: 'md' }))
 
   const names = Object.keys(d.models).sort((a, z) => d.models[z].requests - d.models[a].requests)
   if (names.length) {
@@ -1284,13 +1526,13 @@ function spendingTab(k, d, act, h) {
       all += r.requests
       byHelpers += r.subagent || 0
       const input = r.input + r.cacheRead + r.cacheWrite
-      return k.row([{ parts: [k.text('● ', { color: k.isTerminal ? 'suggestion' : midHex(modelHex(m)) }), modelName(m)] }, { text: String(r.requests), width: 10 }, { text: fmtTokens(input), width: 9 }, { text: fmtTokens(r.output), width: 9 }, { text: input ? Math.round((r.cacheRead / input) * 100) + '%' : '–', width: 11 }], {}, { key: 'model-' + i, tip: { title: modelName(m), lines: [plural(r.requests, 'request', 'requests') + (r.subagent ? ', ' + r.subagent + ' from helpers' : '') + '.', fmtTokens(input) + ' tokens in, ' + fmtTokens(r.cacheRead) + ' of them from the cache.', fmtTokens(r.output) + ' tokens out.'] } })
+      return k.row([{ parts: [k.text('● ', { color: k.isTerminal ? 'suggestion' : midHex(modelHex(m)) }), modelName(m)] }, { text: String(r.requests), width: 10 }, { text: fmtTokens(input), width: 9 }, { text: fmtTokens(r.output), width: 9 }, { text: input ? pctText((r.cacheRead / input) * 100) : '–', width: 11 }], {}, { key: 'model-' + i, tip: { title: modelName(m), lines: [plural(r.requests, 'request', 'requests') + (r.subagent ? ', ' + r.subagent + ' from helpers' : '') + '.', fmtTokens(input) + ' tokens in, ' + fmtTokens(r.cacheRead) + ' of them from the cache.', fmtTokens(r.output) + ' tokens out.'] } })
     })
     put('models',
       k.card('By model', null, [
         k.heads([{ text: 'Model' }, { text: 'Requests', width: 10 }, { text: 'Input', width: 9 }, { text: 'Output', width: 9 }, { text: 'From cache', width: 11 }]),
         ...rows,
-        k.footnote((byHelpers ? byHelpers + ' of ' + all + ' requests came from helpers. ' : '') + 'Input from the cache costs about a tenth as much.'),
+        k.footnote((byHelpers ? byHelpers + ' of ' + all + ' requests came from helpers. ' : '') + 'Input from the cache costs a tenth as much or less.'),
       ], { gap: 'xs' }),
     )
   }
@@ -1320,9 +1562,9 @@ function spendingTab(k, d, act, h) {
             k.heads([{ text: 'Tools' }, { text: '', width: k.columns >= 72 ? 14 : 8 }, { text: 'Calls', width: 14 }, { text: 'Time', width: 9 }, { text: 'Output', width: 9 }]),
             ...toolNames.slice(0, 10).map((n, i) => {
               const r = d.tools[n]
-              return k.row([{ text: toolName(n) }, { el: k.bar(r.chars, d.tools[toolNames[0]].chars, TINT.gray, toolName(n) + ' output'), width: k.columns >= 72 ? 14 : 8 }, { text: r.calls + (r.errors ? ' (' + r.errors + ' failed)' : ''), width: 14 }, { text: fmtTurnTime(r.ms), width: 9 }, { text: '~' + fmtTokens(r.chars / 4), width: 9 }], {}, { key: 'tool-' + i, tip: { title: toolName(n), lines: [plural(r.calls, 'call', 'calls') + (r.errors ? ', ' + r.errors + ' failed' : '') + ', ' + fmtTurnTime(r.calls ? r.ms / r.calls : 0) + ' each on average.', 'About ' + fmtTokens(r.chars / 4) + ' tokens of output, which stays in the conversation.'] } })
+              return k.row([{ text: toolName(n) }, { el: k.bar(r.chars, d.tools[toolNames[0]].chars, TINT.gray, toolName(n) + ' output'), width: k.columns >= 72 ? 14 : 8 }, { text: r.calls + (r.errors ? ' (' + r.errors + ' failed)' : ''), width: 14 }, { text: fmtTurnTime(r.ms), width: 9 }, { text: '~' + fmtTokens(r.chars / 4), width: 9 }], {}, { key: 'tool-' + i, tip: { title: toolName(n), lines: [plural(r.calls, 'call', 'calls') + (r.errors ? ', ' + r.errors + ' failed' : '') + ', ' + fmtTurnTime(r.calls ? r.ms / r.calls : 0) + ' each on average.', 'About ' + fmtTokens(r.chars / 4) + ' tokens of output, which stays in the chat.'] } })
             }),
-            k.footnote('Tool output stays in the conversation and is re-read every turn. Sizes are estimates.'),
+            k.footnote('Tool output stays in the chat and is re-read every turn. Sizes are estimates.'),
           ],
         }),
       )
@@ -1334,7 +1576,7 @@ function spendingTab(k, d, act, h) {
   // with every project read, the lead above draws the week; this is the record of this machine's own sessions without it
   if (!(h && h.has) && days.filter((x) => x.usd > 0).length >= 2) {
     put('week',
-      k.card('Past 7 days', 'All sessions on this machine that run tobebestme.', [
+      k.card('Past 7 days', 'All chats on this machine that run ToBeBestMe.', [
         k.bars(days.map((x) => x.usd), 7, 'Spending over the past 7 days: ' + days.map((x) => x.label + ' ' + cost(x.usd)).join(', ') + '.', 40, { colors: days.map(() => RING_HEX.spending), titles: days.map((x) => x.label + ': ' + cost(x.usd)) }),
         k.Box({ flexDirection: 'column', rowGap: 'xs', children: days.filter((x) => x.usd > 0).reverse().map((x) => k.row([{ text: x.label }, { text: cost(x.usd), width: 10 }], x.label === 'Today' ? { weight: 'semibold' } : {})) }),
         ...(d.ledger.projects.length > 1 ? [k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Today by project', { size: 'footnote', weight: 'semibold', dimColor: true }), ...d.ledger.projects.map((p) => k.row([{ text: p.project }, { text: cost(p.usd), width: 10 }]))] })] : []),
@@ -1343,9 +1585,9 @@ function spendingTab(k, d, act, h) {
   }
 
   put('share',
-    k.card('Share', null, [
-      k.buttons([k.button('copy', 'Copy summary', (ev) => act.copySummary(ev && ev.surface), { hotkey: k.hotkey('y') }), k.button('report', 'Save report', act.saveReport, { hotkey: k.hotkey('r') })]),
-      k.footnote('The summary is a few lines to paste anywhere. Reports are Markdown files in ~/' + REPORT_DIR + '/reports.'),
+    k.card('This session, to share', null, [
+      k.buttons([k.button('copy', 'Copy chat summary', (ev) => act.copySummary(ev && ev.surface), { hotkey: k.hotkey('y') }), k.button('report', 'Save chat report', act.saveReport, { hotkey: k.hotkey('r') })]),
+      k.footnote('The summary is a few lines about this chat to paste anywhere. A report is a Markdown file in ' + d.reportDir + '.'),
     ]),
   )
   return out
@@ -1357,9 +1599,9 @@ function turnTip(x, now) {
     title: 'Turn ended ' + fmtClock(x.at, now),
     lines: [
       cost(x.usd || 0) + ' · took ' + fmtTurnTime(x.ms) + ' · ' + modelName(x.model),
-      input ? fmtTokens(input) + ' tokens in' + (x.cacheRead ? ', ' + Math.round((x.cacheRead / input) * 100) + '% from the cache' : '') + '; ' + fmtTokens(x.output || 0) + ' out.' : fmtTokens(x.output || 0) + ' tokens out.',
+      input ? fmtTokens(input) + ' tokens in' + (x.cacheRead ? ', ' + pctText((x.cacheRead / input) * 100) + ' from the cache' : '') + '; ' + fmtTokens(x.output || 0) + ' out.' : fmtTokens(x.output || 0) + ' tokens out.',
       x.context ? 'Context afterwards: ' + fmtTokens(x.context) + ' tokens.' : '',
-      (x.idleMs || 0) >= 5 * 60_000 ? 'Started after ' + fmtSpan(x.idleMs) + ' away, so the cache had to be rebuilt.' : '',
+      (x.idleMs || 0) >= 5 * MIN_MS ? 'Started after ' + fmtSpan(x.idleMs) + ' away, so the cache had to be rebuilt.' : '',
     ],
   }
 }
@@ -1372,9 +1614,9 @@ function turnTip(x, now) {
 function limitChart(k, d, l) {
   const r = l.r
   const o = l.o
-  const p = Math.round(r.percentUsed)
+  const p = pctText(r.percentUsed)
   const span = WINDOW_MS[r.kind]
-  const hex = RING_HEX[r.kind] || RING_HEX.seven_day_opus
+  const hex = limitHex(r)
   const early = isEarly(r, o)
   const day = (t) => {
     try {
@@ -1386,10 +1628,10 @@ function limitChart(k, d, l) {
   if (k.hasSvg && o.resetAt !== null && span) {
     return k.drawing(
       svgForecast({
-        width: k.px - 24,
+        width: k.px - 4,
         start: o.resetAt - span,
         end: o.resetAt,
-        now: d.now,
+        now: drawTime(d.now),
         pct: r.percentUsed,
         atReset: o.atReset,
         fullAt: o.fullAt,
@@ -1402,19 +1644,20 @@ function limitChart(k, d, l) {
           end: 'resets ' + day(o.resetAt),
           full: 'runs out ' + fmtClock(o.fullAt || o.resetAt, d.now),
           fullTitle: 'At this pace it runs out around ' + fmtClock(o.fullAt || o.resetAt, d.now),
-          now: 'Now: ' + p + '% used',
+          now: 'Now: ' + p + ' used',
+          alert: 'your alert',
           area: 'Your use so far this week',
-          projection: o.atReset !== null ? 'At this pace: about ' + Math.min(100, Math.round(o.atReset)) + '% by the reset' : '',
-          sample: (s) => fmtClock(s.at, d.now) + ': ' + Math.round(s.pct) + '%',
+          projection: o.atReset !== null ? 'At this pace: ' + pctAbout(Math.min(100, o.atReset)) + ' by the reset' : '',
+          sample: (s) => fmtClock(s.at, d.now) + ': ' + pctText(s.pct),
         },
       }),
-      limitLabel(r.kind) + ': ' + p + '% used. ' + paceSentence(l, d.now),
+      limitName(r) + ': ' + p + ' used. ' + paceSentence(l, d.now),
       { isInteractive: true },
     )
   }
   const runway = runwayOf(r.kind, r.percentUsed, o.resetAt, d.now)
-  if (k.hasSvg && runway) return runwayBar(k, { label: limitLabel(r.kind), valueText: p + '% used', hex: tint(hex, l.level), runway, window: windowOf(r.kind, runway, o.resetAt, d.now) }, 'tile', k.px - 24)
-  return k.meter([{ value: r.percentUsed, hex: l.level === 'success' ? hex : HEX[l.level], color: l.level === 'success' ? 'suggestion' : l.level }], 100, [d.opts.limitAlertAt], limitLabel(r.kind) + ' ' + p + '% used, alert at ' + d.opts.limitAlertAt + '%')
+  if (k.hasSvg && runway) return runwayBar(k, { label: limitName(r), valueText: p + ' used', hex: tint(hex, l.level), runway, window: windowOf(r.kind, runway, o.resetAt, d.now) }, 'tile', k.px - 24)
+  return k.meter([{ value: r.percentUsed, hex: l.level === 'success' ? hex : HEX[l.level], color: l.level === 'success' ? 'suggestion' : l.level }], 100, [d.opts.limitAlertAt], limitName(r) + ' ' + p + ' used, alert at ' + d.opts.limitAlertAt + '%')
 }
 
 // Each limit's figures: how much is used, the pace, and what lasting until the reset takes. The one the
@@ -1424,35 +1667,42 @@ function limitsTab(k, d, act, limits, main) {
   return limits.map((l) => {
     const r = l.r
     const o = l.o
-    const p = Math.round(r.percentUsed)
-    const hex = RING_HEX[r.kind] || RING_HEX.seven_day_opus
+    const p = pctText(r.percentUsed)
+    const hex = limitHex(r)
     const early = isEarly(r, o)
     // the same runway as Home and the line above the prompt; the history chart is for Show details
     const runway = runwayOf(r.kind, r.percentUsed, o.resetAt, d.now)
-    const drawn = l === main ? null : k.showDetails ? limitChart(k, d, l) : runway ? runwayBar(k, { label: limitLabel(r.kind), valueText: p + '% used', hex: tint(hex, l.level), runway, window: windowOf(r.kind, runway, o.resetAt, d.now) }, 'tile', k.hasSvg ? k.px - 24 : undefined) : limitChart(k, d, l)
+    const drawn = l === main ? null : k.showDetails ? limitChart(k, d, l) : runway ? runwayBar(k, { label: limitName(r), valueText: p + ' used', hex: tint(hex, l.level), runway, window: windowOf(r.kind, runway, o.resetAt, d.now) }, 'tile', k.hasSvg ? k.px - 24 : undefined) : limitChart(k, d, l)
     const facts = []
     if (o.resetAt !== null) facts.push(['Resets', 'in ' + fmtSpan(o.resetAt - d.now)])
-    if (o.recentPerHour !== null) facts.push(['Lately', 'about ' + (o.recentPerHour >= 10 ? Math.round(o.recentPerHour) : Math.round(o.recentPerHour * 10) / 10) + '% an hour while you work'])
-    if (o.resetAt !== null && p < 100) {
-      const hours = (o.resetAt - d.now) / 3_600_000
-      if (hours >= 24) facts.push(['To last until the reset', 'about ' + Math.max(1, Math.floor((100 - p) / (hours / 24))) + '% a day'])
-    }
+    if (o.recentPerHour !== null) facts.push(['Lately', (o.recentPerHour < 0.1 ? 'under 0.1%' : 'about ' + (o.recentPerHour >= 10 ? Math.round(o.recentPerHour) : Math.round(o.recentPerHour * 10) / 10) + '%') + ' an hour while you work'])
+    // the share a day is one measurement, the same one This session and the advice say (dailyShare)
     const share = dailyShare(l, (d.limitHistory && d.limitHistory[r.kind]) || [], d.now)
-    if (share && share.usedToday !== null) facts.push(['Today so far', Math.round(share.usedToday) + '% of about ' + Math.max(1, Math.round(share.share)) + '%' + (share.isOver ? ', over today’s share' : ', on track')])
-    return k.card(limitLabel(r.kind), r.kind === 'seven_day' ? 'Your use across the week.' : null, [
-      k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', alignItems: 'flex-end', children: [k.text(p + '% used', { size: 'title', weight: 'semibold', tabular: true, color: quiet(l.level) }), ...(l.level !== 'success' ? [k.footnote(l.level === 'error' ? 'nearly out' : early ? 'runs out early' : 'past your alert')] : [])] }),
+    if (share && o.resetAt - d.now >= DAY_MS) facts.push(['To last until the reset', dayShareWords(share.share)])
+    if (share && share.usedToday !== null) facts.push(['Today so far', pctText(share.usedToday) + ' of ' + pctAbout(share.share) + (share.isOver ? ', over today’s share' : ', on track')])
+    if (l === main && !facts.length) return null
+    return k.card(limitName(r), r.kind === 'seven_day' ? 'Your use across the week.' : null, [
+      // the one the tab opens on has its figure, its status and its pace in the head above: its card holds the figures alone
+      ...(l === main ? [] : [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', alignItems: 'flex-end', children: [k.text(p + ' used', { size: 'title', weight: 'semibold', tabular: true, color: quiet(l.level) }), ...(l.level !== 'success' ? [k.footnote(o.isUsedUp ? 'used up until it resets' : l.level === 'error' ? 'nearly out' : early ? 'runs out early' : 'past your alert')] : [])] })]),
       ...(drawn ? [drawn] : []),
-      k.hang(k.dot(early ? 'warning' : 'info'), k.text(paceSentence(l, d.now), { wrap: 'wrap', weight: early ? 'medium' : undefined })),
-      k.Box({ flexDirection: 'column', rowGap: 'xs', children: facts.map(([a, b]) => k.row([{ text: a, props: { dimColor: true } }, { text: b, width: 40 }])) }),
+      // the head says when it runs out, or that it is used up; its card says it again only for a pace the head does not say
+      ...(l === main && (early || o.isUsedUp) ? [] : [k.hang(k.dot(early ? 'warning' : 'info'), k.text(paceSentence(l, d.now), { wrap: 'wrap', weight: early ? 'medium' : undefined }))]),
+      k.facts(facts),
     ], { accessory: o.resetAt !== null ? k.footnote('resets ' + fmtClock(o.resetAt, d.now), { wrap: 'truncate-end' }) : undefined })
   })
 }
 
-// The settings that make a limit last longer, beside the limits they stretch.
+// What makes a limit last longer, beside the limits it stretches: where each stands now, and the way to change it. The
+// settings themselves are in Settings, their one home.
 function limitsSettings(k, d, act) {
-  return k.card('Making limits last', 'Opus uses them fastest, then Sonnet, then Haiku. A smaller conversation uses less on every turn.', [
-    ...['mode', 'helpersAlwaysCheap', 'limitAlertAt'].map((f) => settingRow(k, d, act, settingSpec(f))),
-    k.buttons([k.button('limits-shrink', 'Make the conversation smaller', () => act.run('context'), { dimColor: true })]),
+  const o = d.opts
+  return k.card('Making limits last', 'Opus uses them fastest, then Sonnet, then Haiku. A smaller chat uses less on every turn.', [
+    k.facts([
+      ['Use the cheaper model', modeWords(o)],
+      ['Helpers always use it', o.helpersAlwaysCheap ? 'On' : 'Off'],
+      ['Alert at', o.limitAlertAt + '% of a weekly limit'],
+    ], 30),
+    k.buttons([k.button('limits-settings', 'Change in Settings', () => act.setView({ tab: 'settings', confirm: '', editing: '' }), { dimColor: true }), k.button('limits-shrink', 'Make the chat smaller', () => act.run('context'), { dimColor: true })]),
   ], { gap: 'md' })
 }
 
@@ -1464,6 +1714,21 @@ const EXAMPLES = [
   ['Review my changes', 'Review the current diff for bugs, missing tests and unclear names, and list findings by severity.'],
   ['Explain a file', 'Explain what a file does, how it fits into the project, and anything surprising in it, in plain words.'],
 ]
+
+// A listed skill that is the person's own: a file of theirs the check-up read, or one Claude Code lists from their
+// own or the project's settings. A plugin's is not.
+function isOwnSkill(x, mine) {
+  return !x.pluginName && (mine.has(x.name) || x.source === 'userSettings' || x.source === 'projectSettings')
+}
+
+// How many skills and commands are the person's own: the files the check-up read and what Claude Code lists as
+// theirs, counted once by name. Settings (what it reads) says this number, and Skills (its lead) the listed part of it.
+function ownSkillCount(sk) {
+  const mine = new Set((sk.own || []).map((x) => x.name))
+  const L = sk.listing
+  if (L) for (const x of Object.values(L.byName)) if (isOwnSkill(x, mine)) mine.add(x.name)
+  return mine.size
+}
 
 // The Skills tab answers four questions in order: can Claude see my skills, which ones earn
 // their place, which of mine are written so they'll run when they should, and what is worth
@@ -1494,8 +1759,10 @@ function skillsTab(k, d, act) {
 
   // the answer first
   const problems = sk.checkup.filter((x) => x.issues.some((i) => i.level !== 'info'))
+  // no skills at all: say that, not that none of them ran
+  const noSkills = !L && !sk.own.length
   const headline = !L
-    ? 'Your skills'
+    ? noSkills ? 'You have no skills yet' : 'Your skills'
     : L.cut.length
       ? L.cut.length === 1 ? 'Claude sees only the name of one skill' : 'Claude sees only the names of ' + L.cut.length + ' skills'
       : isFull
@@ -1508,29 +1775,29 @@ function skillsTab(k, d, act) {
   if (L) facts.push('The listing takes ' + fmtTokens(L.tokens) + ' of its ' + fmtTokens(L.budget) + '-token room on every request')
   if (ranNames.length) facts.push(plural(ranNames.length, 'skill', 'skills') + ' ran ' + plural(ranCount, 'time', 'times') + ' in the last ' + SCAN_DAYS + ' days')
   else if (isCounting) facts.push('Counting runs in every project…')
-  else if (d.opts.scanProjects) facts.push('No skill ran in the last ' + SCAN_DAYS + ' days')
+  else if (d.opts.scanProjects && !noSkills) facts.push('No skill ran in the last ' + SCAN_DAYS + ' days')
   // the listing is a thing that can run out, so it is drawn as a runway: the fill is how much of its room
   // the skills take, and a description that did not fit says so in words under it
   const fill = L ? Math.min(100, (L.tokens / Math.max(1, L.budget)) * 100) : 0
   const bySource = { yours: 0, plugins: 0, builtin: 0 }
   for (const x of listed) {
     if (x.pluginName) bySource.plugins += 1
-    else if (mine.has(x.name) || x.source === 'userSettings' || x.source === 'projectSettings') bySource.yours += 1
+    else if (isOwnSkill(x, mine)) bySource.yours += 1
     else bySource.builtin += 1
   }
-  const listingItem = L ? { label: 'Skill listing', valueText: Math.round(fill) + '%', hex: tint(TINT.brown, isFull ? 'warning' : 'success'), runway: { used: fill, elapsed: null, runOut: null, ticks: [] } } : null
+  const listingItem = L ? { label: 'Skill listing', valueText: pctText(fill), hex: tint(TINT.slate, isFull ? 'warning' : 'success'), runway: { used: fill, elapsed: null, runOut: null, ticks: [] } } : null
   const sources = [bySource.yours ? bySource.yours + ' yours' : '', bySource.plugins ? bySource.plugins + ' from plugins' : '', bySource.builtin ? bySource.builtin + ' built in' : ''].filter(Boolean).join(' · ')
   const idle = isCounting ? 0 : neverRun.length
   put(
     'lead',
     lead(k, {
-      glyph: L || level !== 'success' ? k.text(level === 'success' ? '✓ ' : '● ', { color: level }) : null,
+      glyph: L || level !== 'success' ? k.text(level === 'success' ? '✓ ' : '● ', { color: level }) : noSkills ? k.text('○ ', { dimColor: true }) : null,
       headline,
-      facts: facts.join(' · ') + '.',
-      factsTip: L ? { title: 'The skill listing', lines: ['Names and descriptions, sent with every request so Claude can pick a skill.', 'Its room is ' + Math.round(L.fraction * 100) + '% of the context window: about ' + fmtTokens(L.budget) + ' tokens here' + (L.isCustomBudget ? ', set by you.' : '.'), 'Past it, skills go by name alone.'], align: 'left' } : undefined,
-      figure: L ? { value: Math.round(fill) + '%', caption: 'of the listing’s room', sub: sources, level: isFull ? 'warning' : 'success' } : ranNames.length ? { value: String(ranNames.length), caption: 'skills ran in ' + SCAN_DAYS + ' days' } : null,
+      facts: facts.length ? facts.join(' · ') + '.' : '',
+      factsTip: L ? { title: 'The skill listing', lines: ['Names and descriptions, sent with every request so Claude can pick a skill.', 'Its room is ' + fmtFraction(L.fraction) + ' of the context window: about ' + fmtTokens(L.budget) + ' tokens here' + (L.isCustomBudget ? ', set by you.' : '.'), 'Past it, skills go by name alone.'], align: 'left' } : undefined,
+      figure: L ? { value: pctText(fill), caption: 'of the listing’s room', sub: sources, level: isFull ? 'warning' : 'success' } : ranNames.length ? { value: String(ranNames.length), caption: 'skills ran in ' + SCAN_DAYS + ' days' } : null,
       visual: [
-        ...(listingItem ? [k.hoverBox('skill-listing', { flexDirection: 'column', width: '100%' }, [runwayBar(k, listingItem, 'hero', k.hasSvg ? k.px - 8 : undefined)], { title: 'The skill listing, ' + Math.round(fill) + '% full', lines: [fmtTokens(L.tokens) + ' of about ' + fmtTokens(L.budget) + ' tokens, sent with every request.', idle ? plural(idle, 'skill', 'skills') + ' never ran in ' + SCAN_DAYS + ' days, together ' + fmtTokens(neverTokens) + ' tokens a request.' : '', sources ? 'Skills: ' + sources + '.' : ''], align: 'left' })] : []),
+        ...(listingItem ? [k.hoverBox('skill-listing', { flexDirection: 'column', width: '100%' }, [runwayBar(k, listingItem, 'hero', k.hasSvg ? k.px - 8 : undefined)], { title: 'The skill listing, ' + pctText(fill) + ' full', lines: [fmtTokens(L.tokens) + ' of about ' + fmtTokens(L.budget) + ' tokens, sent with every request.', idle ? plural(idle, 'skill', 'skills') + ' never ran in ' + SCAN_DAYS + ' days, together ' + fmtTokens(neverTokens) + ' tokens a request.' : '', sources ? 'Skills: ' + sources + '.' : ''], align: 'left' })] : []),
         ...(L && L.cut.length ? [k.footnote((L.cut.length === 1 ? 'Its description' : 'Their descriptions') + ' didn’t fit in the listing Claude reads, so it can’t match ' + (L.cut.length === 1 ? 'it' : 'them') + ' to what you ask. Typing /name still runs ' + (L.cut.length === 1 ? 'it' : 'them') + '.')] : L && isFull ? [k.footnote('One more skill and descriptions start going missing. Making room below keeps the ones you use visible.')] : []),
         // nothing to measure yet: say what a skill is, and offer the one thing to do
         ...(!L ? [k.footnote('A skill is a saved prompt: Claude runs it when you type its name, in any project, the same way each time. Ones you repeat are worth saving.'), k.buttons([k.button('skill-start', 'Build your first skill', () => act.setView({ focus: 'skill-describe' }), { variant: 'primary' })])] : []),
@@ -1578,27 +1845,32 @@ function skillsTab(k, d, act) {
         ),
       )
     }
-    options.push(
-      k.hang(
-        k.text(String(options.length + 1), { weight: 'semibold', dimColor: true }),
-        k.Box({
-          flexDirection: 'column',
-          rowGap: 'xs',
-          children: [
-            k.text('Give the listing more room', { weight: 'semibold', wrap: 'wrap' }),
-            k.footnote('Twice the room holds about twice the descriptions, and every request carries them.'),
-            k.Box({ marginTop: 'xs', children: [k.buttons([k.button('skills-budget', 'Give skills more room…', () => act.raiseBudget(L.fraction))])] }),
-          ],
-        }),
-      ),
-    )
+    // the button only offers what changes something: a room already at 5% of the window (or set higher) has nowhere to go
+    if (canRaiseListingBudget(L.fraction)) {
+      options.push(
+        k.hang(
+          k.text(String(options.length + 1), { weight: 'semibold', dimColor: true }),
+          k.Box({
+            flexDirection: 'column',
+            rowGap: 'xs',
+            children: [
+              k.text('Give the listing more room', { weight: 'semibold', wrap: 'wrap' }),
+              k.footnote('Going from ' + fmtFraction(L.fraction) + ' to ' + fmtFraction(nextListingBudget(L.fraction)) + ' of the context window makes room for more descriptions, and every request carries them.'),
+              k.Box({ marginTop: 'xs', children: [k.buttons([k.button('skills-budget', 'Give skills more room…', () => act.raiseBudget(L.fraction))])] }),
+            ],
+          }),
+        ),
+      )
+    } else if (!options.length) {
+      options.push(k.footnote('The listing already has ' + fmtFraction(L.fraction) + ' of the context window, as much as this button gives. To make room, shorten skill descriptions or remove skills you no longer use.'))
+    }
     put('room', 
       k.card('Make room in the listing', 'Claude picks a skill from a listing of names and descriptions sent with every request. It has room for about ' + fmtTokens(L.budget) + ' tokens; what doesn’t fit goes by name alone. Each button shows the change here first and saves it only when you press Save change.', options, { gap: 'md' }),
     )
   }
 
   // what earns its place: with nothing run, the lead already says so
-  if (d.opts.scanProjects && (ranNames.length || isCounting || k.showDetails)) {
+  if (d.opts.scanProjects && (ranNames.length || isCounting || (k.showDetails && !noSkills))) {
     const top = ranNames.map((n) => runs[n]).sort((a, z) => z.runs - a.runs || z.lastAt - a.lastAt)
     const most = Math.max(1, ...top.map((x) => x.runs))
     const barW = k.columns >= 72 ? 14 : 8
@@ -1617,7 +1889,7 @@ function skillsTab(k, d, act) {
                   { text: ago(now - x.lastAt), width: 12, props: { dimColor: true } },
                 ],
                 {},
-                { key: 'used-' + i, tip: { title: '/' + x.name, lines: [plural(x.runs, 'run', 'runs') + ' in ' + plural(x.sessions, 'session', 'sessions') + ': ' + (x.typed ? x.typed + ' typed by you' : '') + (x.typed && x.byClaude ? ', ' : '') + (x.byClaude ? x.byClaude + ' picked by Claude' : '') + '.', 'In ' + x.projects.slice(0, 4).join(', ') + (x.projects.length > 4 ? ' and ' + (x.projects.length - 4) + ' more' : '') + '.', known[x.name] ? fmtTokens(known[x.name].tokens) + ' tokens in the listing.' : ''] } },
+                { key: 'used-' + i, tip: { title: '/' + x.name, lines: [plural(x.runs, 'run', 'runs') + ' in ' + plural(x.sessions, 'chat', 'chats') + ': ' + (x.typed ? x.typed + ' typed by you' : '') + (x.typed && x.byClaude ? ', ' : '') + (x.byClaude ? x.byClaude + ' picked by Claude' : '') + '.', 'In ' + x.projects.slice(0, 4).join(', ') + (x.projects.length > 4 ? ' and ' + (x.projects.length - 4) + ' more' : '') + '.', known[x.name] ? fmtTokens(known[x.name].tokens) + ' tokens in the listing.' : ''] } },
               ),
             ),
             ...(top.length > 8 ? [k.buttons([k.button('used-more', d.view.showAllUsed ? 'Show fewer' : 'Show all ' + top.length, () => act.setView({ showAllUsed: !d.view.showAllUsed }), { dimColor: true })])] : []),
@@ -1646,7 +1918,7 @@ function skillsTab(k, d, act) {
             children: [
               k.Text({ wrap: 'truncate-end', children: [k.text('/' + x.name, { weight: 'semibold' }), k.text('  ·  ' + [x.scope === 'project' ? 'this project' : 'yours', x.kind === 'command' ? 'command' : '', x.runs ? plural(x.runs, 'run', 'runs') + ' in ' + SCAN_DAYS + ' days' : ''].filter(Boolean).join(' · '), { size: 'footnote', dimColor: true })] }),
               ...x.issues.map((iss) => k.hang(k.dot(words[iss.level] === 'info' ? 'info' : iss.level), k.Box({ flexDirection: 'column', children: [k.text(iss.title, { weight: 'medium', wrap: 'wrap' }), k.footnote(iss.detail)] }))),
-              k.Box({ marginTop: 'xs', children: [k.buttons([k.button('fix-' + i, 'Fix description…', () => act.fixSkill(x)), k.button('try-' + i, 'Try /' + x.name, () => act.trySkill(x.name), { dimColor: true }), k.button('path-' + i, 'Copy path', (ev) => act.copyText(x.path, ev && ev.surface, 'The path'), { dimColor: true })])] }),
+              k.Box({ marginTop: 'xs', children: [k.buttons([k.button('fix-' + i, 'Fix description…', () => act.fixSkill(x), { about: '/' + x.name }), k.button('try-' + i, 'Try /' + x.name, () => act.trySkill(x.name), { dimColor: true }), k.button('path-' + i, 'Copy path', (ev) => act.copyText(x.path, ev && ev.surface, 'The path'), { dimColor: true, about: '/' + x.name })])] }),
             ],
           }),
         ),
@@ -1681,7 +1953,7 @@ function skillsTab(k, d, act) {
             [
               { parts: [k.text(g.name, { weight: 'medium' })] },
               { text: String(g.skills), width: 8, props: { dimColor: true } },
-              { el: k.bar(g.tokens, most, TINT.brown, g.name + ': ' + fmtTokens(g.tokens) + ' tokens'), width: barW },
+              { el: k.bar(g.tokens, most, TINT.slate, g.name + ': ' + fmtTokens(g.tokens) + ' tokens'), width: barW },
               { text: fmtTokens(g.tokens), width: 8 },
               { text: g.runs ? String(g.runs) : '–', width: 7, props: g.runs ? {} : { dimColor: true } },
               { text: g.cut ? String(g.cut) : '–', width: 10, props: { dimColor: true } },
@@ -1705,7 +1977,7 @@ function skillsTab(k, d, act) {
                 [
                   { parts: [k.text(x.name), ...(L.cut.includes(x.name) ? [k.text('  name only', { size: 'footnote', dimColor: true })] : [])] },
                   { text: x.pluginName || sourceWords(x.source), width: 16, props: { dimColor: true } },
-                  { el: k.bar(x.tokens, most, TINT.brown, x.name), width: barW },
+                  { el: k.bar(x.tokens, most, TINT.slate, x.name), width: barW },
                   { text: fmtTokens(x.tokens), width: 7 },
                   { text: runs[x.name] ? String(runs[x.name].runs) : '–', width: 6, props: runs[x.name] ? {} : { dimColor: true } },
                 ],
@@ -1718,9 +1990,9 @@ function skillsTab(k, d, act) {
       ]
     }
     put('where', 
-      k.card('Where the listing goes', 'Every skill Claude is told about, what it costs on every request, and how often it ran. Point at a row for where it comes from and how to turn it off.', [
-        k.segmented('skill-show', [{ value: 'plugins', label: 'By source' }, { value: 'all', label: 'Every skill' }, { value: 'unused', label: 'Never ran' }, { value: 'cut', label: 'Name only' }], show, act.setSkillShow),
-        ...(k.Input ? [k.Box({ width: '100%', children: [k.Input({ key: 'skill-filter', placeholder: 'Find a skill or plugin', value: d.view.skillFilter || '', submitLabel: 'Find', onInput: (value) => act.setSkillFilter(value), onSubmit: (value) => act.setSkillFilter(value) })] })] : []),
+      k.card('Where the listing goes', 'Every skill Claude is told about, what it costs on every request, and how often it ran. ' + k.hint('Point at a row for where it comes from and how to turn it off.'), [
+        k.segmented('skill-show', [{ value: 'plugins', label: 'By source' }, { value: 'all', label: 'Every skill' }, { value: 'unused', label: 'Never ran' }, { value: 'cut', label: 'Name only' }], show, act.setSkillShow, 'Show'),
+        ...(k.Input ? [k.Box({ width: '100%', children: [k.Input({ key: 'skill-filter', label: 'Find', placeholder: 'Find a skill or plugin', value: d.view.skillFilter || '', submitLabel: 'Find', onInput: (value) => act.setSkillFilter(value), onSubmit: (value) => act.setSkillFilter(value) })] })] : []),
         k.Box({ flexDirection: 'column', rowGap: 'xs', children: rows }),
         k.buttons([k.button('manage-skills', 'Manage skills', () => act.run('skills-screen')), k.button('manage-plugins', 'Manage plugins', () => act.run('plugins'))]),
         k.footnote('Manage skills opens Claude Code’s own /skills screen, where each skill can be on, manual-only or off.'),
@@ -1742,7 +2014,7 @@ function skillsTab(k, d, act) {
         ? shownIdeas.map((idea, i) =>
             k.hang(
               k.text('✦', { color: k.isTerminal ? 'suggestion' : TINT.purple }),
-              k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text(idea.title, { weight: 'semibold', wrap: 'wrap' }), k.footnote(idea.detail), ...(idea.where ? [k.footnote(idea.where)] : []), k.Box({ marginTop: 'xs', children: [k.buttons([k.button('idea-' + i, 'Draft this skill', () => act.draftIdea(idea))])] })] }),
+              k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text(idea.title, { weight: 'semibold', wrap: 'wrap' }), k.footnote(idea.detail), ...(idea.where ? [k.footnote(idea.where)] : []), k.Box({ marginTop: 'xs', children: [k.buttons([k.button('idea-' + i, 'Draft this skill', () => act.draftIdea(idea), { about: idea.title })])] })] }),
             ),
           )
         : [k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text(sk.isSearching ? 'Looking through every project…' : 'Nothing repeated yet.', { weight: 'medium' }), k.footnote('Ideas come from prompts you type more than once, in any project, and commands run again and again.')] })]),
@@ -1763,10 +2035,11 @@ function skillsTab(k, d, act) {
   // build one
   const builder = []
   if (s.saved && !s.draft && busy !== 'draft') {
-    builder.push(k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'row', columnGap: 'sm', children: [k.text('✓', { color: 'success' }), k.text('/' + s.saved + ' is saved. New sessions list it.', { weight: 'medium', wrap: 'wrap' })] }), k.buttons([k.button('skill-try', 'Try /' + s.saved, () => act.trySkill(s.saved))])] }))
+    builder.push(k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'row', columnGap: 'sm', children: [k.text('✓', { color: 'success' }), k.text('/' + s.saved + ' is saved. New chats list it.', { weight: 'medium', wrap: 'wrap' })] }), k.buttons([k.button('skill-try', 'Try /' + s.saved, () => act.trySkill(s.saved))])] }))
   }
   if (k.Input) {
-    builder.push(k.Input({ key: 'skill-describe', placeholder: 'What should it do? For example: push, wait for the checks, then merge and deploy.', value: s.describe, rows: 3, submitLabel: 'Draft skill', onSubmit: (value) => act.draftSkill(value) }))
+    builder.push(k.Input({ key: 'skill-describe', label: 'Describe', placeholder: k.columns < 60 ? 'What should it do?' : 'What should it do? For example: push, wait for the checks, then merge and deploy.', value: s.describe, rows: 3, submitLabel: 'Draft skill', onSubmit: (value) => act.draftSkill(value) }))
+    if (k.columns < 60) builder.push(k.footnote('For example: push, wait for the checks, then merge and deploy.'))
     if (!s.draft && busy !== 'draft') {
       builder.push(k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Or start from one of these, then press Return in the field to draft it:'), k.buttons(EXAMPLES.map(([label, describe], i) => k.button('example-' + i, label, () => act.setDescribe(describe), { dimColor: true })))] }))
     }
@@ -1782,10 +2055,10 @@ function skillsTab(k, d, act) {
         flexDirection: 'column',
         rowGap: 'sm',
         children: [
-          k.Box({ flexDirection: 'column', children: [k.text('Draft: /' + s.draft.name, { weight: 'semibold' }), ...(s.draft.description ? [k.footnote(s.draft.description)] : [])] }),
+          k.Box({ flexDirection: 'column', children: [k.text('Draft: /' + s.draft.name, { weight: 'semibold' }), ...(s.draft.description ? [k.footnote(cleanText(s.draft.description, 300))] : [])] }),
           k.Box({ flexDirection: 'column', rowGap: 'xs', children: checks.map(([ok, words]) => k.Box({ flexDirection: 'row', columnGap: 'sm', children: [k.text(ok ? '✓' : '●', ok ? { color: 'success' } : { color: 'warning' }), k.text(words, { size: 'footnote', wrap: 'wrap' })] })) }),
-          k.Box({ borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, paddingX: k.isTerminal ? 0 : 'md', children: [k.Markdown({ key: 'skill-draft', text: s.draft.text })] }),
-          k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Save it for', { size: 'footnote', weight: 'semibold', dimColor: true }), k.segmented('skill-scope', [{ value: 'project', label: 'This project' }, { value: 'user', label: 'All my projects' }], s.scope, act.setSkillScope), k.footnote('Saves to ' + d.skillPath)] }),
+          k.Box({ borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, paddingX: k.isTerminal ? 0 : 'md', children: [k.Code ? k.Code({ key: 'skill-draft', source: s.draft.text, language: 'markdown' }) : k.Markdown({ key: 'skill-draft', text: s.draft.text })] }),
+          k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Save it for', { size: 'footnote', weight: 'semibold', dimColor: true }), k.segmented('skill-scope', [{ value: 'project', label: 'This project' }, { value: 'user', label: 'All my projects' }], s.scope, act.setSkillScope, 'Save it for'), k.footnote('Saves to ' + d.skillPath)] }),
           k.buttons([k.button('skill-save', 'Save skill', act.saveSkill, { variant: 'primary' }), ...(s.previous ? [k.button('skill-undo', 'Undo improvement', act.undoImprove, { dimColor: true })] : []), k.button('skill-improve', 'Improve it', act.improveDraft), k.button('skill-discard', 'Discard draft', act.discardSkill, { dimColor: true })]),
         ],
       }),
@@ -1803,6 +2076,7 @@ function draftChecks(draft) {
     [desc.length >= 60, desc.length >= 60 ? 'Its description says enough to be matched.' : 'Its description is short: say what it does and when to use it.'],
     [/\b(use (it |this )?(when|for|to|if|whenever)|when (the user|you|someone|asked)|whenever)\b/i.test(desc), /\b(use (it |this )?(when|for|to|if|whenever)|when (the user|you|someone|asked)|whenever)\b/i.test(desc) ? 'It says when to use it.' : 'It doesn’t say when to use it. Ask Claude to improve it, or edit the draft.'],
     [desc.length <= 1536, desc.length <= 1536 ? 'It fits within the 1,536 characters Claude reads.' : 'Its description runs past the 1,536 characters Claude reads.'],
+    [!skillDraftRisks(draft.text).length, skillDraftRisks(draft.text).length ? 'It holds ' + skillDraftRisks(draft.text).join(', ') + ' that Save skill would keep. Ask Claude to improve it.' : 'It has no tool permissions, hooks or shell commands.'],
     [String(draft.text).split('\n').length <= 500, String(draft.text).split('\n').length <= 500 ? 'It’s short enough to load quickly.' : 'It’s long: move detail into reference files.'],
   ]
 }
@@ -1834,9 +2108,9 @@ function skillTip(x, run, isCut, now) {
 function control(k, d, act, s) {
   const v = d.opts[s.field]
   if (s.kind === 'boolean') {
-    return k.segmented('opt-' + s.field, [{ value: true, label: 'On' }, { value: false, label: 'Off' }], v, (value) => act.setOption(s.field, value))
+    return k.segmented('opt-' + s.field, [{ value: true, label: 'On' }, { value: false, label: 'Off' }], v, (value) => act.setOption(s.field, value), s.label)
   }
-  if (s.kind === 'choice') return k.segmented('opt-' + s.field, s.options, v, (value) => act.setOption(s.field, value))
+  if (s.kind === 'choice') return k.segmented('opt-' + s.field, s.options, v, (value) => act.setOption(s.field, value), s.label)
   const presets = s.kind === 'model' ? s.presets.map((p) => ({ value: p, label: titleCase(p) })) : s.presets.map((p) => ({ value: p, label: settingWords(s, p) }))
   if (!presets.some((p) => p.value === v)) presets.push({ value: v, label: settingWords(s, v) })
   const isEditing = d.view.editing === s.field
@@ -1845,14 +2119,16 @@ function control(k, d, act, s) {
     flexWrap: 'wrap',
     columnGap: 'sm',
     rowGap: 'sm',
+    alignItems: 'center',
     children: [
-      ...presets.map((o) => k.button('opt-' + s.field + '-' + o.value, (o.value === v ? '✓ ' : '') + o.label, () => act.setOption(s.field, o.value), { dimColor: o.value === v ? undefined : true })),
-      ...(k.Input ? [k.button('opt-' + s.field + '-other', isEditing ? 'Cancel' : 'Other…', () => act.setView({ editing: isEditing ? '' : s.field }), { dimColor: true })] : []),
+      k.segmented('opt-' + s.field, presets, v, (value) => act.setOption(s.field, value), s.label),
+      ...(k.Input ? [k.button('opt-' + s.field + '-other', isEditing ? 'Cancel' : 'Other…', () => act.setView(isEditing ? { editing: '' } : { editing: s.field, focus: 'opt-' + s.field }), { dimColor: true })] : []),
     ],
   })
   if (!isEditing || !k.Input) return options
   const field = k.Input({
     key: 'opt-' + s.field,
+    label: 'New value',
     placeholder: s.kind === 'model' ? 'a model id, such as claude-haiku-5-5' : s.unit === '$' ? 'dollars, such as 15' : 'a percentage, such as 65',
     value: s.kind === 'model' ? '' : String(v),
     submitLabel: 'Save',
@@ -1881,29 +2157,65 @@ const SOURCE_WORDS = [
   ['transcripts', 'Claude Code’s records', 'Every project’s transcripts, for Home, Usage and Skills'],
   ['runs', 'Workflow records', 'Finished runs and what each agent cost'],
   ['launch', 'Workflow starts', 'Following a run as it starts, for its controls'],
-  ['agents', 'Running sessions', 'Which sessions are working or waiting now'],
-  ['desk', 'Desktop sessions', 'Open sessions in the Claude app, for replies'],
-  ['git', 'Folders’ git state', 'Work left uncommitted or unpushed'],
+  ['agents', 'Running chats', 'Which chats are working or waiting now'],
+  ['desk', 'Desktop chats', 'Open chats in the Claude app, for replies'],
+  ['git', 'Folders’ git state', 'Work left uncommitted or unpushed, in the folders of chats to pick up'],
   ['gh', 'Pull requests (GitHub CLI)', 'Your open pull requests that need you: review requested, changes requested, checks failing, ready to merge. Read-only gh queries, every few minutes'],
   ['skills', 'Your skills', 'Skill and command files, for the check-up'],
-  ['integrity', 'This copy of ToBeBestMe', 'Its own files, checked against the release they came from'],
+  ['integrity', 'This copy of ToBeBestMe', 'Its own files, checked against the manifest that ships with them'],
 ]
 
+// A source as the pane shows it: the skills one counts what the Skills tab counts as the person's own, so the
+// two tabs never give two numbers.
+function sourceOf(d, key) {
+  const x = (d.sources || {})[key]
+  if (x && key === 'gh' && x.ok === true && d.waiting) {
+    // the count Home and Needs you show: set-aside pull requests and ones the desktop app lists are already settled there
+    const n = ((d.waiting.needs || []).filter((y) => y.kind === 'pr')).length
+    return { ...x, detail: String(x.detail || '').replace(/^\d+ pull requests? needs? you/, plural(n, 'pull request needs', 'pull requests need') + ' you') }
+  }
+  if (x && key === 'git' && isNothingFound(x)) return { ...x, detail: 'No uncommitted or unpushed work in the folders of chats to pick up' }
+  if (!x || key !== 'skills' || x.ok !== true || !d.skills) return x
+  return { ...x, detail: plural(ownSkillCount(d.skills), 'skill or command', 'skills and commands') + ' of yours' }
+}
+
+// A source that was read and had nothing in it: not a failure, and not a success either.
+function isNothingFound(x) {
+  return !!x && x.ok === true && /^(0 |No uncommitted or unpushed work)/.test(String(x.detail || ''))
+}
+
+// What a source that could not be read says, in a sentence with its next step. What Claude Code or the
+// system answered (a missing function, a file error, an exit code) goes to the hover card, for a bug report.
+const RAW_ERROR = /no implementation for|^E[A-Z]{3,}\b|is not a function|\bundefined\b|^(Type|Range|Syntax)?Error\b|exit code \d+|answered with nothing/i
+function sourceNote(key, x) {
+  const detail = String(x.detail || '')
+  if (key === 'transcripts') return 'Couldn’t read the records Claude Code keeps of your projects. Check that its projects folder can be read, then press Read projects again on Home.'
+  if (key === 'agents') return 'Couldn’t ask Claude Code which chats are running. Update Claude Code or restart it; the list fills in by itself once it answers.'
+  if (RAW_ERROR.test(detail) || !detail) return 'Couldn’t read this. Restart Claude Code and open this tab again; if it keeps happening, an update to Claude Code may have changed it.'
+  return detail
+}
+
 function sourcesCard(k, d) {
-  const src = d.sources || {}
-  const rows = SOURCE_WORDS.filter(([key]) => src[key]).map(([key, label, what], i) => {
-    const x = src[key]
+  const rows = SOURCE_WORDS.filter(([key]) => sourceOf(d, key)).map(([key, label, what], i) => {
+    const x = sourceOf(d, key)
     // nothing found is not a success: a neutral dot, not a check
-    const isZero = x.ok === true && /^0 /.test(String(x.detail || ''))
+    const isZero = isNothingFound(x)
     const [glyph, color, word] = isZero ? ['○', undefined, ''] : x.ok === true ? ['✓', 'success', ''] : x.ok === false ? ['●', 'error', 'Couldn’t read'] : ['–', undefined, 'Not here']
+    // a source read with nothing in it says so in words, not as a count of zero; what is not here goes on after its colon in lowercase
+    const detail = isZero && /^0 /.test(String(x.detail || '')) ? 'None found' : word === 'Not here' && x.detail && !/^No /.test(x.detail) ? x.detail.charAt(0).toLowerCase() + x.detail.slice(1) : x.detail || ''
+    const words = x.ok === false ? sourceNote(key, x) : (word && !/^No /.test(detail) ? word + (detail ? ': ' : '') : '') + detail
     return k.hoverBox('source-' + i, { flexDirection: 'column', width: '100%' }, [
-      k.Text({ wrap: 'wrap', children: [k.text(glyph + ' ', color ? { color } : { dimColor: true }), k.text(label, { weight: 'medium' }), k.text('  ' + (word ? word + (x.detail ? ': ' : '') : '') + (x.detail || ''), { dimColor: x.ok !== false ? true : undefined, color: x.ok === false ? 'error' : undefined })] }),
-    ], { title: label, lines: [what + '.', 'Checked ' + ago(d.now - x.at) + '.'] })
+      k.Text({ wrap: 'wrap', children: [k.text(glyph + ' ', color ? { color } : { dimColor: true }), k.text(label, { weight: 'medium' }), k.text('  ' + words, { dimColor: x.ok !== false ? true : undefined, color: x.ok === false ? 'error' : undefined })] }),
+    ], { title: label, lines: [what + '.', 'Checked ' + ago(d.now - x.at) + '.', x.ok === false && x.detail && sourceNote(key, x) !== x.detail ? 'Technical detail, for a bug report: ' + x.detail : ''] })
   })
   if (!rows.length) return null
-  const bad = SOURCE_WORDS.filter(([key]) => src[key] && src[key].ok === false).length
-  return k.card('What ToBeBestMe reads', (d.version ? 'Claude Code ' + d.version + '. ' : '') + (bad ? 'Something couldn’t be read; an update to Claude Code may have changed it. The sections that use it say less until it can.' : 'Everything it uses was read. If an update changes these files, it shows here.'), rows)
+  const bad = SOURCE_WORDS.filter(([key]) => (d.sources || {})[key] && d.sources[key].ok === false).length
+  const none = SOURCE_WORDS.filter(([key]) => isNothingFound(sourceOf(d, key))).length
+  return k.card('What ToBeBestMe reads', (d.version ? 'Claude Code ' + d.version + '. ' : '') + (bad ? 'Something couldn’t be read; an update to Claude Code may have changed it. The sections that use it say less until it can.' : none ? 'A hollow dot means a source was read and had nothing in it, which is not an error. If an update changes these files, it shows here.' : 'Nothing failed. If an update changes these files, it shows here.'), rows)
 }
+
+// Settings drawn on another tab, beside what they change: here they are only linked to.
+const SET_ELSEWHERE = ['sessionBudget', 'dailyBudget', 'atBudget', 'costUnit', 'workflowCheck']
 
 function settingsTab(k, d, act) {
   const showAll = d.view.advanced
@@ -1911,21 +2223,30 @@ function settingsTab(k, d, act) {
   // each block is drawn by a function of the kit, with a rough weight, so a wide pane can balance two columns
   const blocks = [{ weight: 9, draw: (kk) => notifyCard(kk, d, act) }]
   for (const g of SETTINGS) {
-    // Budgets and how costs show are set on Usage, the workflow check on Workflows, beside what they govern: one place each
-    const fields = g.fields.filter((s) => (showAll || !s.advanced) && !s.inCard && !['sessionBudget', 'dailyBudget', 'atBudget', 'workflowCheck', 'costUnit'].includes(s.field))
+    // The settings that sit beside the figures they change (budgets and how costs show on Usage, the workflow check on
+    // Workflows) are drawn there and nowhere else: one home each, linked from here
+    const fields = g.fields.filter((s) => (showAll || !s.advanced) && !s.inCard && !SET_ELSEWHERE.includes(s.field))
     if (fields.length) blocks.push({ weight: fields.length * 2 + 1, draw: (kk) => kk.card(g.group, null, fields.map((s) => settingRow(kk, d, act, s)), { gap: 'lg' }) })
   }
+  blocks.push({
+    weight: 4,
+    draw: (kk) =>
+      kk.card('Set on other tabs', 'These settings sit beside the figures they change, so each one has a single home.', [
+        kk.Box({ flexDirection: 'column', rowGap: 'xs', children: [kk.text('Budgets, and how costs show', { weight: 'medium', wrap: 'wrap' }), kk.footnote('Set on Usage, beside your spending, where you see what they change.'), kk.buttons([kk.button('settings-usage', 'Open Usage', () => act.setView({ tab: 'usage', confirm: '', editing: '' }), { dimColor: true })])] }),
+        kk.Box({ flexDirection: 'column', rowGap: 'xs', children: [kk.text('Check each workflow before it runs', { weight: 'medium', wrap: 'wrap' }), kk.footnote('Set on Workflows, beside the runs it checks.'), kk.buttons([kk.button('settings-workflows', 'Open Workflows', () => act.setView({ tab: 'workflows', confirm: '', editing: '' }), { dimColor: true })])] }),
+      ], { gap: 'md' }),
+  })
   blocks.push({ weight: 1, draw: (kk) => kk.Box({ paddingX: kk.isTerminal ? 1 : 'lg', children: [kk.buttons([kk.button('advanced', showAll ? 'Hide advanced settings' : 'Show ' + hidden + ' advanced settings', act.toggleAdvanced)])] }) })
   blocks.push({
     weight: 4,
     draw: (kk) =>
       kk.card('Reset', "Settings save straight away to Claude Code's settings and appear in /config too.", [
-        kk.buttons([kk.button('defaults', 'Restore defaults…', () => act.setView({ confirm: 'defaults' })), kk.button('reset', "Reset this session's numbers…", () => act.setView({ confirm: 'reset' }))]),
-        ...confirmRows(kk, d, act, ['defaults', 'reset']),
-        kk.footnote('The handoff note is at ' + HANDOFF_PATH + '.'),
+        kk.buttons([kk.button('defaults', 'Restore defaults…', () => act.setView({ confirm: 'defaults' })), kk.button('reset', "Reset this chat's numbers…", () => act.setView({ confirm: 'reset' })), kk.button('forget', 'Forget stored data…', () => act.setView({ confirm: 'forget' }))]),
+        ...confirmRows(kk, d, act, ['defaults', 'reset', 'forget']),
       ], { gap: 'md' }),
   })
   blocks.push({ weight: 8, draw: (kk) => sourcesCard(kk, d) })
+  blocks.push({ weight: 1, draw: (kk) => kk.Box({ paddingX: kk.isTerminal ? 1 : 'xs', children: [kk.footnote('ToBeBestMe is an independent project, not made by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.')] }) })
   const head = settingsLead(k, d, act)
   if (k.isTerminal || k.columns < SPLIT_AT) return [head, ...blocks.map((x) => x.draw(k))]
   // wide: each block goes to the lighter column, in order, so neither runs far past the other
@@ -1954,18 +2275,18 @@ function notifyCard(k, d, act) {
   const isEditing = d.view.editing === 'notifyUrl'
   return k.card(
     'Notifications',
-    'Claude Code’s own notifications show words only in iTerm2, Kitty and Ghostty; other terminals ring a bell and the desktop app shows none. ToBeBestMe also uses your computer’s notification centre, a sound, and, if you like, your phone.',
+    'How ToBeBestMe tells you something needs you, here and on your phone.',
     [
-      k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Notifications', { weight: 'medium' }), k.footnote('When a chat waits for you, a workflow needs your go-ahead or ends, or a limit gets close.'), k.segmented('opt-notifications', [{ value: true, label: 'On' }, { value: false, label: 'Off' }], o.notifications, (v) => act.setOption('notifications', v))] }),
+      k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Send notifications', { weight: 'medium' }), k.footnote('When a chat waits for you, a workflow needs your go-ahead or ends, or a limit gets close.'), k.segmented('opt-notifications', [{ value: true, label: 'On' }, { value: false, label: 'Off' }], o.notifications, (v) => act.setOption('notifications', v), 'Send notifications')] }),
       ...(o.notifications
         ? [
-            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Notify through', { weight: 'medium' }), k.segmented('opt-notifyVia', specOf('notifyVia').options, o.notifyVia, (v) => act.setOption('notifyVia', v))] }),
+            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Notify through', { weight: 'medium' }), k.footnote(specOf('notifyVia').help), k.segmented('opt-notifyVia', specOf('notifyVia').options, o.notifyVia, (v) => act.setOption('notifyVia', v), 'Notify through')] }),
             k.Box({ flexDirection: 'column', rowGap: 'xs', children: [
-              k.text('Send to your phone too', { weight: 'medium' }),
-              k.footnote(n.url && n.url !== 'invalid' ? 'Also sent to ' + n.url + '.' : 'Paste an ntfy topic address (https://ntfy.sh/your-topic) or any web hook that takes a POST; install the ntfy app and subscribe to the topic. Only the notification’s words are sent.'),
+              k.text('Also send to your phone', { weight: 'medium' }),
+              k.footnote(n.url && n.url !== 'invalid' ? 'Also sent to ' + n.url + ' (address hidden).' : 'Paste the web address of a phone notification service. The easiest is ntfy: install its app, subscribe to a topic name only you would guess, and paste https://ntfy.sh/that-topic here. What each notification says goes there, so keep the topic secret.'),
               ...(isEditing && k.Input
-                ? [k.Box({ width: 48, children: [k.Input({ key: 'notify-url', placeholder: 'https://ntfy.sh/your-topic', value: o.notifyUrl || '', submitLabel: 'Save', autoFocus: true, onSubmit: (v) => act.saveNotifyUrl(v) })] }), k.buttons([k.button('notify-url-cancel', 'Cancel', () => act.setView({ editing: '' }))])]
-                : [k.buttons([k.button('notify-url-edit', n.url ? 'Change address…' : 'Add an address…', () => act.setView({ editing: 'notifyUrl' }), { plain: true }), ...(n.url ? [k.button('notify-url-clear', 'Remove address', () => act.saveNotifyUrl(''), { dimColor: true })] : [])])]),
+                ? [k.Box({ width: 48, children: [k.Input({ key: 'notify-url', label: 'Address', placeholder: n.url ? 'Paste a new address to replace the saved one' : 'https://ntfy.sh/a-long-random-topic', value: '', submitLabel: 'Save', autoFocus: true, onSubmit: (v) => act.saveNotifyUrl(v) })] }), k.buttons([k.button('notify-url-cancel', 'Cancel', () => act.setView({ editing: '' }))])]
+                : [k.buttons([k.button('notify-url-edit', n.url ? 'Change address…' : 'Add an address…', () => act.setView({ editing: 'notifyUrl', focus: 'notify-url' }), { dimColor: true }), ...(n.url ? [k.button('notify-url-clear', 'Remove address', () => act.saveNotifyUrl(''), { dimColor: true })] : [])])]),
             ] }),
             k.buttons([k.button('notify-test', 'Send a test notification', act.testNotify)]),
             ...(rows.length ? [k.footnote('The last one, ' + ago(d.now - n.at) + ':'), ...rows] : []),
@@ -1973,23 +2294,27 @@ function notifyCard(k, d, act) {
           ]
         : []),
     ],
-    { gap: 'md', keepCaption: true },
+    { gap: 'md' },
   )
 }
 
-// ---- All projects -----------------------------------------------------------------------------
+// ---- Home: small helpers its cards share -----------------------------------------------------
 // Every project on this computer, from Claude Code's own transcripts: what each used today and this
 // week, the last 14 days, the plan limits they share, and what stands out. It works on every surface
 // and covers sessions that never ran tobebestme; in the desktop app the open sessions follow.
 
 function planHex(label) {
   if (/all models|^weekly( limit)?$/i.test(label)) return RING_HEX.seven_day
+  // a model's own weekly limit keeps that model's colour, so slate stays the project colour it also is
+  if (/opus/i.test(label)) return RING_HEX.seven_day_opus
+  if (/sonnet/i.test(label)) return FAMILY_HEX.Sonnet
+  if (/haiku/i.test(label)) return FAMILY_HEX.Haiku
   return RING_HEX.seven_day_opus
 }
 
 // How long ago, as a table says it: "just now", "12 min ago", "3 h ago", "yesterday", "4 days ago".
 function ago(ms) {
-  const min = Math.round(Math.max(0, ms) / 60_000)
+  const min = Math.round(Math.max(0, ms) / MIN_MS)
   if (min < 1) return 'just now'
   if (min < 60) return min + ' min ago'
   const h = Math.round(min / 60)
@@ -2007,7 +2332,7 @@ function fmtCount(n) {
 }
 
 function share(part, whole) {
-  return whole > 0 ? Math.round((part / whole) * 100) : 0
+  return pctText(whole > 0 ? (part / whole) * 100 : 0)
 }
 
 // "Today", "Yesterday", or the weekday and date further back: "Tue 14 Oct".
@@ -2022,44 +2347,22 @@ function dayWords(key, now) {
   }
 }
 
-// A tile like a widget: a glyph in its colour, a name, the figure, what it means.
-function widgetTile(k, key, w, i, count) {
-  const perRow = k.columns >= 72 ? Math.min(4, count) : 2
-  return k.tile(
-    key,
-    clean({
-      flexDirection: 'column',
-      rowGap: 'xs',
-      width: perRow === 4 ? '24%' : perRow === 3 ? '32%' : '49%',
-      paddingY: k.isTerminal ? undefined : 'xs',
-    }),
-    [
-      k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [...(w.glyph ? [w.glyph] : []), w.onPress ? k.Button({ key: w.buttonKey, plain: true, onPress: w.onPress, children: [w.label + ' ›'] }) : k.text(w.label, { size: 'footnote', weight: 'medium' })] }),
-      k.text(w.value, { size: 'title', weight: 'semibold', tabular: true, color: quiet(w.level), wrap: 'truncate-end' }),
-      ...(w.runwayItem ? [runwayBar(k, w.runwayItem, 'tile')] : []),
-      k.footnote(w.sub),
-      ...(w.note ? [k.text(w.note, { size: 'footnote', weight: 'medium', color: quiet(w.level) })] : []),
-    ],
-    w.tip ? { ...w.tip, align: i < count / 2 ? 'right' : 'left' } : null, // on the far side, so this tile stays in view
-  )
-}
-
 // What a project's row says on hover: where it is, its days, sessions, models and helpers.
 function projectTip(p, now) {
   const read = p.tokens.input + p.tokens.cacheRead + p.tokens.cacheWrite
   const models = p.models
     .slice(0, 3)
-    .map(([m, usd]) => modelName(m) + ' ' + share(usd, p.week) + '%')
+    .map(([m, usd]) => modelName(m) + ' ' + share(usd, p.week))
     .join(', ')
   return {
     title: p.name,
     lines: [
       p.path ? p.path.replace(/^\/Users\/[^/]+/, '~') : '',
-      'Today ' + cost(p.today) + ' · past 7 days ' + cost(p.week) + (SHARE ? '' : ' · 14 days ' + cost(p.total)) + '.',
-      plural(p.sessionsWeek, 'session', 'sessions') + ' this week' + (p.worktrees ? ', ' + plural(p.worktrees, 'worktree', 'worktrees') + ' included' : '') + '. Last answer ' + ago(now - p.lastAt) + '.',
+      'Today ' + cost(p.today) + ' · past 7 days ' + (SHARE ? ofLimit(cost(p.week)) : cost(p.week) + ' · 14 days ' + cost(p.total)) + '.',
+      plural(p.sessionsWeek, 'chat', 'chats') + ' this week' + (p.worktrees ? ', ' + plural(p.worktrees, 'worktree', 'worktrees') + ' included' : '') + '. Last answer ' + ago(now - p.lastAt) + '.',
       models ? 'Models this week: ' + models + '.' : '',
-      p.helpers + p.workflows > 0 ? 'Helpers and workflow agents: ' + share(p.helpers + p.workflows, p.week) + '% of it.' : '',
-      read ? 'Reused from cache: ' + share(p.tokens.cacheRead, read) + '% of what was read.' : '',
+      p.helpers + p.workflows > 0 ? 'Helpers and workflow agents: ' + share(p.helpers + p.workflows, p.week) + ' of it.' : '',
+      read ? 'Reused from cache: ' + share(p.tokens.cacheRead, read) + ' of what was read.' : '',
     ],
   }
 }
@@ -2102,11 +2405,11 @@ function tightestItem(d, tightest, h) {
     runway,
     hex: tint(planHex(tightest.label), h ? h.levelOf(tightest.pct) : 'success'),
     label: tightest.label,
-    valueText: Math.round(tightest.pct) + '%',
+    valueText: pctText(tightest.pct),
     window,
     days,
     // what the bars say, for a reader that cannot see them
-    daysAlt: days ? '. Use by day: ' + days.filter((x) => x.total > 0).map((x) => x.name + ' ' + cost(x.total)).join(', ') + '.' : '',
+    daysAlt: days ? ' Use by day: ' + days.filter((x) => x.total > 0).map((x) => x.name + ' ' + cost(x.total)).join(', ') + '.' : '',
   }
 }
 
@@ -2122,28 +2425,68 @@ function windowOf(kind, runway, resetsAt, now) {
     unit: 'day',
     nowLabel: 'Now',
     runLabel: runway.runOut !== null && runway.runOut !== undefined ? 'Runs out ' + fmtClock(start + (runway.runOut / 100) * span, now) : '',
-    gap: runway.runOut !== null && runway.runOut !== undefined ? fmtSpan(resetsAt - (start + (runway.runOut / 100) * span)) : '',
+    gap: runway.runOut !== null && runway.runOut !== undefined ? roughSpan(resetsAt - (start + (runway.runOut / 100) * span)) : '',
     endLabel: 'Resets ' + fmtClock(resetsAt, now),
   }
 }
 
-// The day's answer: the date, how many chats wait for you, and how much room is left, with the
+// Where "today" was counted: every chat on this computer when their records were read; otherwise only the chats
+// that report to ToBeBestMe (this one, and any other running it), said so a reader is not told it covers chats
+// that could not be read.
+function todayScope(d) {
+  if (d.usage && !d.usage.isEmpty) return { all: true, in: 'in every chat on this computer', short: 'in every chat' }
+  const why = !d.opts.scanProjects ? 'reading every project is off' : (d.scan || {}).status === 'unavailable' ? 'other chats couldn’t be read' : 'other chats not read yet'
+  return { all: false, in: 'in chats running ToBeBestMe', short: 'in chats running ToBeBestMe', why }
+}
+
+// Whether what waits for the person could be read at all, so "nothing is waiting" is only said when
+// it was looked for: the records read (or nothing in them yet) is 'read'; unreadable is 'failed'; the
+// reading of every project turned off is 'off'; the first reading still under way is 'reading'.
+function waitingRead(d, h) {
+  if (!d.opts.scanProjects) return 'off'
+  if (h.has) return 'read'
+  const sc = h.sc
+  if (sc.status === 'unavailable') return 'failed'
+  return sc.status === 'ok' && !sc.isRunning ? 'read' : 'reading'
+}
+
+// The line under a waiting headline, said the same on Home and the phone: what a count of several things
+// is made of, and what could not be read, so more may be waiting than is shown.
+function waitNotes(tally, read) {
+  const notes = []
+  if (tally.total > 1 && tally.chats !== tally.total && tally.prs !== tally.total) notes.push(waitingParts(tally).replace(/^./, (c) => c.toUpperCase()))
+  if (read === 'failed') notes.push(tally.total ? 'Claude Code’s records couldn’t be read, so more may be waiting' : 'Claude Code’s records couldn’t be read, so chats and pull requests in other projects are unknown')
+  else if (read === 'off' && !tally.total) notes.push('Reading every project is off, so other chats aren’t checked')
+  return notes
+}
+
+// Home's headline and its glyph: what waits, or why it cannot be said that nothing does. Amber for
+// something to do (an answer, or the records to read again), green only for a true all clear.
+function homeHeadline(tally, read) {
+  if (tally.total) return [waitingTitle(tally), ['●', { color: 'warning' }]]
+  if (read === 'failed') return ['Can’t tell what’s waiting', ['●', { color: 'warning' }]]
+  if (read === 'off') return ['Nothing is waiting in this chat', ['○', { dimColor: true }]]
+  if (read === 'reading') return ['Checking what’s waiting…', ['○', { dimColor: true }]]
+  return ['Nothing is waiting for you', ['✓', { color: 'success' }]]
+}
+
+// The day's answer: the date, how much waits for you, and how much room is left, with the
 // tightest limit drawn full width beneath, so where you stand reads at a glance.
 function homeHero(k, d, h, act) {
   const { w, tightest } = h
-  const chats = w.needs.filter((x) => x.kind !== 'pr').length
-  const prs = w.needs.length - chats
+  const tally = waitingCount(w.needs, d.flows && d.flows.approval)
   let date = ''
   try {
     date = new Date(d.now).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })
   } catch {
     date = dayKey(d.now)
   }
-  const headline = chats ? (chats === 1 ? 'One chat is waiting for you' : chats + ' chats are waiting for you') : prs ? (prs === 1 ? 'One pull request needs a look' : prs + ' pull requests need a look') : 'Nothing is waiting for you'
+  const [headline, glyph] = homeHeadline(tally, h.read)
   const u = d.usage
+  const waits = waitNotes(tally, h.read)
   const facts = []
-  if (u && !u.isEmpty) facts.push('Today, in every session: ' + (SHARE ? ofLimit(cost(u.today.usd)) : fmtUsd(u.today.usd) + ' of work') + ', across ' + plural(u.today.projects, 'project', 'projects') + ' and ' + plural(u.today.sessions, 'session', 'sessions'))
-  if (!chats && w.pickup.length) facts.push('Pick up where you left off below')
+  if (u && !u.isEmpty) facts.push('Today, in every chat: ' + (SHARE ? ofLimit(cost(d.today)) : fmtUsd(d.today) + ' of work') + ', across ' + plural(u.today.projects, 'project', 'projects') + ' and ' + plural(u.today.sessions, 'chat', 'chats'))
+  if (!tally.total && w.pickup.length) facts.push('Pick up where you left off below')
   const factsTip = u && !u.isEmpty ? { title: 'Today, in every project', lines: ['What today’s answers would cost at list prices, helpers and workflow agents included.', 'On a plan the limits are what you spend; this shows how heavy the work was.'] } : null
   const item = h.item
   const early = !!item && item.runway.runOut !== null && item.runway.runOut !== undefined
@@ -2160,10 +2503,10 @@ function homeHero(k, d, h, act) {
       children: [
         k.text('●', { color: midHex(x.hex) }),
         // other projects together are not one project to pick
-        key ? k.button('legend-' + key, (key === picked ? '✓ ' : '') + x.name, () => act.setView({ project: key === picked ? '' : key }), key === picked ? {} : { plain: true, dimColor: true }) : k.footnote(x.name),
+        key ? k.button('legend-' + key, (key === picked ? '✓ ' : '') + x.name, () => act.setView({ project: key === picked ? '' : key }), { name: key === picked ? 'Show every project, not only ' + x.name : 'Show only ' + x.name, ...(key === picked ? {} : { plain: true, dimColor: true }) }) : k.footnote(x.name),
       ],
     })
-  const level = tightest ? (tightest.pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : tightest.pct >= d.opts.limitAlertAt ? 'warning' : 'success') : 'success'
+  const level = tightest ? (shownPct(tightest.pct) >= Math.max(90, d.opts.limitAlertAt) ? 'error' : shownPct(tightest.pct) >= d.opts.limitAlertAt ? 'warning' : 'success') : 'success'
   const kind = tightest ? kindOfLabel(tightest.label) : 'seven_day'
   const pace = item ? paceWords(kind, item.runway, tightest.resetsAt, d.now) : ''
   const isWide = k.columns >= 90
@@ -2175,7 +2518,9 @@ function homeHero(k, d, h, act) {
     flexShrink: 1,
     children: [
       k.footnote(date, { wrap: 'truncate-end' }),
-      k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.text(chats ? '● ' : '✓ ', chats ? { color: 'warning' } : { color: 'success' }), k.text(headline, { size: 'title', weight: 'semibold', wrap: 'wrap' })] }),
+      // the status glyph sits beside the headline's first line, however many lines it takes
+      k.hang(k.Box({ paddingTop: k.isTerminal ? undefined : 'xs', children: [k.text(glyph[0], glyph[1])] }), k.text(headline, { size: 'title', weight: 'semibold', wrap: 'wrap' })),
+      ...(waits.length ? [k.text(waits.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
       ...(facts.length ? [factsTip ? k.hoverBox('all-facts', { flexDirection: 'column' }, [k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })], { ...factsTip, align: 'left' }) : k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
     ],
   })
@@ -2188,8 +2533,8 @@ function homeHero(k, d, h, act) {
         flexShrink: 0,
         ...(isWide ? { paddingLeft: 'lg' } : { paddingTop: 'xs' }),
         children: [
-          heroFigure(k, Math.round(tightest.pct) + '%', { size: 52, level, hues: TAB_HUES.all }) || k.text(Math.round(tightest.pct) + '%', { size: 'title', weight: 'semibold', tabular: true, color: quiet(level) }),
-          k.footnote('of your ' + limitPhrase(tightest.label) + (level === 'error' ? ' · nearly out' : level === 'warning' ? ' · past your alert' : ''), { wrap: 'truncate-end', ...(level === 'success' ? {} : { color: level, dimColor: undefined }) }),
+          heroFigure(k, pctText(tightest.pct), { size: 52, level, align: isWide ? 'end' : 'start' }) || k.text(pctText(tightest.pct), { size: 'title', weight: 'semibold', tabular: true, color: quiet(level) }),
+          k.footnote('of your ' + limitPhrase(tightest.label) + (level === 'error' ? (tightest.pct >= 100 ? ' · used up' : ' · nearly out') : level === 'warning' ? ' · past your alert' : ''), { wrap: 'truncate-end', ...(level === 'success' ? {} : { color: level, dimColor: undefined }) }),
         ],
       })
     : null
@@ -2219,7 +2564,7 @@ function homeHero(k, d, h, act) {
                     ...(k.hasSvg && item.window ? [] : [k.footnote(tightest.resetsAt ? 'resets in ' + fmtSpan(tightest.resetsAt - d.now) : '', { tabular: true, wrap: 'truncate-end' })]),
                     ...(legend.length ? [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'xs', flexShrink: 1, children: legend.map(legendItem) })] : []),
                   ],
-                  { title: tightest.label, lines: [tightest.resetsAt ? 'Resets ' + fmtClock(tightest.resetsAt, d.now) + '.' : '', (h.plan.source === 'app' ? (h.plan.plan ? h.plan.plan + ' plan. ' : '') : h.plan.source === 'session' ? 'From this session’s latest reading. ' : 'As read ' + ago(d.now - h.plan.at) + ' by another session. ') + 'Every project draws on the same limits.', legend.length ? 'The bars under it are each day’s work, by project.' : '', 'Press its name for every limit on Usage.'], align: 'left' },
+                  { title: tightest.label, lines: [tightest.resetsAt ? 'Resets ' + fmtClock(tightest.resetsAt, d.now) + '.' : '', (h.plan.source === 'app' ? (h.plan.plan ? h.plan.plan + ' plan. ' : '') : h.plan.source === 'session' ? 'From this chat’s latest reading. ' : 'As read ' + ago(d.now - h.plan.at) + ' by another chat. ') + 'Every project draws on the same limits.', legend.length ? 'The bars under it are each day’s work, by project.' : '', 'Press its name for every limit on Usage.'], align: 'left' },
                 ),
                 ...heroDetail(k, d, h, act),
                 // the other limits get their own space under the legend, so they never run into its line
@@ -2254,8 +2599,8 @@ function heroCalendar(k, d, h, act, say) {
   const W = Math.round(k.px - 8)
   const picked = it.days.findIndex((x) => x.key === d.view.day)
   const { level, pace, early, tightest } = say
-  const label = 'of your ' + limitPhrase(tightest.label) + (level === 'error' ? ' · nearly out' : level === 'warning' ? ' · past your alert' : '')
-  const src = svgWeek({ ...r, hex: it.hex, ...it.window, days: it.days, picked, label, sentence: pace, level, early, figHexes: level === 'warning' || level === 'error' ? STATUS_HUES[level] : TAB_HUES.all }, { width: W })
+  const label = 'of your ' + limitPhrase(tightest.label) + (level === 'error' ? (tightest.pct >= 100 ? ' · used up' : ' · nearly out') : level === 'warning' ? ' · past your alert' : '')
+  const src = svgWeek({ ...r, hex: it.hex, ...it.window, days: it.days, picked, label, sentence: pace, level, early, figHexes: figureHues(level) }, { width: W })
   const H = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(src)[1])
   const words = 'The week: ' + it.valueText + ' ' + label + '. ' + (pace || '') + ' ' + it.window.endLabel + '.' + (it.daysAlt || '') + ' The line is what has been used so far, the dashed line where this pace leads' + (r.runOut !== null && r.runOut !== undefined ? ', and the hatched stretch is the time without Claude' : '') + '.'
   const span = Math.max(1, it.window.endMs - it.window.startMs)
@@ -2263,10 +2608,11 @@ function heroCalendar(k, d, h, act, say) {
     const frac = (x.endMs - x.startMs) / span
     const room = frac * W
     const isPicked = x.key === d.view.day
-    const label = x.isToday && room >= 56 ? 'Today' : x.short
+    // "Today" where its column holds it (a quiet button is just its word, a picked one has padding), the weekday where it does not
+    const label = x.isToday && room >= (isPicked ? 56 : 42) ? 'Today' : x.short
     const kid =
       room < 34 ? []
-      : x.total > 0 ? [k.button('day-' + x.key, label, () => act.setView({ day: isPicked ? '' : x.key }), isPicked ? {} : { plain: true, dimColor: x.isToday ? undefined : true })]
+      : x.total > 0 ? [k.button('day-' + x.key, label, () => act.setView({ day: isPicked ? '' : x.key }), { name: isPicked ? 'Show the whole week, not only ' + new Date(dayKeyMs(x.key)).toLocaleDateString([], { weekday: 'long' }) : 'Show ' + (x.isToday ? 'today' : new Date(dayKeyMs(x.key)).toLocaleDateString([], { weekday: 'long' })) + '’s work', ...(isPicked ? {} : { plain: true, dimColor: x.isToday ? undefined : true }) })]
       : [k.footnote(label, { wrap: 'truncate-end' })]
     // from no width, each column grows by its day's share of the window: exactly its share of the row
     return k.Box({ width: 0, flexGrow: Math.round(frac * 100000) / 1000, flexShrink: 0, justifyContent: 'center', alignItems: 'center', children: kid })
@@ -2317,20 +2663,45 @@ function limitRow(k, d, h, x, i) {
   const kind = kindOfLabel(x.label)
   const runway = runwayOf(kind, x.pct, x.resetsAt, now)
   const hex = level === 'success' ? planHex(x.label) : HEX[level]
-  const where = plan.source === 'app' ? (plan.plan ? plan.plan + ' plan. ' : '') : plan.source === 'session' ? 'From this session’s latest reading. ' : 'As read ' + ago(now - plan.at) + ' by another session. '
+  const where = plan.source === 'app' ? (plan.plan ? plan.plan + ' plan. ' : '') : plan.source === 'session' ? 'From this chat’s latest reading. ' : 'As read ' + ago(now - plan.at) + ' by another chat. '
   const isRoomy = k.columns >= 64
   // where it runs out when that is early enough to matter, else when it resets
   const runOutAt = x.resetsAt && WINDOW_MS[kind] && runway.runOut !== null && runway.runOut !== undefined ? x.resetsAt - WINDOW_MS[kind] + (runway.runOut / 100) * WINDOW_MS[kind] : 0
   return k.hoverBox('plan-' + i, { flexDirection: 'row', columnGap: 'md', alignItems: 'center', width: '100%' }, [
-    k.Box({ width: isRoomy ? 24 : 16, flexShrink: 0, children: [k.Text({ wrap: 'truncate-end', children: [k.text('● ', { color: k.isTerminal ? (level === 'success' ? 'suggestion' : level) : midHex(hex) }), k.text(x.label)] })] }),
-    k.Box({ flexGrow: 1, flexShrink: 1, children: [runwayBar(k, { runway, hex, label: x.label, valueText: Math.round(x.pct) + '%' }, 'tile')] }),
-    k.Box({ width: 5, flexShrink: 0, justifyContent: 'flex-end', children: [k.text(Math.round(x.pct) + '%', { tabular: true, weight: 'semibold', color: quiet(level) })] }),
+    k.Box({ width: isRoomy ? 24 : 16, flexShrink: 0, children: [k.Text({ wrap: 'truncate-end', children: [k.text('● ', { color: k.isTerminal ? (level === 'success' ? 'suggestion' : level) : quiet(level) || midHex(hex) }), k.text(x.label)] })] }),
+    k.Box({ flexGrow: 1, flexShrink: 1, children: [runwayBar(k, { runway, hex, label: x.label, valueText: pctText(x.pct) }, 'tile')] }),
+    k.Box({ width: 5, flexShrink: 0, justifyContent: 'flex-end', children: [k.text(pctText(x.pct), { tabular: true, weight: 'semibold', color: quiet(level) })] }),
     ...(isRoomy ? [k.Box({ width: 22, flexShrink: 0, justifyContent: 'flex-end', children: [k.footnote(runOutAt ? 'runs out ' + fmtClock(runOutAt, now) : x.resetsAt ? 'resets in ' + fmtSpan(x.resetsAt - now) : '', { tabular: true, wrap: 'truncate-end', ...(runOutAt ? { color: 'warning', dimColor: undefined } : {}) })] })] : []),
-  ], { title: x.label + ', ' + Math.round(x.pct) + '% used', lines: [x.resetsAt ? 'Resets ' + fmtClock(x.resetsAt, now) + '.' : '', where + 'Every project draws on the same limits.'] })
+  ], { title: x.label + ', ' + pctText(x.pct) + ' used', lines: [x.resetsAt ? 'Resets ' + fmtClock(x.resetsAt, now) + '.' : '', where + 'Every project draws on the same limits.'] })
 }
 
 function canAnswer(w, x) {
   return w.canReply && !!x.deskId && x.kind !== 'pr' && x.kind !== 'permission'
+}
+
+// What a waiting chat asks, in the words the desktop and the phone both use: the label already says
+// "permission", so a permission's words start at what is being asked.
+function needAsk(x) {
+  return x.kind === 'permission' && x.text ? x.text.replace(/^(needs )?(your )?permission to /i, '').replace(/^./, (c) => c.toUpperCase()) : x.text || ''
+}
+
+// Where a waiting chat's folder is, as a person reads it.
+function needFolder(x) {
+  return x.cwd ? String(x.cwd).replace(/^\/Users\/[^/]+/, '~') : ''
+}
+
+// How to get to a permission that is asked in a session that is running: the pane cannot say yes for it, so it says where it is.
+function permissionHow(x) {
+  const where = whereRan(x.entry)
+  const folder = needFolder(x)
+  return 'Switch to that chat to allow or deny it' + (where || folder ? ' (' + [where, folder].filter(Boolean).join(', ') + ')' : '') + '.'
+}
+
+// The one sentence for a chat that cannot be answered from the pane, the same on the desktop and the phone's lobby.
+function needHow(w, x, canSend) {
+  if (canSend || x.kind === 'pr') return ''
+  if (x.kind === 'permission') return permissionHow(x)
+  return x.entry === 'terminal' || !w.canReply ? 'Carry it on in a terminal with the resume command.' : 'Open it from the sidebar to answer.'
 }
 
 // One waiting chat: what it is, its words, and the ways to answer it. The first chat you can
@@ -2346,20 +2717,25 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
   const meta = [x.project, x.branch ? x.branch.replace(/^claude\//, '') : '', where, ago(d.now - x.at)].filter(Boolean).join(' · ')
   const buttons = []
   if (canSend && asking < 0 && !isTyping) {
-    x.replies.forEach((r, j) => buttons.push(k.button('need-' + i + '-r' + j, r.label, () => act.setView({ confirm: 'reply:' + x.key + ':' + j, replying: '' }), { variant: isFirst && j === 0 ? 'primary' : undefined })))
-    if (x.kind === 'error' && x.hasReset) buttons.push(k.button('need-' + i + '-go', 'Tell it to carry on', () => act.setView({ confirm: 'reply:' + x.key + ':' + x.replies.length, replying: '' }), { variant: isFirst ? 'primary' : undefined }))
-    buttons.push(k.button('need-' + i + '-type', x.kind === 'plan' ? 'Answer…' : 'Reply…', () => act.setView({ replying: x.key, confirm: '' }), { variant: isFirst && !x.replies.length && !(x.kind === 'error' && x.hasReset) ? 'primary' : undefined }))
+    x.replies.forEach((r, j) => buttons.push(k.button('need-' + i + '-r' + j, r.label, () => act.setView({ confirm: 'reply:' + x.key + ':' + j, replying: '' }), { variant: isFirst && j === 0 ? 'primary' : undefined, about: x.title })))
+    if (x.kind === 'error' && x.hasReset) buttons.push(k.button('need-' + i + '-go', 'Tell it to carry on', () => act.setView({ confirm: 'reply:' + x.key + ':' + x.replies.length, replying: '' }), { variant: isFirst ? 'primary' : undefined, about: x.title }))
+    buttons.push(k.button('need-' + i + '-type', x.kind === 'plan' ? 'Answer…' : 'Reply…', () => act.setView({ replying: x.key, confirm: '', focus: 'need-' + i + '-input' }), { variant: isFirst && !x.replies.length && !(x.kind === 'error' && x.hasReset) ? 'primary' : undefined, about: x.title }))
   }
   if (x.prUrl && k.Link) buttons.push(k.Link({ href: x.prUrl, label: 'Open pull request #' + x.prNumber }))
-  if (x.prUrl && x.pr) buttons.push(k.button('need-' + i + '-copylink', 'Copy link', (ev) => act.copyText(x.prUrl, ev && ev.surface, 'Link'), { plain: true, dimColor: true }))
+  if (x.prUrl && x.pr) buttons.push(k.button('need-' + i + '-copylink', 'Copy link', (ev) => act.copyText(x.prUrl, ev && ev.surface, 'Link'), { plain: true, dimColor: true, about: x.title }))
   // a session running now, or one whose work is a pull request, isn't carried on from a terminal
-  if (x.sid && !x.isLive && x.kind !== 'pr' && asking < 0 && !isTyping) buttons.push(k.button('need-' + i + '-copy', 'Copy resume command', (ev) => act.copyResume(x, ev && ev.surface), { plain: true, dimColor: true }))
-  if (asking < 0 && !isTyping) buttons.push(k.button('need-' + i + '-later', 'Set aside', () => act.dismissNeed(x), { plain: true, dimColor: true }))
-  if (asking < 0 && !isTyping && i > 0 && !isFirst) buttons.push(k.button('need-' + i + '-close', 'Hide options', () => act.setView({ openNeed: '' }), { plain: true, dimColor: true }))
-  const how = canSend ? '' : x.kind === 'permission' ? 'Switch to that session to allow or deny it.' : x.kind === 'pr' ? '' : x.entry === 'terminal' || !w.canReply ? 'Carry it on in a terminal with the resume command.' : 'Open it from the sidebar to answer.'
+  const canResume = !!x.sid && !x.isLive && x.kind !== 'pr'
+  if (canResume && asking < 0 && !isTyping) buttons.push(k.button('need-' + i + '-copy', 'Copy resume command', (ev) => act.copyResume(x, ev && ev.surface), { plain: true, dimColor: true, about: x.title }))
+  // a permission is asked in the session that is running, which only answers there: the pane can't say yes for it, but it can
+  // say where it is and take you to its folder
+  const folder = needFolder(x)
+  if (x.isLive && x.kind === 'permission' && x.cwd && asking < 0 && !isTyping) buttons.push(k.button('need-' + i + '-folder', 'Copy folder path', (ev) => act.copyText(x.cwd, ev && ev.surface, 'Folder path'), { plain: true, dimColor: true, about: x.title }))
+  if (asking < 0 && !isTyping) buttons.push(k.button('need-' + i + '-later', 'Set aside', () => act.dismissNeed(x), { plain: true, dimColor: true, about: x.title }))
+  if (asking < 0 && !isTyping && i > 0 && !isFirst) buttons.push(k.button('need-' + i + '-close', 'Hide options', () => act.setView({ openNeed: '' }), { plain: true, dimColor: true, about: x.title }))
+  const how = needHow(w, x, canSend)
   const isWide = k.columns >= 64
   // the label already says "permission"; its words start at what is being asked
-  const needText = x.kind === 'permission' && x.text ? x.text.replace(/^(needs )?(your )?permission to /i, '').replace(/^./, (c) => c.toUpperCase()) : x.text || ''
+  const needText = needAsk(x)
   const dotLevel = level === 'info' ? { dimColor: true } : { color: level }
   const head = [
     // who it is, with where and when beside it; on a narrow pane the where and when drop below
@@ -2388,7 +2764,7 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
             children: [
               k.text('Send this to “' + x.title + '”?', { weight: 'medium', wrap: 'wrap' }),
               k.Box({ paddingX: k.isTerminal ? 1 : 'md', paddingY: k.isTerminal ? undefined : 'sm', borderStyle: 'round', borderDimColor: true, children: [k.text(pending, { wrap: 'wrap' })] }),
-              k.buttons([k.button('reply-go', 'Send reply', () => act.sendReply(x, pending), { variant: 'primary' }), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }), { autoFocus: true })]),
+              k.buttons([k.button('reply-go', 'Send reply', () => act.sendReply(x, pending), { variant: 'primary', autoFocus: true }), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }))]),
             ],
           }),
         ]
@@ -2400,8 +2776,8 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
             rowGap: 'sm',
             marginTop: 'xs',
             children: [
-              k.Input({ key: 'need-' + i + '-input', placeholder: 'Your answer to “' + x.title + '”', submitLabel: 'Send', rows: 2, autoFocus: true, onSubmit: (value) => act.sendReply(x, value) }),
-              k.Box({ flexDirection: 'row', columnGap: 'md', alignItems: 'center', flexWrap: 'wrap', children: [k.buttons([k.button('reply-cancel', 'Cancel', () => act.setView({ replying: '' }))]), k.footnote('Return sends it to that session.')] }),
+              k.Input({ key: 'need-' + i + '-input', label: 'Answer', placeholder: 'Your answer to “' + x.title + '”', submitLabel: 'Send', rows: 2, autoFocus: true, onSubmit: (value) => act.sendReply(x, value) }),
+              k.Box({ flexDirection: 'row', columnGap: 'md', alignItems: 'center', flexWrap: 'wrap', children: [k.buttons([k.button('reply-cancel', 'Cancel', () => act.setView({ replying: '', focus: 'need-' + i + '-type' }))]), k.footnote('Return sends it to that chat.')] }),
             ],
           }),
         ]
@@ -2411,6 +2787,7 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
   // the most urgent chat is one large card: a flat tint of its status colour (about a tenth of it, over the
   // group's own grey), its title at heading size, what it asks set apart, and its own answers under it
   if (isLead && !k.isTerminal) {
+    const tip = { title: x.title, lines: [folder, canResume ? 'To carry it on in any terminal, from its own folder, press Copy resume command.' : ''] }
     const tintHex = level === 'error' ? HEX.error : level === 'warning' ? HEX.warning : HEX.marker
     return k.hoverBox(
       'need-' + i,
@@ -2421,7 +2798,7 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
           rowGap: 'sm',
           paddingX: 'md',
           paddingY: 'md',
-          backgroundColor: tintHex + '1A',
+          backgroundColor: tintHex + '0F', // about 6%: red and grey words on it still hold 4.5:1
           borderStyle: 'round',
           borderDimColor: true,
           children: [
@@ -2430,23 +2807,25 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
             ...(meta ? [k.footnote(meta, { wrap: 'wrap' })] : []),
             ...(needText ? [k.Box({ paddingX: 'md', paddingY: 'sm', borderStyle: 'round', borderDimColor: true, children: [k.text(needText, { weight: 'medium', wrap: 'wrap' })] })] : []),
             ...tail,
+            // with Show details on, what the hover card says is in the card it belongs to, not under it
+            ...(k.showDetails ? k.details(tip) : []),
           ],
         }),
       ],
-      { title: x.title, lines: [x.cwd ? String(x.cwd).replace(/^\/Users\/[^/]+/, '~') : '', x.sid ? 'Copy resume command carries it on in any terminal, from its own folder.' : ''] },
+      k.showDetails ? undefined : tip,
     )
   }
   const column = [...head, ...tail]
   // the most pressing chat is drawn whole; the others are one line each until opened
   if (!isOpen && asking < 0 && !isTyping) {
     const brief = [column[0], ...(!isWide && meta ? [column[1]] : []), k.Text({ wrap: isWide ? 'truncate-end' : 'wrap', children: [k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) }), ...(needText ? [k.text('   ' + needText, { dimColor: true })] : [])] })]
-    return k.hoverBox('need-' + i, { flexDirection: 'column', width: '100%' }, [k.hang(k.text('●', dotLevel), k.Box({ flexDirection: 'column', rowGap: 'xs', flexGrow: 1, flexShrink: 1, children: [...brief, k.Box({ children: [k.button('need-' + i + '-open', 'Show options', () => act.setView({ openNeed: x.key }), { plain: true, dimColor: true })] })] }))], { title: x.title, lines: [x.cwd ? String(x.cwd).replace(/^\/Users\/[^/]+/, '~') : ''] })
+    return k.hoverBox('need-' + i, { flexDirection: 'column', width: '100%' }, [k.hang(k.text('●', dotLevel), k.Box({ flexDirection: 'column', rowGap: 'xs', flexGrow: 1, flexShrink: 1, children: [...brief, k.Box({ children: [k.button('need-' + i + '-open', 'Show options', () => act.setView({ openNeed: x.key }), { plain: true, dimColor: true, about: x.title })] })] }))], { title: x.title, lines: [folder] })
   }
   return k.hoverBox(
     'need-' + i,
     { flexDirection: 'column', width: '100%' },
     [k.hang(k.text('●', dotLevel), k.Box({ flexDirection: 'column', rowGap: 'xs', flexGrow: 1, flexShrink: 1, children: column }))],
-    { title: x.title, lines: [x.cwd ? String(x.cwd).replace(/^\/Users\/[^/]+/, '~') : '', x.sid ? 'Copy resume command carries it on in any terminal, from its own folder.' : ''] },
+    { title: x.title, lines: [folder, canResume ? 'To carry it on in any terminal, from its own folder, press Copy resume command.' : ''] },
   )
 }
 
@@ -2458,16 +2837,18 @@ function needsCard(k, d, act, w) {
   // the most urgent chat is the one large card on desktop: a permission, then a question, then one waiting for an answer
   const rank = (x) => (x.kind === 'permission' ? 0 : x.kind === 'question' ? 1 : x.kind === 'ask' ? 2 : x.kind === 'plan' ? 3 : x.kind === 'error' && !x.hasReset ? 4 : x.kind === 'error' ? 5 : 6)
   const leadAt = k.isTerminal ? -1 : shown.reduce((best, x, i) => (best < 0 || rank(x) < rank(shown[best]) ? i : best), -1)
+  // counted as the headline and the phone count them: all of w.needs, the lead included
+  const tally = waitingCount(w.needs, null)
   return k.card(
     'Needs you',
-    'Chats that stopped for you, the most pressing first.' + (w.canReply ? ' Answers go straight to that session.' : ''),
+    'Chats and pull requests waiting for you, the most pressing first.' + (w.canReply ? ' Answers go straight to that chat.' : ''),
     [
       ...(leadAt >= 0 ? [needRow(k, d, act, w, shown[leadAt], leadAt, shown[leadAt] === first, true, true)] : []),
-      ...(leadAt >= 0 && shown.length > 1 ? [k.Box({ flexDirection: 'row', alignItems: 'center', columnGap: 'sm', paddingTop: 'xs', children: [k.text(plural(shown.length - 1, 'more waiting', 'more waiting').replace(/^1 /, '1 '), { weight: 'semibold' }), k.footnote('Show options on a row for its answers.')] })] : []),
+      ...(leadAt >= 0 && shown.length > 1 ? [k.Box({ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 'sm', paddingTop: 'xs', children: [k.text('Also waiting', { weight: 'semibold' }), k.footnote((more > 0 ? 'Showing ' + shown.length + ' of ' + w.needs.length + ', counting the one above. ' : '') + 'Open a row to answer it.')] })] : []),
       ...shown.map((x, i) => (i === leadAt ? null : needRow(k, d, act, w, x, i, x === first, (leadAt < 0 && i === 0) || x === first || d.view.openNeed === x.key))).filter(Boolean),
       ...(w.needs.length > 5 ? [k.buttons([k.button('needs-more', more > 0 ? 'Show ' + more + ' more' : 'Show fewer', act.toggleNeeds, { dimColor: true })])] : []),
     ],
-    { gap: 'lg' },
+    { gap: 'lg', accessory: k.footnote(waitingParts(tally), { tabular: true }) },
   )
 }
 
@@ -2506,7 +2887,7 @@ function pickupCard(k, d, act, w, h) {
             children: [
               k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Text({ wrap: 'truncate-end', children: [...(k.isTerminal || !h ? [] : [k.text('● ', { color: midHex(hueOf(h, byName[x.project])) })]), k.text(x.project, { weight: 'semibold' }), ...(x.title ? [k.text('  ' + x.title, { dimColor: true })] : [])] })] }),
               x.isRunning ? k.footnote('working now', { color: 'success', dimColor: undefined, wrap: 'truncate-end' }) : k.footnote(ago(d.now - x.at), { wrap: 'truncate-end' }),
-              k.button('pick-' + i + '-open', 'Show details', () => act.setView({ openPick: x.key }), { plain: true, dimColor: true }),
+              k.button('pick-' + i + '-open', 'Show details', () => act.setView({ openPick: x.key }), { plain: true, dimColor: true, about: x.title }),
             ],
           }),
           ...(loose ? [k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.text('● ', { color: 'warning' }), k.text(loose, { size: 'footnote', weight: 'medium', wrap: 'truncate-end' })] })] : []),
@@ -2516,10 +2897,10 @@ function pickupCard(k, d, act, w, h) {
     }
     const buttons = []
     if (!isTyping) {
-      if (canSend) buttons.push(k.button('pick-' + i + '-type', 'Tell it what’s next…', () => act.setView({ replying: 'pick:' + x.key, confirm: '' })))
+      if (canSend) buttons.push(k.button('pick-' + i + '-type', 'Tell it what’s next…', () => act.setView({ replying: 'pick:' + x.key, confirm: '', focus: 'pick-' + i + '-input' }), { about: x.title }))
       // a session working now carries on by itself; a second copy of it in a terminal would compete
-      if (!x.isRunning) buttons.push(k.button('pick-' + i + '-copy', 'Copy resume command', (ev) => act.copyResume(x, ev && ev.surface), { plain: true, dimColor: true }))
-      if (i > 0) buttons.push(k.button('pick-' + i + '-close', 'Hide details', () => act.setView({ openPick: '' }), { plain: true, dimColor: true }))
+      if (!x.isRunning) buttons.push(k.button('pick-' + i + '-copy', 'Copy resume command', (ev) => act.copyResume(x, ev && ev.surface), { plain: true, dimColor: true, about: x.title }))
+      if (i > 0) buttons.push(k.button('pick-' + i + '-close', 'Hide details', () => act.setView({ openPick: '' }), { plain: true, dimColor: true, about: x.title }))
     }
     return k.hoverBox(
       'pick-' + i,
@@ -2546,8 +2927,8 @@ function pickupCard(k, d, act, w, h) {
                 flexDirection: 'column',
                 rowGap: 'sm',
                 children: [
-                  k.Input({ key: 'pick-' + i + '-input', placeholder: 'What should “' + (x.title || x.project) + '” do next?', submitLabel: 'Send', rows: 2, autoFocus: true, onSubmit: (value) => act.sendReply({ ...x, title: x.title || x.project, key: 'pick:' + x.key }, value) }),
-                  k.Box({ flexDirection: 'row', columnGap: 'md', alignItems: 'center', flexWrap: 'wrap', children: [k.buttons([k.button('reply-cancel', 'Cancel', () => act.setView({ replying: '' }))]), k.footnote('Return sends it to that session.')] }),
+                  k.Input({ key: 'pick-' + i + '-input', label: 'Next step', placeholder: 'What should “' + (x.title || x.project) + '” do next?', submitLabel: 'Send', rows: 2, autoFocus: true, onSubmit: (value) => act.sendReply({ ...x, title: x.title || x.project, key: 'pick:' + x.key }, value) }),
+                  k.Box({ flexDirection: 'row', columnGap: 'md', alignItems: 'center', flexWrap: 'wrap', children: [k.buttons([k.button('reply-cancel', 'Cancel', () => act.setView({ replying: '', focus: 'pick-' + i + '-type' }))]), k.footnote('Return sends it to that chat.')] }),
                 ],
               }),
             ]
@@ -2557,7 +2938,7 @@ function pickupCard(k, d, act, w, h) {
       { title: x.title || x.project, lines: [x.cwd ? String(x.cwd).replace(/^\/Users\/[^/]+/, '~') : '', 'Last answer ' + ago(d.now - x.at) + '.'] },
     )
   })
-  return k.card('Pick up where you left off', 'The latest session in each project you worked on this week, with the last thing it told you.', rows, { gap: 'lg' })
+  return k.card('Pick up where you left off', 'The latest chat in each project you worked on this week, with the last thing it told you.', rows, { gap: 'lg' })
 }
 
 // ---- workflows: the orchestrator --------------------------------------------------------------
@@ -2596,7 +2977,7 @@ function stageLine(k, p) {
 // One agent: what state it is in and why, what it is doing this moment, its model, time and cost.
 function agentRow(k, d, a, key) {
   const [glyph, color, word] = AGENT_STATE[a.state] || AGENT_STATE.queued
-  const why = a.state === 'held' ? (a.heldFor === 'paused' ? 'waiting: the run is paused' : a.heldFor === 'budget' ? 'waiting: the run reached its spending limit' : 'waiting: at the run’s limit') : a.state === 'failed' && a.error ? a.error : a.doing || ''
+  const why = a.state === 'held' ? (a.heldFor === 'paused' ? 'waiting: the run is paused' : a.heldFor === 'budget' ? 'waiting: the run reached its budget' : 'waiting: at the run’s budget') : a.state === 'failed' && a.error ? a.error : a.doing || ''
   const since = a.state === 'running' && a.startedAt ? fmtSpan(d.now - a.startedAt) : a.ms ? fmtSpan(a.ms) : ''
   const tip = {
     title: a.label,
@@ -2630,18 +3011,19 @@ function approvalCard(k, d, act, isHome = false) {
   const share = d.flows.share
   if (e.isSameWorkflow) facts.push('About ' + plural(e.agents, 'agent', 'agents') + ', as in its last ' + (e.basis === 1 ? 'run' : e.basis + ' runs'))
   else if (e.agents) facts.push(e.isFanOut ? 'At least ' + plural(e.agents, 'agent', 'agents') + ', and more: one stage starts an agent per item' : 'About ' + plural(e.agents, 'agent', 'agents'))
-  if (e.basis && e.high > 0) facts.push('Likely ' + cost(e.low) + '–' + cost(e.high) + (SHARE ? ' of your weekly limit' : share ? ' (' + shareWords(e.high, share) + ' at most)' : '') + (e.isSameWorkflow ? ', going by what it cost before' : ', from what agents cost in ' + plural(e.basis, 'finished run', 'finished runs')))
-  if (d.opts.workflowBudget > 0) facts.push('New agents wait once it costs ' + fmtUsd(d.opts.workflowBudget) + ', your limit for every run')
+  if (e.basis && e.high > 0) facts.push('Likely ' + holdRange(SHARE ? ofLimit(sayRange(e.low, e.high)) : fmtUsdRange(e.low, e.high, cost)) + (!SHARE && share ? ' (' + shareWords(e.high, share) + ' at most)' : '') + (e.isSameWorkflow ? ', going by what it cost before' : ', from what agents cost in ' + plural(e.basis, 'finished run', 'finished runs')))
+  if (d.opts.workflowBudget > 0) facts.push('New agents wait once it costs ' + fmtUsd(d.opts.workflowBudget) + ', your budget for every run')
   if (p.models.length) facts.push('Models it names: ' + p.models.map(titleCase).join(', '))
   const tips = a.tips || []
   return k.card(
     'Claude wants to run ' + (p.name ? '“' + p.name + '”' : 'a workflow'),
     p.description || 'A workflow starts several agents, often in stages, each working on one part.',
     [
-      ...facts.map((f) => k.hang(k.text('·', { dimColor: true }), k.text(f, { wrap: 'wrap' }))),
+      ...facts.map((f) => k.hang(k.text('●', { dimColor: true }), k.text(f, { wrap: 'wrap' }))),
       ...tips.map((t) => k.hang(k.text('●', { color: 'warning' }), k.text(t, { wrap: 'wrap' }))),
-      k.hang(k.text('›', { dimColor: true }), k.text('Answer in the chat: Run workflow, Run on Sonnet or Don’t run. Run on Sonnet puts every agent on Sonnet, whatever the script names. Closing the question declines it.', { wrap: 'wrap' })),
-      ...(isHome ? [k.buttons([k.button('flow-see', 'Open Workflows', act.openWorkflows, { dimColor: true })])] : []),
+      k.hang(k.text('●', { dimColor: true }), k.text('Answer in the chat: Run workflow, Run every agent on Sonnet or Don’t run. It puts every agent on Sonnet, including stages the script put on a stronger model. Closing the question declines it.', { wrap: 'wrap' })),
+      // the question is the chat's own dialog, which the pane cannot answer: its one action hands the keys back to it
+      k.buttons([k.button('flow-answer', 'Go to the chat to answer', act.answerInChat, { variant: 'primary' }), ...(isHome ? [k.button('flow-see', 'Open Workflows', act.openWorkflows, { plain: true, dimColor: true })] : [])]),
     ],
   )
 }
@@ -2665,13 +3047,13 @@ function liveRunCard(k, d, act, r, i) {
     r.startedAt ? fmtSpan(d.now - r.startedAt) : '',
   ].filter(Boolean)
   const atLimit = r.paused && r.pausedFor === 'budget'
-  const state = isStopping ? ['■ ', 'warning', 'Stopping'] : atLimit ? ['‖ ', 'warning', 'Paused at its ' + fmtUsd(r.budget) + ' limit'] : r.paused ? ['‖ ', 'warning', 'Paused'] : ['● ', 'suggestion', 'Running']
-  const budgets = [{ value: 0, label: 'No limit' }, ...[5, 10, 25, 50].map((v) => ({ value: v, label: fmtUsd(v).replace('.00', '') }))]
+  const state = isStopping ? ['■ ', 'warning', 'Stopping'] : atLimit ? ['‖ ', 'warning', 'Paused at its ' + fmtUsd(r.budget) + ' budget'] : r.paused ? ['‖ ', 'warning', 'Paused'] : ['● ', 'suggestion', 'Running']
+  const budgets = [{ value: 0, label: 'No budget' }, ...[5, 10, 25, 50].map((v) => ({ value: v, label: fmtUsd(v).replace('.00', '') }))]
   if (r.budget && !budgets.some((b) => b.value === r.budget)) budgets.push({ value: r.budget, label: fmtUsd(r.budget).replace('.00', '') })
   const raiseTo = [5, 10, 25, 50, 100, 250, 500].find((v) => v > Math.max(r.budget || 0, p.usd)) || Math.ceil((p.usd * 2) / 50) * 50
   // the timeline: every agent from start to finish, the newest 24, oldest at the top
   const timed = [...p.agents].filter((a) => a.startedAt || a.queuedAt).sort((a, z) => (a.startedAt || a.queuedAt) - (z.startedAt || z.queuedAt)).slice(-24)
-  const caps = [{ value: 0, label: 'No limit' }, { value: 1, label: '1' }, { value: 2, label: '2' }, { value: 4, label: '4' }, { value: 8, label: '8' }]
+  const caps = [{ value: 0, label: 'No cap' }, { value: 1, label: '1' }, { value: 2, label: '2' }, { value: 4, label: '4' }, { value: 8, label: '8' }]
   const models = [{ value: '', label: 'As written' }, { value: 'sonnet', label: 'Sonnet' }, { value: 'opus', label: 'Opus' }]
   const controls = isStopping
     ? [k.footnote('Agents already working finish their current step; nothing new starts.')]
@@ -2682,7 +3064,7 @@ function liveRunCard(k, d, act, r, i) {
             rowGap: 'sm',
             children: [
               k.text('Stop “' + (r.name || 'this workflow') + '”?', { weight: 'medium' }),
-              k.footnote('Agents already working finish their current step and nothing new starts. Finished work is kept, and the run can be resumed later in this session.'),
+              k.footnote('Agents already working finish their current step and nothing new starts. Finished work is kept, and the run can be resumed later in this chat.'),
               k.buttons([k.button('flow-stop-go', 'Stop workflow', () => act.stopRun(r.runId), { variant: 'primary' }), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }), { autoFocus: true })]),
             ],
           }),
@@ -2690,24 +3072,30 @@ function liveRunCard(k, d, act, r, i) {
       : [
           ...(atLimit
             ? [
-                k.text((r.name || 'This run') + ' has cost ' + fmtUsd(p.usd) + ', past its ' + fmtUsd(r.budget) + ' limit. Agents already working finish their step; new ones wait for you.', { wrap: 'wrap' }),
+                k.text((r.name || 'This run') + ' has cost ' + fmtUsd(p.usd) + ', past its ' + fmtUsd(r.budget) + ' budget. Agents already working finish their step; new ones wait for you.', { wrap: 'wrap' }),
                 k.buttons([
-                  k.button('flow-raise-' + i, 'Raise limit to ' + fmtUsd(raiseTo).replace('.00', ''), () => act.setRunBudget(r.runId, raiseTo), { variant: i === 0 ? 'primary' : undefined }),
-                  k.button('flow-nolimit-' + i, 'Remove spending limit', () => act.setRunBudget(r.runId, 0)),
+                  k.button('flow-raise-' + i, 'Raise budget to ' + fmtUsd(raiseTo).replace('.00', ''), () => act.setRunBudget(r.runId, raiseTo), { variant: i === 0 ? 'primary' : undefined, about: r.name || 'this run' }),
+                  k.button('flow-nolimit-' + i, 'Remove run budget', () => act.setRunBudget(r.runId, 0), { about: r.name || 'this run' }),
                 ]),
               ]
             : []),
           k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'lg', rowGap: 'sm', alignItems: 'center', children: [
-            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Agents at once'), k.segmented('flow-cap-' + i, caps, r.cap || 0, (v) => act.setRunCap(r.runId, v))] }),
-            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Model for new agents'), k.segmented('flow-model-' + i, models, r.model || '', (v) => act.setRunModel(r.runId, v))] }),
-            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Spending limit, then hold new agents'), k.segmented('flow-budget-' + i, budgets, r.budget || 0, (v) => act.setRunBudget(r.runId, v))] }),
+            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Agents at once'), k.segmented('flow-cap-' + i, caps, r.cap || 0, (v) => act.setRunCap(r.runId, v), 'Agents at once')] }),
+            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Model for new agents'), k.segmented('flow-model-' + i, models, r.model || '', (v) => act.setRunModel(r.runId, v), 'Model for new agents')] }),
+            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Run budget'), k.segmented('flow-budget-' + i, budgets, r.budget || 0, (v) => act.setRunBudget(r.runId, v), 'Run budget')] }),
           ] }),
           k.buttons([
-            ...(atLimit ? [] : [k.button('flow-pause-' + i, r.paused ? 'Resume' : 'Pause new agents', () => act.pauseRun(r.runId, !r.paused), { variant: i === 0 && r.paused ? 'primary' : undefined })]),
-            k.button('flow-stop-' + i, 'Stop workflow…', () => act.setView({ confirm: 'stop:' + r.runId }), r.taskId ? {} : { dimColor: true }),
-            k.button('flow-id-' + i, 'Copy run ID', (ev) => act.copyText(r.runId, ev && ev.surface, 'Run id'), { plain: true, dimColor: true }),
+            ...(atLimit ? [] : [k.button('flow-pause-' + i, r.paused ? 'Resume' : 'Pause new agents', () => act.pauseRun(r.runId, !r.paused), { variant: i === 0 ? 'primary' : undefined, about: r.name || 'this run' })]),
+            // the pane stops a run through its task; with no task known it says so and hands over the request that stops it
+            r.taskId
+              ? k.button('flow-stop-' + i, 'Stop workflow…', () => act.setView({ confirm: 'stop:' + r.runId }), { about: r.name || 'this run' })
+              : k.button('flow-stop-' + i, 'Copy stop request', (ev) => act.copyText(stopRequest(r.name, r.runId), ev && ev.surface, 'Stop request'), { about: r.name || 'this run' }),
+            k.button('flow-id-' + i, 'Copy run ID', (ev) => act.copyText(r.runId, ev && ev.surface, 'Run id'), { plain: true, dimColor: true, about: r.name || 'this run' }),
           ]),
+          ...(r.taskId ? [] : [k.footnote('This dashboard doesn’t know which task runs this workflow, so it can’t stop it. Send the copied request to Claude and it stops the run.')]),
           k.footnote(r.paused ? 'Paused: agents already working carry on; new ones wait until you resume.' : r.cap ? 'At most ' + plural(r.cap, 'agent works', 'agents work') + ' at once; the rest wait their turn.' : 'Pausing lets working agents finish and holds new ones; a limit spreads the work out, so it uses your plan more slowly.'),
+          // what the budget does, said where it is set: the run is not stopped, new agents wait
+          k.footnote(r.budget ? 'New agents wait once this run has cost ' + fmtUsd(r.budget) + '.' : 'A run budget holds new agents once the run has cost that much.'),
         ]
   return k.card(
     r.name || 'Workflow',
@@ -2717,61 +3105,82 @@ function liveRunCard(k, d, act, r, i) {
       ...(k.hasSvg && p.phases.some((ph) => ph.total > 0) ? [k.Svg({ source: svgStages(p.phases), alt: 'Stages: ' + p.phases.map((ph) => ph.title + ' ' + ph.done + ' of ' + ph.total).join(', '), height: 14, isInteractive: true })] : []),
       stageLine(k, p),
       // a timeline of agents that have only just started is two specks: it waits for a minute of history
-      ...(k.hasSvg && timed.length >= 2 && d.now - (r.startedAt || timed[0].queuedAt) >= 60_000
+      ...(k.hasSvg && timed.length >= 2 && d.now - (r.startedAt || timed[0].queuedAt) >= MIN_MS
         ? [
             k.Box({
               flexDirection: 'column',
               rowGap: 'xs',
               children: [
-                k.Svg({ source: svgTimeline(timed, r.startedAt || timed[0].queuedAt, d.now), alt: 'Timeline of ' + plural(timed.length, 'agent', 'agents') + ', each from start to finish', height: timed.length * 12 - 4, isInteractive: true }),
+                k.Svg({ source: svgTimeline(timed, r.startedAt || timed[0].queuedAt, timelineTime(timed, r.startedAt || timed[0].queuedAt, d.now)), alt: 'Timeline of ' + plural(timed.length, 'agent', 'agents') + ', each from start to finish', height: timed.length * 12 - 4, isInteractive: true }),
                 k.Box({ flexDirection: 'row', children: [k.Box({ flexGrow: 1, children: [k.footnote('Started ' + ago(d.now - (r.startedAt || timed[0].queuedAt)))] }), k.footnote('now')] }),
               ],
             }),
           ]
         : []),
-      ...(r.estimate && r.estimate.high > 0 ? [k.footnote('Expected ' + cost(r.estimate.low) + '–' + cost(r.estimate.high) + ' before it started' + (p.usd > r.estimate.high ? '; it has gone past that.' : '.'), p.usd > r.estimate.high ? { color: 'warning', dimColor: undefined } : {})] : []),
+      ...(r.estimate && r.estimate.high > 0 ? [k.footnote('Expected ' + holdRange(fmtUsdRange(r.estimate.low, r.estimate.high, cost)) + ' before it started' + (p.usd > r.estimate.high ? '; it has gone past that.' : '.'), p.usd > r.estimate.high ? { color: 'warning', dimColor: undefined } : {})] : []),
       ...(r.tips || []).map((t) => k.hang(k.text('●', { color: 'warning' }), k.footnote(t))),
       ...(shown.length ? [k.Box({ flexDirection: 'column', rowGap: k.isTerminal ? 0 : 'xs', children: shown.map((a, j) => agentRow(k, d, a, 'flow-' + i + '-a' + j)) })] : [k.footnote('No agents have started yet.')]),
-      ...(agents.length > 6 && p.total > 8 ? [k.buttons([k.button('flow-more-' + i, isOpen ? 'Show fewer' : 'Show all ' + agents.length + ' agents', () => act.setView({ openRun: isOpen ? '' : r.runId }), { dimColor: true })])] : []),
+      ...(agents.length > 6 && p.total > 8 ? [k.buttons([k.button('flow-more-' + i, isOpen ? 'Show fewer' : 'Show all ' + agents.length + ' agents', () => act.setView({ openRun: isOpen ? '' : r.runId }), { dimColor: true, about: r.name || 'this run' })])] : []),
       ...controls,
     ],
     { gap: 'md' },
   )
 }
 
+// A cost range in the page's one unit: "$14.40–$28.80", or "14%–29%", or "1.2–2.4 weeks’ worth".
+function sayRange(low, high) {
+  const a = cost(low)
+  const b = cost(high)
+  if (a === b) return b
+  return /worth$/.test(a) && /worth$/.test(b) ? a.replace(/ weeks?’ worth$/, '') + '–' + b : a + '–' + b
+}
+
+// A sentence worked out in dollars, said in shares of the weekly limit: each "$3.75" or "$3.75–$4.20" is
+// a share of it, and says so ("4% of your weekly limit"), so no figure is left without what it is a share of.
+// Each sentence the ideas are told in holds one such figure, so none reads as a share of another.
+function dollarsAsShare(text) {
+  const num = (x) => Number(String(x).replace(/,/g, ''))
+  return String(text).replace(/\$(\d[\d,]*(?:\.\d+)?)(?:–\$(\d[\d,]*(?:\.\d+)?))?/g, (m, a, b) => ofLimit(b ? sayRange(num(a), num(b)) : cost(num(a))))
+}
+
 // What could be better next time, for one finished run or across all of them: what it saw, a
 // range for what it would have saved, what has happened since it became a rule, and the choices.
 function savingRow(k, act, f, key, runId, share, isLead = false, maxHigh = 0) {
-  const range = f.high >= 1 ? (f.high - f.low >= 1 ? fmtUsd(f.low) + '–' + fmtUsd(f.high) : fmtUsd(f.high)) : ''
+  // one unit on the card: the share of the limit when that is what the page speaks in, else dollars
+  if (!SHARE) share = null
+  const range = f.high >= 1 ? holdRange(f.high - f.low >= 1 ? sayRange(f.low, f.high) : cost(f.high)) : ''
+  const detail = holdRange(share ? dollarsAsShare(f.detail) : f.detail)
   // the share of the limit first, dollars second, whenever the plan has a limit to take a share of
-  const value = range ? (share ? 'Could have saved up to ' + shareWords(f.high, share).replace(/^about /, '') : 'Would have saved about ' + range) : f.minutes ? 'About ' + fmtSpan(f.minutes * 60_000) + ' less waiting' : ''
+  const words = share ? shareWords(f.high, share) : ''
+  const value = range ? (share ? (/^under/.test(words) ? 'Could have saved less than ' + words.replace(/^under /, '') : 'Could have saved up to ' + words.replace(/^about /, '')) : 'Would have saved about ' + range) : f.minutes ? 'About ' + fmtSpan(f.minutes * MIN_MS) + ' less waiting' : ''
   const since = f.since && f.since.text ? f.since : null
+  const isNarrow = k.columns < 64
   return k.Box({
     flexDirection: 'column',
     rowGap: 'xs',
     width: '100%',
     children: [
-      k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'flex-start', children: [
+      // on a narrow pane the saving goes under the title: beside it, the title would be squeezed under the words
+      k.Box({ flexDirection: isNarrow ? 'column' : 'row', columnGap: 'sm', rowGap: 'xs', alignItems: 'flex-start', children: [
         k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(f.title, { weight: 'semibold', wrap: 'wrap' })] }),
-        ...(value ? [k.Box({ flexShrink: 0, flexDirection: 'column', alignItems: 'flex-end', rowGap: 'xs', children: [k.text(value, { tabular: true, color: range ? 'success' : undefined, size: 'footnote', weight: 'medium' }), ...(k.hasSvg && range && maxHigh > 0 ? [k.drawing(svgMiniBar(f.high / maxHigh), 'This idea’s share of the largest saving: up to ' + range + ' of up to ' + fmtUsd(maxHigh) + ', an estimate')] : [])] })] : []),
+        ...(value ? [k.Box({ flexShrink: 0, flexDirection: 'column', alignItems: isNarrow ? 'flex-start' : 'flex-end', rowGap: 'xs', children: [k.text(value, { tabular: true, size: 'footnote', weight: 'medium' }), ...(k.hasSvg && range && maxHigh > 0 ? [k.drawing(svgMiniBar(f.high / maxHigh), 'This idea’s share of the largest saving: up to ' + range + ' of up to ' + cost(maxHigh) + ', an estimate')] : [])] })] : []),
       ] }),
-      k.text(f.detail, { wrap: 'wrap' }),
-      ...(share && f.high >= 1 ? [k.footnote('In dollars, about ' + range + ' at list prices; an estimate.')] : []),
+      k.text(detail, { wrap: 'wrap' }),
       ...(since ? [k.hang(k.text(since.level === 'good' ? '✓' : since.level === 'warn' ? '●' : '○', since.level === 'good' ? { color: 'success' } : since.level === 'warn' ? { color: 'warning' } : { dimColor: true }), k.text(since.text, { size: 'footnote', wrap: 'wrap', weight: 'medium' }))] : []),
       k.buttons([
-        k.button(key + '-rule', f.adoptedAt ? 'Add the rule again…' : 'Make it a rule…', () => act.adoptSaving(f.key, runId), f.adoptedAt ? { plain: true, dimColor: true } : isLead ? { variant: 'primary' } : { plain: true }),
+        k.button(key + '-rule', f.adoptedAt ? 'Add the rule again…' : 'Make it a rule…', () => act.adoptSaving(f.key, runId), f.adoptedAt ? { plain: true, dimColor: true } : isLead ? { variant: 'primary' } : { plain: true }, { about: f.title }),
         ...(runId
           ? []
           : f.isHidden
-            ? [k.button(key + '-hide', 'Show again', () => act.hideSaving(f.key, false), { dimColor: true })]
-            : [k.button(key + '-hide', 'Set aside', () => act.hideSaving(f.key, true), { plain: true, dimColor: true }), k.button(key + '-wrong', 'Not useful', () => act.hideSaving(f.key, true, true), { plain: true, dimColor: true })]),
+            ? [k.button(key + '-hide', 'Show again', () => act.hideSaving(f.key, false), { dimColor: true, about: f.title })]
+            : [k.button(key + '-hide', 'Set aside', () => act.hideSaving(f.key, true), { plain: true, dimColor: true, about: f.title }), k.button(key + '-wrong', 'Not useful', () => act.hideSaving(f.key, true, true), { plain: true, dimColor: true, about: f.title })]),
       ]),
     ],
   })
 }
 
 // The savings as two bars: the workflows as they ran, and with the ideas applied (that less the estimated
-// saving), a green bracket for what comes back, and the same in plain words under it. In shares of the weekly
+// saving), a bracket for what comes back, and the same in plain words under it. In shares of the weekly
 // limit when that is the unit and workflows used some this week, else in dollars over the period. Every
 // figure is an estimate and says so.
 function savingsPicture(k, fl, sv, list) {
@@ -2781,19 +3190,35 @@ function savingsPicture(k, fl, sv, list) {
   // the ideas can overlap on one stage, so the total is the most they could give back, held below the whole
   const back = Math.min(real.reduce((n, f) => n + f.high, 0), sv.usd * 0.9)
   const frac = back / sv.usd
-  const W = Math.max(240, Math.min(640, Math.round(k.px - 36)))
-  const run = SHARE && fl.weekUsd > 0 ? fl.weekUsd * SHARE.pctPerUsd : 0
+  const W = Math.max(240, Math.min(1000, Math.round(k.px - 24)))
+  // more than a week's worth cannot be this week's: the headline's own figure, over the days the ideas were worked out from
+  const weekRun = SHARE && fl.weekUsd > 0 ? fl.weekUsd * SHARE.pctPerUsd : 0
+  const run = weekRun >= 100 ? sv.usd * SHARE.pctPerUsd : weekRun
+  const period = weekRun >= 100 ? 'in the last ' + sv.days + ' days' : 'this week'
   let g
   let words
+  // The card speaks in the person's one unit, and the callout is the difference of the two figures as they are
+  // read, so what is drawn adds up. The ideas can overlap on a stage, so it says what each saves is not additive.
+  const overlap = ' The ideas overlap, so what each saves does not add up to this.'
   if (run >= 1) {
-    const points = run * frac
-    const after = run - points
-    const pts = points >= 100 ? 'about ' + fmtShare(points) + ' back' : points >= 1 ? 'about ' + plural(Math.round(points), 'point', 'points') + ' back' : 'under 1 point back'
-    g = { a: { label: 'As run: ' + fmtShare(run) + ' of your weekly limit', value: run }, b: { label: 'With the ideas applied: about ' + fmtShare(after), value: after }, back: pts }
-    words = 'Workflows took ' + fmtShare(run) + ' of your weekly limit this week. With these ideas applied they would take about ' + fmtShare(after) + ', ' + pts.replace(/ back$/, '') + (points >= 100 ? '' : ' of the limit') + ' given back. An estimate, scaled from the last ' + sv.days + ' days of runs.'
+    const after = run - run * frac
+    // weeks of the limit once the work is more than a week of it, else a share of it
+    const inWeeks = run >= 100
+    const num = (pct) => (inWeeks ? Math.round(pct / 10) / 10 : pct < 10 ? Math.round(pct * 10) / 10 : Math.min(99, Math.round(pct)))
+    const unit = (n) => (inWeeks ? n + (n === 1 ? ' week’s worth' : ' weeks’ worth') : n + '%')
+    const shownRun = num(run)
+    const shownAfter = num(after)
+    const diff = Math.round((shownRun - shownAfter) * 10) / 10
+    // "about" because it is an estimate, though the number itself is exactly the difference of the two above it
+    const given = inWeeks ? (diff >= 0.1 ? 'about ' + unit(diff) : 'under 0.1 weeks’ worth') : diff >= 1 ? 'about ' + plural(diff >= 10 ? Math.round(diff) : diff, 'point', 'points') : 'under 1 point'
+    g = { a: { label: 'As run: ' + ofLimit(unit(shownRun)), value: run }, b: { label: 'With the ideas applied: about ' + unit(shownAfter), value: after }, back: given + ' back', isGood: after < 100 }
+    words = 'Workflows took ' + ofLimit(unit(shownRun)) + ' ' + period + '. With these ideas applied they would take about ' + unit(shownAfter) + ', ' + given + (inWeeks ? '' : ' of the limit') + ' given back. An estimate, worked out from the last ' + sv.days + ' days of runs.' + overlap
   } else {
-    g = { a: { label: 'As run: ' + fmtUsd(sv.usd) + ' in the last ' + sv.days + ' days', value: sv.usd }, b: { label: 'With the ideas applied: about ' + fmtUsd(sv.usd - back), value: sv.usd - back }, back: 'about ' + fmtUsd(back) + ' back' }
-    words = 'Workflows cost ' + fmtUsd(sv.usd) + ' at list prices in the last ' + sv.days + ' days. With these ideas applied they would have cost about ' + fmtUsd(sv.usd - back) + ', about ' + fmtUsd(back) + ' less. An estimate.'
+    const usd = (n) => (n >= 100 ? Math.round(n) : Math.round(n * 100) / 100)
+    const left = usd(sv.usd - back)
+    const given = usd(usd(sv.usd) - left)
+    g = { a: { label: 'As run: ' + fmtUsd(sv.usd) + ' in the last ' + sv.days + ' days', value: sv.usd }, b: { label: 'With the ideas applied: about ' + fmtUsd(left), value: left }, back: 'about ' + fmtUsd(given) + ' back' }
+    words = 'Workflows cost ' + fmtUsd(sv.usd) + ' at list prices in the last ' + sv.days + ' days. With these ideas applied they would have cost about ' + fmtUsd(left) + ', about ' + fmtUsd(given) + ' less. An estimate.' + overlap
   }
   return [
     k.Box({ flexDirection: 'column', rowGap: 'xs', width: '100%', children: [k.drawing(svgSaving(g, { width: W }), words), k.guide(words, { size: 'footnote' })] }),
@@ -2814,7 +3239,7 @@ function finishedRunRow(k, d, act, r, i) {
       ...(r.summary ? [k.footnote(r.summary)] : []),
       ...(r.error ? [k.footnote(r.error, { color: 'error', dimColor: undefined })] : []),
       ...(r.next || []).map((f, j) => k.Box({ paddingLeft: k.isTerminal ? 2 : 'md', children: [savingRow(k, act, f, 'flow-done-' + i + '-n' + j, r.runId, d.flows.share)] })),
-      ...(canResume ? [k.buttons([k.button('flow-resume-' + i, 'Resume workflow…', () => act.resumeRun(r)), k.button('flow-done-id-' + i, 'Copy run ID', (ev) => act.copyText(r.runId, ev && ev.surface, 'Run id'), { plain: true, dimColor: true })])] : []),
+      ...(canResume ? [k.buttons([k.button('flow-resume-' + i, 'Resume workflow…', () => act.resumeRun(r), { about: r.name || 'this run' }), k.button('flow-done-id-' + i, 'Copy run ID', (ev) => act.copyText(r.runId, ev && ev.surface, 'Run id'), { plain: true, dimColor: true, about: r.name || 'this run' })])] : []),
     ],
   })
 }
@@ -2838,18 +3263,18 @@ function otherRunRow(k, d, act, r, i, canAsk) {
       ...(isAsking
         ? [
             k.text('Ask “' + (r.title || r.project) + '” to stop ' + r.name + '?', { weight: 'medium', wrap: 'wrap' }),
-            k.footnote('This message goes to that session:'),
+            k.footnote('This message goes to that chat:'),
             k.Box({ paddingX: k.isTerminal ? 1 : 'md', paddingY: k.isTerminal ? undefined : 'sm', borderStyle: 'round', borderDimColor: true, children: [k.text(stopRequest(r.name, r.runId), { wrap: 'wrap' })] }),
-            k.buttons([k.button('flow-ask-go', 'Ask that session to stop', () => act.askStopElsewhere(r), { variant: 'primary' }), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }), { autoFocus: true })]),
+            k.buttons([k.button('flow-ask-go', 'Ask that chat to stop', () => act.askStopElsewhere(r), { variant: 'primary' }), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }), { autoFocus: true })]),
           ]
         : [
             k.buttons([
-              ...(canAsk && r.deskId ? [k.button('flow-other-stop-' + i, 'Ask that session to stop…', () => act.setView({ confirm: 'askstop:' + r.runId }))] : []),
-              k.button('flow-other-id-' + i, 'Copy run ID', (ev) => act.copyText(r.runId, ev && ev.surface, 'Run id'), { plain: true, dimColor: true }),
+              ...(canAsk && r.deskId ? [k.button('flow-other-stop-' + i, 'Ask that chat to stop…', () => act.setView({ confirm: 'askstop:' + r.runId }), { about: r.name || 'this run' })] : []),
+              k.button('flow-other-id-' + i, 'Copy run ID', (ev) => act.copyText(r.runId, ev && ev.surface, 'Run id'), { plain: true, dimColor: true, about: r.name || 'this run' }),
             ]),
           ]),
     ],
-    { title: r.name, lines: [r.cwd ? String(r.cwd).replace(/^\/Users\/[^/]+/, '~') : '', 'Read from that session’s folder. Pause, limits and models apply to runs started in this session.'] },
+    { title: r.name, lines: [r.cwd ? String(r.cwd).replace(/^\/Users\/[^/]+/, '~') : '', 'Read from that chat’s folder. Pause, limits and models apply to runs started in this chat.'] },
   )
 }
 
@@ -2871,10 +3296,10 @@ function suggestionsCard(k, d, act, hasPrimary) {
           k.guide(x.why),
           k.text(x.what, { wrap: 'wrap' }),
           k.Text({ wrap: 'wrap', children: x.stages.flatMap(([title, model, how], j) => [...(j ? [k.text('  →  ', { dimColor: true })] : []), k.text(title, { weight: 'medium' }), k.text(' on ' + model, { color: midHex(FAMILY_HEX[model]) }), k.text(' · ' + how, { size: 'footnote', dimColor: true })]) }),
-          ...(x.past ? [k.footnote('Similar runs of yours cost ' + (x.past.high - x.past.low >= 1 ? cost(x.past.low) + '–' + cost(x.past.high) : cost(x.past.high)) + ' (' + plural(x.past.runs, 'run', 'runs') + ')' + (d.flows.share && !SHARE ? ', ' + shareWords(x.past.high, d.flows.share) + ' at most' : '') + '.')] : []),
+          ...(x.past ? [k.footnote('Similar runs of yours cost ' + holdRange(x.past.high - x.past.low >= 1 ? cost(x.past.low) + '–' + cost(x.past.high) : cost(x.past.high)) + ' (' + plural(x.past.runs, 'run', 'runs') + ')' + (d.flows.share && !SHARE ? ', ' + shareWords(x.past.high, d.flows.share) + ' at most' : '') + '.')] : []),
           k.buttons([
-            k.button('suggest-' + i, 'Start this workflow…', () => act.startSuggested(x.key), { variant: i === 0 && !hasPrimary ? 'primary' : undefined }),
-            k.button('suggest-' + i + '-skip', 'Not now', () => act.skipSuggested(x.key), { dimColor: true }),
+            k.button('suggest-' + i, 'Start this workflow…', () => act.startSuggested(x.key), { variant: i === 0 && !hasPrimary ? 'primary' : undefined, about: x.title }),
+            k.button('suggest-' + i + '-skip', 'Not now', () => act.skipSuggested(x.key), { dimColor: true, about: x.title }),
           ]),
         ],
       }),
@@ -2897,7 +3322,7 @@ function runLine(k, d, r, i) {
   const runway = { used, elapsed: hasClock ? done : null, runOut, projected: hasClock && done >= 10 ? Math.min(100, would) : null, ticks: [] }
   const name = r.name || 'Workflow'
   const isPaused = r.paused || r.status === 'stopping'
-  const words = name + ': ' + cost(p.usd) + (limit ? ' of ' + cost(limit) + (r.budget ? ' limit' : ' expected at most') : '') + ', ' + p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done' + (runOut !== null ? ', on course to pass it before it finishes' : '')
+  const words = name + ': ' + cost(p.usd) + (limit ? ' of ' + cost(limit) + (r.budget ? ' budget' : ' expected at most') : '') + ', ' + p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done' + (runOut !== null ? ', on course to pass it before it finishes' : '')
   const hex = isPaused ? HEX.warning : RING_HEX.spending
   const draws = k.hasSvg ? k.Box({ width: '100%', children: [k.Svg({ source: svgRunway({ ...runway, hex }, { width: 4000, height: 14, isFluid: true }), alt: words, height: 14 })] }) : k.Text({ children: textRunway(runway, 20).map(([t, c]) => k.text(t, c ? { color: c } : {})) })
   const isRoomy = k.columns >= 64
@@ -2908,7 +3333,7 @@ function runLine(k, d, r, i) {
     ...(isRoomy ? [k.Box({ width: 22, flexShrink: 0, justifyContent: 'flex-end', children: [k.footnote(cost(p.usd) + (limit ? ' of ' + cost(limit) : ''), { tabular: true, wrap: 'truncate-end', ...(runOut !== null ? { color: 'warning', dimColor: undefined } : {}) })] })] : []),
   ], {
     title: name + (isPaused ? ', paused' : ', running'),
-    lines: [p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done, ' + p.running + ' working' + (p.held ? ', ' + p.held + ' waiting' : '') + '.' : 'Starting.', limit ? 'Cost ' + cost(p.usd) + ' against ' + cost(limit) + (r.budget ? ', its spending limit.' : ', the most it was expected to cost.') : 'Cost so far ' + cost(p.usd) + '.', runOut !== null ? 'The cost is ahead of the work: at this rate it passes ' + cost(limit) + ' before it finishes.' : 'The strand under the bar is how much of the work is done.'],
+    lines: [p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done, ' + p.running + ' working' + (p.held ? ', ' + p.held + ' waiting' : '') + '.' : 'Starting.', limit ? 'Cost ' + cost(p.usd) + ' against ' + cost(limit) + (r.budget ? ', its budget.' : ', the most it was expected to cost.') : 'Cost so far ' + cost(p.usd) + '.', runOut !== null ? 'The cost is ahead of the work: at this rate it passes ' + cost(limit) + ' before it finishes.' : 'The strand under the bar is how much of the work is done.'],
   })
 }
 
@@ -2921,29 +3346,37 @@ function workflowsLead(k, d, act, { fl, mine, others, sv }) {
   let headline = approval ? 'A workflow is waiting for your go-ahead' : running ? (running === 1 ? 'One workflow is running' : running + ' workflows are running') : 'No workflows running'
   const facts = []
   let figure = null
+  const monthFigure = { value: cost(sv.usd), caption: (SHARE && !/worth$/.test(cost(sv.usd)) ? 'of your weekly limit' : 'on workflows') + ' in ' + sv.days + ' days' + (SHARE ? ', estimated at list prices' : '') }
   if (approval) {
     const e = approval.estimate || {}
     facts.push((approval.preview.name ? '“' + approval.preview.name + '”' : 'A workflow') + ' will not start until you answer in the chat')
-    if (e.basis && e.high > 0) figure = { value: cost(e.low) + '–' + cost(e.high), caption: 'likely cost, from your own runs' }
+    if (e.basis && e.high > 0) figure = { value: holdRange(fmtUsdRange(e.low, e.high, cost)), caption: 'likely cost, from your own runs' }
   } else if (running) {
     const first = mine[0]
     if (first) {
       const p = first.progress
       facts.push((first.name || 'Workflow') + ': ' + (p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done' : 'starting') + (p.running ? ', ' + p.running + ' working' : ''))
     }
-    if (mine.length && others.length) facts.push(others.length + ' more in other sessions')
-    else if (!mine.length) facts.push('In other sessions')
+    if (mine.length && others.length) facts.push(others.length + ' more in other chats')
+    else if (!mine.length) facts.push('In other chats')
     const total = mine.reduce((n, r) => n + r.progress.usd, 0) + others.reduce((n, r) => n + (r.usd || 0), 0)
-    figure = { value: cost(total), caption: (SHARE && !/worth$/.test(cost(total)) ? 'of your weekly limit, so far' : 'so far') + ', running now', sub: sv.runs ? 'Last ' + sv.days + ' days: ' + cost(sv.usd) + (SHARE ? ', estimated at list prices' : '') : '' }
+    // what the running ones have cost is a fact of the line under the headline; the figure is what the tab is about, what
+    // workflows cost over the month, at every width. With no month yet there is no figure: the running ones' cost is
+    // already said in the line above and in their own row, and a figure that appeared later would change what the tab leads with
+    facts.push(ofLimit(cost(total)) + ' so far')
+    figure = sv.runs ? monthFigure : null
   } else if (sv.runs) {
     facts.push(plural(sv.runs, 'run', 'runs') + ' in the last ' + sv.days + ' days, ' + cost(sv.usd / sv.runs) + ' each')
     if (topIdea) facts.push('could have saved up to ' + cost(topIdea.high))
-    figure = { value: cost(sv.usd), caption: (SHARE && !/worth$/.test(cost(sv.usd)) ? 'of your weekly limit' : 'on workflows') + ' in ' + sv.days + ' days' + (SHARE ? ', estimated at list prices' : '') }
+    figure = monthFigure
   } else {
     facts.push('A workflow splits a big job across several agents. Its cost and what could be cheaper show here once one has run')
   }
-  if (!approval && fl.share && fl.weekUsd > 0 && !SHARE) facts.push('about ' + Math.max(1, Math.round(fl.weekUsd * fl.share.pctPerUsd)) + '% of this week’s limit went to workflows')
-  const level = approval ? 'warning' : 'success'
+  if (!approval && fl.share && fl.weekUsd > 0 && !SHARE) {
+    const said = shareWords(fl.weekUsd, fl.share)
+    facts.push(/worth$/.test(said) ? said + ' went to workflows this week' : said.replace(/ of your weekly limit$/, '') + ' of this week’s limit went to workflows')
+  }
+  const level = approval ? 'warning' : 'info'
   const visual = []
   if (!approval && mine.length) mine.slice(0, 3).forEach((r, i) => visual.push(runLine(k, d, r, i)))
   // with nothing running: the month's spend, and the part of it that could have been saved
@@ -2983,13 +3416,13 @@ function workflowsTab(k, d, act) {
   const out = [suggestionsCard(k, d, act, !!fl.approval)]
   mine.forEach((r, i) => out.push(liveRunCard(k, d, act, r, i)))
 
-  if (others.length) out.push(k.card('Running in other sessions', 'Read from each session’s folder as its agents write.' + (fl.canAsk ? ' Ask it to stop sends that session a message.' : ''), others.map((r, i) => otherRunRow(k, d, act, r, i, fl.canAsk)), { gap: 'lg' }))
+  if (others.length) out.push(k.card('Running in other chats', 'Read from each chat’s folder as its agents write.' + (fl.canAsk ? ' Ask it to stop sends that chat a message.' : ''), others.map((r, i) => otherRunRow(k, d, act, r, i, fl.canAsk)), { gap: 'lg' }))
 
-  if (done.length) out.push(k.card('Finished in this session', '', done.slice(0, 8).map((r, i) => finishedRunRow(k, d, act, r, i)), { gap: 'lg' }))
+  if (done.length) out.push(k.card('Finished in this chat', '', done.slice(0, 8).map((r, i) => finishedRunRow(k, d, act, r, i)), { gap: 'lg' }))
 
   const finishedElsewhere = ((fl.other && fl.other.finished) || []).slice(0, 6)
   if (finishedElsewhere.length) {
-    out.push(k.card('Finished in the last day', 'Runs from your other sessions.', finishedElsewhere.map((r, i) => {
+    out.push(k.card('Finished in the last day', 'Runs from your other chats.', finishedElsewhere.map((r, i) => {
       const [glyph, color, word] = RUN_END[r.status] || RUN_END.completed
       return k.row(
         [
@@ -3009,26 +3442,40 @@ function workflowsTab(k, d, act) {
 
   const costliest = (k) => {
   const out = []
-  const costW = Math.max(9, ...(sv.costliest || []).map((x) => cost(x.usd).length + 1))
+  const costW = Math.max(SHARE ? 12 : 9, ...(sv.costliest || []).map((x) => cost(x.usd).length + 1))
+  // a table with no room for its agents and time columns keeps the cost, the figure it is named for, and
+  // stacks the rest under each run's name (the columns on the right are what a narrow table gives up first)
+  const isStacked = k.columns - 8 < 9 + 12 + costW + 1 + 12
   if (sv.costliest && sv.costliest.length) {
     out.push(k.card(
       'Costliest runs',
-      'The last ' + sv.days + ' days, in every project.' + (k.isTerminal ? '' : ' Hover over a run for where its money went.'),
+      'The last ' + sv.days + ' days, in every project.' + (SHARE ? ' Costs are shares of your weekly limit.' : '') + k.hint(' Hover over a run for where its money went.'),
       [
-        k.heads([{ text: 'Run' }, ...(k.hasSvg && k.isRoomy ? [{ text: 'Where it went', width: 22, isBar: true }] : []), { text: 'Agents', width: 8 }, { text: 'Took', width: 11 }, { text: 'Cost', width: costW }]),
+        k.heads(isStacked
+          ? [{ text: 'Run' }, { text: SHARE ? 'Of the limit' : 'Cost', width: costW }]
+          : [{ text: 'Run' }, ...(k.hasSvg && k.isRoomy ? [{ text: 'Where it went', width: 22, isBar: true }] : []), { text: 'Agents', width: 8 }, { text: 'Took', width: 11 }, { text: SHARE ? 'Of the limit' : 'Cost', width: costW }]),
         ...sv.costliest.map((x, i) => {
           const [glyph, color] = RUN_END[x.status] || RUN_END.completed
           const stages = [...x.stages].sort((a, z) => z.usd - a.usd).filter((st) => st.usd > 0).slice(0, 4)
-          const stageWords = (st) => (st.title || 'Agents') + ': ' + plural(st.agents, 'agent', 'agents') + ', ' + cost(st.usd) + (stageModel(st) ? ', mostly on ' + stageModel(st) : '')
+          const stageWords = (st) => (st.title || 'Agents') + ': ' + plural(st.agents, 'agent', 'agents') + ', ' + ofLimit(cost(st.usd)) + (stageModel(st) ? ', mostly on ' + stageModel(st) : '')
           const stack = [...x.stages].filter((st) => st.usd > 0).map((st) => ({ value: st.usd, hex: FAMILY_HEX[stageModel(st)] || HEX.marker, title: stageWords(st) }))
+          const endWords = (RUN_END[x.status] || RUN_END.completed)[2]
           const row = k.row(
-            [
-              { parts: [k.text(glyph + ' ', { color }), k.text(x.name || x.runId, { weight: 'medium' }), k.text('  ' + [x.project || '', (RUN_END[x.status] || RUN_END.completed)[2]].filter(Boolean).join(' · '), { dimColor: true })] },
-              ...(k.hasSvg && k.isRoomy ? [{ el: k.Box({ width: '100%', children: [k.Svg({ source: svgMeter(stack, sv.costliest[0].usd, [], true), alt: 'Cost by stage: ' + stages.map(stageWords).join('; '), height: 6, isInteractive: true })] }), width: 22 }] : []),
-              { text: String(x.agents), width: 8, props: { dimColor: true } },
-              { text: x.durationMs ? fmtSpan(x.durationMs) : '', width: 11, props: { dimColor: true } },
-              { text: cost(x.usd), width: costW },
-            ],
+            isStacked
+              ? [
+                  { el: k.Box({ flexDirection: 'column', minWidth: 0, children: [
+                    k.Text({ wrap: 'truncate-end', children: [k.text(glyph + ' ', { color }), k.text(x.name || x.runId, { weight: 'medium' })] }),
+                    k.footnote([x.project || '', endWords, plural(x.agents, 'agent', 'agents'), x.durationMs ? 'took ' + fmtSpan(x.durationMs) : ''].filter(Boolean).join(' · ')),
+                  ] }) },
+                  { text: cost(x.usd), width: costW },
+                ]
+              : [
+                  { parts: [k.text(glyph + ' ', { color }), k.text(x.name || x.runId, { weight: 'medium' }), k.text('  ' + [x.project || '', endWords].filter(Boolean).join(' · '), { dimColor: true })] },
+                  ...(k.hasSvg && k.isRoomy ? [{ el: k.Box({ width: '100%', children: [k.Svg({ source: svgMeter(stack, sv.costliest[0].usd, [], true), alt: 'Cost by stage: ' + stages.map(stageWords).join('; '), height: 6, isInteractive: true })] }), width: 22 }] : []),
+                  { text: String(x.agents), width: 8, props: { dimColor: true } },
+                  { text: x.durationMs ? fmtSpan(x.durationMs) : '', width: 11, props: { dimColor: true } },
+                  { text: cost(x.usd), width: costW },
+                ],
             {},
             { key: 'flow-cost-' + i, tip: { title: x.name, lines: ['Ran ' + ago(d.now - x.startedAt) + ' with ' + plural(x.agents, 'agent', 'agents') + '.', ...stages.map(stageWords)] } },
           )
@@ -3036,7 +3483,7 @@ function workflowsTab(k, d, act) {
           return k.isTerminal && stages.length ? k.Box({ flexDirection: 'column', children: [row, k.footnote('  ' + stages.slice(0, 2).map(stageWords).join(' · '), { wrap: 'truncate-end' })] }) : row
         }),
         ...(k.hasSvg && k.isRoomy
-          ? [k.Text({ wrap: 'wrap', children: [k.text('Bars show each stage’s cost, coloured by the model that did most of it: ', { size: 'footnote', dimColor: true }), ...['Opus', 'Sonnet', 'Fable'].flatMap((m, j) => [k.text((j ? '   ' : '') + '● ', { color: midHex(FAMILY_HEX[m]) }), k.text(m, { size: 'footnote' })])] })]
+          ? [k.Text({ wrap: 'wrap', children: [k.text('Bars show each stage’s cost, colored by the model that did most of it: ', { size: 'footnote', dimColor: true }), ...['Opus', 'Sonnet', 'Fable'].flatMap((m, j) => [k.text((j ? '   ' : '') + '● ', { color: midHex(FAMILY_HEX[m]) }), k.text(m, { size: 'footnote' })])] })]
           : []),
       ],
     ))
@@ -3054,9 +3501,9 @@ function workflowsTab(k, d, act) {
       shownSavings.length
         ? [
             ...savingsPicture(k, fl, sv, shownSavings),
-            ...shownSavings.map((f, i) => savingRow(k, act, f, 'flow-save-' + i, '', fl.share, i === 0, Math.max(0, ...shownSavings.map((y) => y.high || 0)))),
+            ...shownSavings.map((f, i) => savingRow(k, act, f, 'flow-save-' + i, '', fl.share, i === 0 && !mine.length, Math.max(0, ...shownSavings.map((y) => y.high || 0)))),
             ...(setAside ? [k.buttons([k.button('flow-save-shown', d.view.showSetAside ? 'Hide set-aside ideas' : 'Show ' + plural(setAside, 'set-aside idea', 'set-aside ideas'), () => act.setView({ showSetAside: !d.view.showSetAside }), { dimColor: true })])] : []),
-            k.footnote('Make it a rule… shows the rule here and adds it to your CLAUDE.md when you press Save change.'),
+            k.footnote('A rule is shown here first. It is added to your CLAUDE.md only when you save it.'),
           ]
         : [k.footnote(setAside ? 'Nothing new. ' + plural(setAside, 'idea is', 'ideas are') + ' set aside.' : 'Nothing stands out: your runs already pick their models and sizes well.')],
       { gap: 'lg' },
@@ -3075,10 +3522,10 @@ function workflowsTab(k, d, act) {
     [
       k.text('A workflow is a script Claude writes to split a big job across many agents, usually in stages. Each agent is a separate Claude working on one part; their results feed the next stage.', { wrap: 'wrap' }),
       ...(start ? [start] : []),
-      k.footnote('While one runs: the Pause new agents button lets working agents finish and holds the rest. A spending limit does the same once the run costs that much. Agents at once spreads the work out. Model for new agents switches what the rest run on. Stop workflow ends it and keeps what finished.'),
+      k.footnote('While one runs: the Pause new agents button lets working agents finish and holds the rest. A run budget does the same once the run costs that much. Agents at once spreads the work out. Model for new agents switches what the rest run on. Stop workflow ends it and keeps what finished.'),
       ...(check
         ? [
-            k.Box({ flexDirection: 'column', rowGap: 'xs', marginTop: 'xs', children: [k.text(check.label, { weight: 'medium' }), k.footnote(check.help), k.segmented('opt-workflowCheck', check.options, d.opts.workflowCheck, (v) => act.setOption('workflowCheck', v))] }),
+            k.Box({ flexDirection: 'column', rowGap: 'xs', marginTop: 'xs', children: [k.text(check.label, { weight: 'medium' }), k.footnote(check.help), k.segmented('opt-workflowCheck', check.options, d.opts.workflowCheck, (v) => act.setOption('workflowCheck', v), check.label)] }),
           ]
         : []),
       k.buttons([k.button('flow-refresh', 'Refresh runs', act.refreshFlows, { plain: true, dimColor: true })]),
@@ -3093,9 +3540,13 @@ function workflowsTab(k, d, act) {
     const start = k.buttons([k.button('flow-start', 'Start a workflow', () => act.run('workflow-start'), { variant: 'primary' })])
     return [...head, ...how(k, start)]
   }
-  if (k.isTerminal || k.columns < SPLIT_AT) return [...head, ...live(k), ...costliest(k), ...savings(k), ...how(k)]
+  const oneColumn = () => [...head, ...live(k), ...costliest(k), ...savings(k), ...how(k)]
+  if (k.isTerminal || k.columns < SPLIT_AT) return oneColumn()
   const [km, ka] = k.split()
-  return [...head, km.layout([...live(km), ...savings(km)], [...costliest(ka), ...how(ka)])]
+  const record = [...live(km), ...savings(km)]
+  // with no run to show (a go-ahead waiting above, nothing run yet) the rest takes the full width instead of the right half
+  if (!record.some(Boolean)) return oneColumn()
+  return [...head, km.layout(record, [...costliest(ka), ...how(ka)])]
 }
 
 // Home: workflows running now, in this session or another, with where each has got to.
@@ -3122,14 +3573,17 @@ function runningNowCard(k, d, act) {
   const mine = fl.runs.filter((r) => r.status === 'running' || r.status === 'stopping')
   const others = (fl.other && fl.other.running) || []
   if (!mine.length && !others.length) return null
+  // the figures at the right edge: the agents (with their unit), and the cost only where some run has one,
+  // so no empty column is held open and every row ends at the same edge
+  const hasCost = mine.some((r) => r.progress.usd) || others.some((r) => r.usd)
   const rows = [
     ...mine.map((r, i) => {
       const p = r.progress
       return k.row(
         [
-          { el: liveName(k, r.paused ? null : HEX.bar, [k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  this session' + (p.current ? ' · ' + p.current.title : ''), { dimColor: true })]) },
-          { text: p.total ? p.done + ' of ' + p.total : '', width: 8, props: { dimColor: true } },
-          { text: p.usd ? cost(p.usd) : '', width: 9 },
+          { el: liveName(k, r.paused ? null : HEX.bar, [k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  this chat' + (p.current ? ' · ' + p.current.title : ''), { dimColor: true })]) },
+          { text: p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') : '', width: 14, props: { dimColor: true } },
+          ...(hasCost ? [{ text: p.usd ? cost(p.usd) : '', width: 9 }] : []),
         ],
         {},
         { key: 'home-run-' + i, tip: { title: r.name, lines: [r.paused ? 'Paused.' : 'Running.', plural(p.done, 'agent', 'agents') + ' done of ' + p.total + '.'] } },
@@ -3138,8 +3592,8 @@ function runningNowCard(k, d, act) {
     ...others.map((r, i) => k.row(
       [
         { el: liveName(k, HEX.bar, [k.text(r.name, { weight: 'medium' }), k.text('  ' + [r.project, r.title].filter(Boolean).join(' · '), { dimColor: true })]) },
-        { text: String(r.agents.length), width: 8, props: { dimColor: true } },
-        { text: r.usd ? cost(r.usd) : '', width: 9 },
+        { text: plural(r.agents.length, 'agent', 'agents'), width: 14, props: { dimColor: true } },
+        ...(hasCost ? [{ text: r.usd ? cost(r.usd) : '', width: 9 }] : []),
       ],
       {},
       { key: 'home-other-' + i, tip: { title: r.name, lines: [plural(r.agents.filter((a) => a.isActive).length, 'agent', 'agents') + ' working now.'] } },
@@ -3147,6 +3601,8 @@ function runningNowCard(k, d, act) {
   ]
   return k.card('Running now', 'Workflows working through a job, with their agents done so far.', [...rows, k.buttons([k.button('home-flows', 'Open Workflows', act.openWorkflows)])])
 }
+
+// ---- Home: the week, the projects, the chats and the tour (and the tab that holds them) -------
 
 // What Home is drawn from: this tab's figures and the plan's windows, worked out once.
 function homeContext(d) {
@@ -3166,12 +3622,13 @@ function homeContext(d) {
     has: !!(u && !u.isEmpty),
     plan,
     windows,
-    levelOf: (pct) => (pct >= Math.max(90, d.opts.limitAlertAt) ? 'error' : pct >= d.opts.limitAlertAt ? 'warning' : 'success'),
+    levelOf: (pct) => (shownPct(pct) >= Math.max(90, d.opts.limitAlertAt) ? 'error' : shownPct(pct) >= d.opts.limitAlertAt ? 'warning' : 'success'),
     tightest: [...windows].sort((a, z) => Number(kindOfLabel(a.label) === 'five_hour') - Number(kindOfLabel(z.label) === 'five_hour') || z.pct - a.pct)[0],
     w: d.waiting || { needs: [], pickup: [], canReply: false },
     hues: u && !u.isEmpty ? projectHues(u.projects) : Object.create(null),
   }
   h.item = h.tightest ? tightestItem(d, h.tightest, h) : null
+  h.read = waitingRead(d, h)
   return h
 }
 
@@ -3193,24 +3650,6 @@ function dayKeyMs(key) {
 // A project's colour where it is drawn: its own, or grey with the rest.
 function hueOf(h, key) {
   return (h.hues && h.hues[key]) || OTHER_HEX
-}
-
-// The share of a project's use on one calendar day that came at or after `from`: the window's first
-// day opened part way through it, and the hours before that belong to the window before. It comes from
-// the hours the records keep; a transcript read before they were kept counts as spread evenly over the day.
-function dayClip(p, j, key, from) {
-  const day = new Date(from)
-  day.setHours(0, 0, 0, 0)
-  const start = day.getTime()
-  const next = new Date(start)
-  next.setDate(next.getDate() + 1)
-  const span = Math.max(1, next.getTime() - start)
-  const total = p.days[j] || 0
-  if (!(total > 0)) return 0
-  let after = (p.noHours && p.noHours[key] ? p.noHours[key] : 0) * Math.max(0, Math.min(1, (next.getTime() - from) / span))
-  const prof = p.hours && p.hours[key]
-  if (prof) for (let hour = 0; hour < 24; hour++) after += prof[hour] * Math.max(0, Math.min(1, (start + (hour + 1) * 3_600_000 - from) / 3_600_000))
-  return Math.max(0, Math.min(1, after / total))
 }
 
 // The week's work, a day at a time, in the limit window's own columns: each day split by project,
@@ -3270,7 +3709,7 @@ function weekDays(h, win, focus = '') {
       if (key !== today) name = new Date((a + b) / 2).toLocaleDateString([], { weekday: 'long' })
       short = new Date((a + b) / 2).toLocaleDateString([], { weekday: 'short' })
     } catch {}
-    const most = [...parts].sort((x, z) => z.value - x.value).slice(0, 2).map((x) => x.name)
+    const most = [...parts].sort((x, z) => z.value - x.value).map((x) => x.name) // every project the day held, as the line under the calendar lists them
     out.push({ key, startMs: a, endMs: b, parts, isToday: key === today, clip, total, name, short, tip: total > 0 ? name + ' · ' + cost(total) + ' · ' + most.join(', ') : '' })
   }
   return out.some((x) => x.total > 0) ? out : null
@@ -3283,7 +3722,7 @@ function homeStatus(k, d, act, h) {
   const out = []
   if (!d.opts.scanProjects) {
     out.push(
-      k.card('Every project', null, [
+      k.card('Projects', null, [
         k.text('Reading every project is off.', { weight: 'medium', wrap: 'wrap' }),
         k.footnote('Turn it on to see what each project used today and this week, from Claude Code’s own records on this computer. Reading them sends nothing anywhere.'),
         k.buttons([k.button('scan-on', 'Read every project', () => act.setOption('scanProjects', true), { variant: 'primary' })]),
@@ -3291,17 +3730,17 @@ function homeStatus(k, d, act, h) {
     )
   } else if (!has && sc.status === 'unavailable') {
     out.push(
-      k.card('Every project', null, [
+      k.card('Projects', null, [
         // a failure, drawn as one: its glyph and colour, and what to do next
         k.hang(k.text('✕', { color: 'error', weight: 'semibold' }), k.Box({ flexDirection: 'column', rowGap: 'xs', children: [
           k.text('Couldn’t read Claude Code’s records on this computer.', { weight: 'semibold', color: 'error', wrap: 'wrap' }),
-          k.footnote('tobebestme looks in ~/.claude/projects, or under CLAUDE_CONFIG_DIR when that is set. Check that the folder exists and can be read, then try again. The other tabs still work.'),
+          k.footnote('ToBeBestMe looks in ~/.claude/projects, or under CLAUDE_CONFIG_DIR when that is set. Check that the folder exists and can be read, then try again. The other tabs still work.'),
         ] })),
-        k.buttons([k.button('usage-refresh', 'Read projects again', act.refreshUsage)]),
+        k.buttons([k.button('usage-refresh', 'Read projects again', act.refreshUsage, { variant: 'primary' })]),
       ]),
     )
   } else if (!has && sc.status === 'ok' && !sc.isRunning) {
-    out.push(k.card('Every project', null, [k.text('Nothing in the last ' + SCAN_DAYS + ' days yet.', { weight: 'medium', wrap: 'wrap' }), k.footnote('Each project shows here once Claude has answered in it.')]))
+    out.push(k.card('Projects', null, [k.text('Nothing in the last ' + SCAN_DAYS + ' days yet.', { weight: 'medium', wrap: 'wrap' }), k.footnote('Each project shows here once Claude has answered in it.')]))
   } else if (!has) {
     const total = sc.total || 0
     out.push(
@@ -3330,11 +3769,12 @@ function whatIfItem(k, d, h, w) {
   const runway = { used: r.used, elapsed: r.elapsed, runOut: at !== null && 100 - at >= 8 ? at : null, projected: Math.min(100, landing) }
   const before = paceWords('seven_day', r, resetsAt, d.now)
   const after = paceWords('seven_day', runway, resetsAt, d.now)
-  const item = { runway, hex: tint(it.hex, runway.runOut !== null ? 'warning' : 'success'), label: it.label, valueText: Math.round(r.used) + '%' }
+  const item = { runway, hex: tint(it.hex, runway.runOut !== null ? 'warning' : 'success'), label: it.label, valueText: pctText(r.used) }
   const drop = Math.round(w.factor * 100)
   // where the week ends, uncapped, at this pace and with the idea: two bars with the points between them
   const endsAt = (r.used / r.elapsed) * 100
-  const pointsBack = endsAt - landing
+  // the two ends as they are read, and the points between them as their difference, so the callout adds up
+  const pointsBack = shownPct(endsAt) - shownPct(landing)
   const picture =
     k.hasSvg && pointsBack >= 1
       ? k.Box({
@@ -3342,23 +3782,26 @@ function whatIfItem(k, d, h, w) {
           rowGap: 'xs',
           children: [
             k.drawing(
-              svgSaving({ a: { label: 'At this pace: the week ends at about ' + Math.round(endsAt) + '%', value: endsAt }, b: { label: w.title + ': about ' + Math.round(landing) + '%', value: landing }, mark: 100, back: 'about ' + Math.round(pointsBack) + ' points back' }, { width: Math.max(240, Math.min(560, Math.round(k.px - 36))) }),
-              'At this pace the week ends at about ' + Math.round(endsAt) + '% of your weekly limit. ' + w.title + ', it ends at about ' + Math.round(landing) + '%, about ' + Math.round(pointsBack) + ' points back. An estimate at list prices.',
+              svgSaving({ a: { label: 'At this pace: the week ends at ' + pctAbout(endsAt), value: endsAt }, b: { label: w.title + ': ' + pctAbout(landing), value: landing }, mark: 100, back: plural(pointsBack, 'point', 'points') + ' back', isGood: landing < 100 }, { width: Math.max(240, Math.round(k.px - 36)) }), // the bars fill the card they are in
+              'At this pace the week ends at ' + pctAbout(endsAt) + ' of your weekly limit. ' + w.title + ', it ends at ' + pctAbout(landing) + ', ' + plural(pointsBack, 'point', 'points') + ' back. An estimate at list prices.',
             ),
           ],
         })
       : null
+  const clause = after.replace(/^At this pace it/, 'it').replace(/^On pace/, 'on pace').replace(/^Used up/, 'used up')
   return {
     picture,
-    line: w.title + ': ' + after.replace(/^At this pace it/, 'it').replace(/^On pace/, 'on pace').replace(/^Used up/, 'used up'),
-    tip: { title: w.title, lines: ['This week’s pace would drop about ' + drop + '%, at list prices.', before ? 'Now: ' + before.charAt(0).toLowerCase() + before.slice(1) : '', after ? 'Then: ' + after.charAt(0).toLowerCase() + after.slice(1) : ''], el: runwayBar(k, item, 'tile'), align: 'left' },
+    // drawn, the bars already say what the idea is and where the week would end; the line then says what that would mean, with the condition in it (the run-out here is the idea's, not the pace's)
+    then: w.title + ', ' + clause,
+    line: w.title + ': ' + clause,
+    tip: { title: w.title, lines: ['This week’s pace would drop about ' + drop + '%, at list prices.', before ? 'Now: ' + before.charAt(0).toLowerCase() + before.slice(1) : '', after ? 'If so: ' + after.charAt(0).toLowerCase() + after.slice(1) : ''], el: runwayBar(k, item, 'tile'), align: 'left' },
   }
 }
 
 function homeInsights(k, d, act, h) {
   const { u, has } = h
   const out = []
-  const ideas = has ? usageInsights(u, { ...d.opts, fmt: cost }) : []
+  const ideas = has ? usageInsights(u, { ...d.opts, fmt: cost, isShare: !!SHARE }) : []
   if (ideas.length) {
     out.push(
       k.card('What stands out', null, ideas.map((x, i) => {
@@ -3367,8 +3810,8 @@ function homeInsights(k, d, act, h) {
           k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
           k.guide(x.detail),
           // what the saving would do to the week, in a line; point at it for the runway it would have
-          ...(w ? [k.text(w.line, { size: 'footnote', weight: 'medium', wrap: 'wrap' }), ...(w.picture ? [w.picture] : [])] : []),
-          ...(x.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('insight-' + i, x.action.label, () => act.run(x.action.key))])] })] : []),
+          ...(w ? (w.picture ? [w.picture, k.guide(w.then)] : [k.text(w.line, { size: 'footnote', weight: 'medium', wrap: 'wrap' })]) : []),
+          ...(x.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('insight-' + i, x.action.label, () => act.run(x.action.key), { about: x.title })])] })] : []),
         ]
         return w ? k.hoverBox('insight-' + i + '-row', { flexDirection: 'column', rowGap: 'xs' }, body, w.tip) : k.Box({ flexDirection: 'column', rowGap: 'xs', children: body })
       }), { gap: 'md' }),
@@ -3397,22 +3840,22 @@ function homeProjects(k, d, act, h) {
     const list = u.projects.filter((p) => p[by] > 0)
     const rows = d.view.showAllProjects ? list : list.slice(0, 8)
     const max = Math.max(0.0001, ...rows.map((p) => p[by]))
-    const total = by === 'today' ? u.today.usd : by === 'day' ? u.days[dayAt] : u.week.usd
+    const total = by === 'today' ? d.today : by === 'day' ? u.days[dayAt] : u.week.usd
     const barW = k.columns >= 72 ? 16 : 8
     out.push(
-      k.card('Projects', 'Most used first, with worktrees counted in their repository. Point at one for its sessions, models and folder.', [
-        k.segmented('proj', [{ value: 'week', label: 'Past 7 days' }, { value: 'today', label: 'Today' }, ...(isDay ? [{ value: 'day', label: dayName }] : [])], by, (value) => act.setView({ projectsBy: value === 'day' ? d.view.projectsBy : value, day: value === 'day' ? d.view.day : '' })),
+      k.card('Projects', 'Most used first, with worktrees counted in their repository.' + (SHARE ? ' Figures are shares of your weekly limit.' : '') + k.hint(' Point at one for its chats, models and folder.'), [
+        k.segmented('proj', [{ value: 'week', label: 'Past 7 days' }, { value: 'today', label: 'Today' }, ...(isDay ? [{ value: 'day', label: dayName }] : [])], by, (value) => act.setView({ projectsBy: value === 'day' ? d.view.projectsBy : value, day: value === 'day' ? d.view.day : '' }), 'Projects by'),
         ...(rows.length
           ? [
-              k.heads([{ text: 'Project' }, { text: '', width: barW }, { text: by === 'today' ? 'Today' : by === 'day' ? dayName : 'Past 7 days', width: 12 }, { text: 'Sessions', width: 10 }, { text: 'Last answer', width: 14 }]),
+              // a day's figures are its own: sessions and last answers are counted over a week, so a picked day leaves them out
+              k.heads([{ text: 'Project' }, { text: '', width: barW }, { text: SHARE ? 'Of the limit' : by === 'today' ? 'Today' : by === 'day' ? dayName : 'Past 7 days', width: 12 }, ...(by === 'day' ? [] : [{ text: 'Chats', width: 10 }, { text: 'Last answer', width: 14 }])]),
               ...rows.map((p, i) =>
                 k.row(
                   [
-                    { parts: [...(k.isTerminal ? [] : [k.text('● ', { color: midHex(hueOf(h, p.key)) })]), k.text(p.name, d.view.project && d.view.project !== p.key ? { dimColor: true } : { weight: d.view.project === p.key ? 'semibold' : 'medium' }), ...(p.worktrees && k.columns >= 60 ? [k.text('  ' + plural(p.worktrees, 'worktree', 'worktrees'), { dimColor: true })] : [])] },
-                    { el: k.bar(p[by], max, k.isTerminal ? HEX.bar : hueOf(h, p.key), p.name + ': ' + cost(p[by]) + ', ' + share(p[by], total) + '%'), width: barW },
+                    { parts: [...(k.isTerminal ? [] : [k.text('● ', { color: midHex(hueOf(h, p.key)) })]), k.text(p.name, d.view.project && d.view.project !== p.key ? { dimColor: true } : { weight: d.view.project === p.key ? 'semibold' : 'medium' }), ...(p.worktrees && k.columns >= 72 ? [k.text('  ' + plural(p.worktrees, 'worktree', 'worktrees').replace(' ', '\u00a0'), { dimColor: true })] : [])] },
+                    { el: k.bar(p[by], max, k.isTerminal ? HEX.bar : hueOf(h, p.key), p.name + ': ' + ofLimit(cost(p[by])) + ', ' + share(p[by], total) + ' of ' + (by === 'week' ? 'the week’s' : 'the day’s') + ' work'), width: barW },
                     { text: cost(p[by]), width: 12 },
-                    { text: by === 'day' ? '' : String(by === 'today' ? p.sessionsToday : p.sessionsWeek), width: 10, props: { dimColor: true } },
-                    { text: ago(now - p.lastAt), width: 14, props: { dimColor: true } },
+                    ...(by === 'day' ? [] : [{ text: String(by === 'today' ? p.sessionsToday : p.sessionsWeek), width: 10, props: { dimColor: true } }, { text: ago(now - p.lastAt), width: 14, props: { dimColor: true } }]),
                   ],
                   {},
                   { key: 'proj-' + i, tip: projectTip(p, now) },
@@ -3420,6 +3863,7 @@ function homeProjects(k, d, act, h) {
               ),
             ]
           : [k.footnote('Nothing yet today. Past 7 days shows the week.')]),
+        ...(SHARE && rows.length ? [k.footnote('Shares are estimated from your chat records at list prices, so together they can differ a little from the weekly figure above.')] : []),
         ...(list.length > 8 ? [k.buttons([k.button('proj-more', d.view.showAllProjects ? 'Show fewer' : 'Show all ' + list.length + ' projects', act.toggleProjects, { dimColor: true })])] : []),
       ], { gap: 'sm', accessory: SHARE ? null : k.footnote(cost(total) + (by === 'today' ? ' today' : by === 'day' ? ' on ' + dayName : ' in the past 7 days'), { tabular: true }) }),
     )
@@ -3450,8 +3894,8 @@ function homeChart(k, d, act, h) {
       if (v > u.days[peak]) peak = i
     })
     out.push(
-      k.card('Last ' + SCAN_DAYS + ' days', 'Every project, each day, in its own colour. The dashed line is the average.', [
-        k.bars(u.days, SCAN_DAYS, 'Use each day over the last ' + SCAN_DAYS + ' days: today ' + cost(u.today.usd) + ', on average ' + cost(mean) + ' a day', 64, { stacks, titles: u.keys.map((key, i) => dayWords(key, now) + ': ' + cost(u.days[i])), average: true, averageTitle: 'Average: ' + cost(mean) + ' a day' }),
+      k.card('Last ' + SCAN_DAYS + ' days', 'Every project, each day, in its own color. The dashed line is the average.', [
+        k.bars(u.days, SCAN_DAYS, 'Use each day over the last ' + SCAN_DAYS + ' days: today ' + cost(d.today) + ', on average ' + cost(mean) + ' a day', 64, { stacks, titles: u.keys.map((key, i) => dayWords(key, now) + ': ' + cost(u.days[i])), average: true, averageTitle: 'Average: ' + cost(mean) + ' a day' }),
         k.row([{ text: dayWords(u.keys[0], now) }, { text: 'Today', width: 8 }], { size: 'footnote', dimColor: true }),
         k.footnote('On average ' + cost(mean) + ' a day. Busiest: ' + dayWords(u.keys[peak], now) + ', ' + cost(u.days[peak]) + '.'),
       ]),
@@ -3473,42 +3917,48 @@ function homeSessions(k, d, act, h) {
     const done = others.filter((x) => !x.isRunning && !x.pinned && /merged|closed/i.test(String(x.prState || '')))
     // This session first, then the others by recent activity.
     const rows = [{ sessionId: me.desk || 'self', title: me.title || me.project || 'This session', cwd: me.cwd, isRunning: false, lastActivityAt: null, isSelf: true }, ...others]
-    const ctxW = k.columns >= 90 ? 12 : 0
+    const ctxW = k.columns >= 90 ? 8 : 0
     const sessionRow = (x, i) => {
       const ctx = x.isSelf ? { percentUsed: d.pct, tokensUsed: d.tokens } : f.ctx && f.ctx[x.sessionId]
-      const pct = ctx && Number.isFinite(Number(ctx.percentUsed)) ? Math.round(ctx.percentUsed) : null
+      const pct = ctx && Number.isFinite(Number(ctx.percentUsed)) ? Number(ctx.percentUsed) : null
       const usd = x.isSelf ? (me.desk && spent[me.desk] !== undefined ? spent[me.desk] : d.usd) : spent[x.sessionId]
       const hasUsd = usd !== undefined && usd !== null
       const folder = String(x.cwd || '').split('/').filter(Boolean).pop() || ''
       const pr = x.prNumber ? 'PR #' + x.prNumber + (x.prState ? ' ' + String(x.prState).toLowerCase() : '') : ''
       // the project's name here; the branch (often a long slug) and the full path are in its hover card
-      const sub = [x.isSelf ? 'this session' : '', folder, pr].filter(Boolean).join(' · ')
+      const sub = [x.isSelf ? 'this chat' : '', folder, pr].filter(Boolean).join(' · ')
       const when = x.isSelf ? 'open here' : x.isRunning ? 'working now' : x.lastActivityAt ? ago(now - Date.parse(x.lastActivityAt)) : ''
       const ctxHex = pct === null ? null : pct >= d.opts.cheaperModelAt ? HEX.error : pct >= d.opts.contextWarnAt ? HEX.warning : RING_HEX.context
-      return k.hoverBox('sess-' + i, { flexDirection: 'column', width: '100%' }, [
-        k.row([
-          { el: k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', minWidth: 0, flexShrink: 1, children: [x.isRunning ? k.live(HEX.success, 'success', 'Working now') : k.text('●', { dimColor: true }), k.Box({ flexShrink: 1, minWidth: 0, children: [k.text(x.title || 'Untitled session', { wrap: k.columns >= 90 ? 'truncate-end' : 'wrap', ...(x.isSelf ? { weight: 'semibold' } : {}) })] })] }) },
-          ...(ctxW ? [{ el: pct !== null ? k.bar(pct, 100, ctxHex, 'Context ' + pct + '%') : k.text(' ', {}), width: ctxW }] : []),
-          { text: pct !== null ? pct + '%' : '–', width: 7, props: pct === null ? { dimColor: true } : ctxHex !== RING_HEX.context && ctxW === 0 ? { color: pct >= d.opts.cheaperModelAt ? 'error' : 'warning' } : {} },
-          { text: hasUsd ? cost(usd) : '–', width: 9, props: hasUsd ? {} : { dimColor: true } },
-          { text: when, width: 14, props: x.isRunning ? { color: 'success' } : { dimColor: true } },
-        ]),
+      const cells = [
+          { el: k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', minWidth: 0, flexShrink: 1, children: [x.isRunning ? k.live(HEX.success, 'success', 'Working now') : k.hasSvg ? k.Box({ flexShrink: 0, width: 2, alignItems: 'center', children: [k.text('●', { dimColor: true })] }) : k.text('●', { dimColor: true }), k.Box({ flexShrink: 1, minWidth: 0, children: [k.text(x.title || 'Untitled chat', { wrap: 'wrap', ...(x.isSelf ? { weight: 'semibold' } : {}) })] })] }) }, // a long title wraps beside the figures, as it does in Ready to archive, so no chat is cut short
+          ...(ctxW ? [{ el: pct !== null ? k.bar(pct, 100, ctxHex, 'Context ' + pctText(pct)) : k.text(' ', {}), width: ctxW }] : []),
+          { text: pct !== null ? pctText(pct) : '–', width: 7, props: pct === null ? { dimColor: true } : ctxHex !== RING_HEX.context && ctxW === 0 ? { color: pct >= d.opts.cheaperModelAt ? 'error' : 'warning' } : {} },
+          { text: hasUsd ? cost(usd) : '–', width: 8, props: hasUsd ? {} : { dimColor: true } },
+          { text: when, width: 12, props: x.isRunning ? { color: 'success' } : { dimColor: true } },
+      ]
+      // a phone's width gives the title the whole line and sets the figures under it, so the title is never squeezed
+      const stacked = [
+        k.row([cells[0]]),
+        k.row([{ text: '   ' + [sub, pct !== null ? pctText(pct) + ' context' : '', hasUsd ? cost(usd) + ' today' : '', when].filter(Boolean).join(' · '), props: { size: 'footnote', dimColor: true, wrap: 'wrap' } }]),
+      ]
+      return k.hoverBox('sess-' + i, { flexDirection: 'column', width: '100%' }, k.columns < 60 ? stacked : [
+        k.row(cells),
         k.row([{ text: '   ' + sub, props: { size: 'footnote', dimColor: true, wrap: 'wrap' } }]),
       ], {
-        title: x.title || 'Untitled session',
+        title: x.title || 'Untitled chat',
         lines: [
           x.cwd ? String(x.cwd).replace(/^\/Users\/[^/]+/, '~') : '',
           x.branch ? 'Branch ' + x.branch + '.' : '',
           x.isRunning ? 'Working now.' : x.lastActivityAt ? 'Last active ' + ago(now - Date.parse(x.lastActivityAt)) + '.' : '',
-          ctx ? 'Context ' + pct + '% full' + (ctx.tokensUsed ? ', ' + fmtTokens(ctx.tokensUsed) + ' tokens' : '') + '.' : 'Context shows while a session is working.',
-          hasUsd ? cost(usd) + ' today.' : 'Spending shows for sessions that run tobebestme.',
+          ctx ? 'Context ' + pctText(pct) + ' full' + (ctx.tokensUsed ? ', ' + fmtTokens(ctx.tokensUsed) + ' tokens' : '') + '.' : 'Context shows while a chat is working.',
+          hasUsd ? cost(usd) + ' today.' : 'Spending shows for chats that run ToBeBestMe.',
           x.isSelf ? '' : 'Open it from the sidebar.',
         ],
       })
     }
     out.push(
-      k.card('Open sessions', 'In the desktop app, newest activity first. Point at one for its folder, context and spending.', [
-        k.heads([{ text: 'Session' }, ...(ctxW ? [{ text: '', width: ctxW }] : []), { text: 'Context', width: ctxW ? 7 : 7 }, { text: 'Today', width: 9 }, { text: 'Active', width: 14 }]),
+      k.card('Open chats', 'In the desktop app, newest activity first.' + k.hint(' Point at one for its folder, context and spending.'), [
+        ...(k.columns < 60 ? [] : [k.heads([{ text: 'Chat' }, ...(ctxW ? [{ text: '', width: ctxW }] : []), { text: 'Context', width: 7 }, { text: 'Today', width: 8 }, { text: 'Active', width: 12 }])]),
         ...rows.map(sessionRow),
       ], { gap: 'sm' }),
     )
@@ -3516,22 +3966,24 @@ function homeSessions(k, d, act, h) {
     if (done.length) {
       const c = d.view.confirm || ''
       out.push(
-        k.card('Ready to archive', 'Idle sessions whose pull request is done. Archiving stops them and frees their worktrees; Archived in the sidebar brings one back.', done.slice(0, 8).map((x, i) => {
+        k.card('Ready to archive', 'Idle chats whose pull request is done. Archiving stops them and frees their worktrees; Archived in the sidebar brings one back.', done.slice(0, 8).map((x, i) => {
           const asking = c === 'archive:' + x.sessionId
           return k.Box({
             flexDirection: 'column',
             rowGap: 'xs',
             children: [
+              // a phone's width puts the button under its words, which wrap, instead of cutting them short beside it
               k.Box({
-                flexDirection: 'row',
+                flexDirection: k.columns < 60 ? 'column' : 'row',
                 columnGap: 'md',
-                alignItems: 'center',
+                rowGap: 'xs',
+                alignItems: k.columns < 60 ? 'flex-start' : 'center',
                 children: [
-                  k.Box({ flexDirection: 'column', flexGrow: 1, flexShrink: 1, children: [k.text(x.title || 'Untitled session', { weight: 'medium', wrap: 'truncate-end' }), k.footnote('PR #' + x.prNumber + ' ' + String(x.prState || '').toLowerCase() + (x.lastActivityAt ? ' · last active ' + ago(now - Date.parse(x.lastActivityAt)) : ''), { wrap: 'truncate-end' })] }),
-                  ...(asking ? [] : [k.button('archive-' + i, 'Archive session…', () => act.setView({ confirm: 'archive:' + x.sessionId }))]),
+                  k.Box({ flexDirection: 'column', flexGrow: 1, flexShrink: 1, children: [k.text(x.title || 'Untitled chat', { weight: 'medium', wrap: 'wrap' }), k.footnote('PR #' + x.prNumber + ' ' + String(x.prState || '').toLowerCase() + (x.lastActivityAt ? ' · last active ' + ago(now - Date.parse(x.lastActivityAt)) : ''), { wrap: k.columns < 60 ? 'wrap' : 'truncate-end' })] }),
+                  ...(asking ? [] : [k.button('archive-' + i, 'Archive chat…', () => act.setView({ confirm: 'archive:' + x.sessionId }), { about: x.title || 'Untitled chat' })]),
                 ],
               }),
-              ...(asking ? [k.Box({ flexDirection: 'column', rowGap: 'sm', children: [k.text('Archive “' + (x.title || 'this session') + '”? It stops, and its worktree is cleaned up.', { weight: 'medium', wrap: 'wrap' }), k.buttons([k.button('archive-go', 'Archive session', () => act.archiveSession(x.sessionId)), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }), { autoFocus: true })])] })] : []),
+              ...(asking ? [k.Box({ flexDirection: 'column', rowGap: 'sm', children: [k.text('Archive “' + (x.title || 'this chat') + '”? It stops, and its worktree is cleaned up.', { weight: 'medium', wrap: 'wrap' }), k.buttons([k.button('archive-go', 'Archive chat', () => act.archiveSession(x.sessionId)), k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }), { autoFocus: true })])] })] : []),
             ],
           })
         }), { gap: 'md' }),
@@ -3558,7 +4010,7 @@ function homeFooter(k, d, act, h) {
         rowGap: 'xs',
         paddingX: k.isTerminal ? 1 : 'xs',
         children: [
-          ...(has ? [k.footnote((SHARE ? 'Shares of your weekly limit, estimated from this week’s work at list prices' : 'Estimates at list prices') + ', from Claude Code’s own records on this computer (~/.claude/projects), helpers and workflow agents included. Reading them sends nothing anywhere.')] : []),
+          ...(has ? [k.footnote((SHARE ? 'Shares of your weekly limit, estimated from this week’s work at list prices' : 'Estimates at list prices') + ' (standard speed, global routing: fast mode and US-only inference cost more)' + ', from Claude Code’s own records on this computer (~/.claude/projects), helpers and workflow agents included. Reading them sends nothing anywhere.')] : []),
           k.Box({ flexDirection: 'row', columnGap: 'md', alignItems: 'center', flexWrap: 'wrap', children: [k.buttons([k.button('usage-refresh', 'Refresh', act.refreshUsage, { dimColor: true }), k.button('home-copy', 'Copy summary', (ev) => act.copySummary(ev && ev.surface), { dimColor: true })]), ...notes.map((n) => k.footnote(n))] }),
         ],
       }),
@@ -3578,19 +4030,19 @@ function homeNext(k, d, act) {
     : todo.kind === 'tab' ? () => act.setView({ tab: todo.tab, confirm: '', editing: '' })
     : () => act.run(todo.key)
   return [
-    // the count beside the title is what is shown; the habits in place, and why more can be open than
-    // habits are missing (what your records show costing you counts as a suggestion too), go under it
-    k.card('Get more from Claude', have + ' of ' + total + ' habits in place' + (open > ideas.length ? '. ' + (open - ideas.length) + ' more to come once these are done' : '') + '.', ideas.map((x) =>
+    // the count under the title is how many of the things worth setting up are done; the figure beside it says how
+    // many suggestions are open when more are open than shown (what your records show costing you counts as one too)
+    k.card('Worth doing next', have + ' of ' + total + ' set up.', ideas.map((x) =>
       k.Box({
         flexDirection: 'column',
         rowGap: 'xs',
         children: [
           k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
           k.guide(x.detail),
-          k.Box({ marginTop: 'xs', children: [k.buttons([k.button('next-' + x.key, x.button, run(x.todo)), k.button('next-' + x.key + '-later', 'Not now', () => act.dismissHabit(x.key), { dimColor: true })])] }),
+          k.Box({ marginTop: 'xs', children: [k.buttons([k.button('next-' + x.key, x.button, run(x.todo), { about: x.title }), k.button('next-' + x.key + '-later', 'Not now', () => act.dismissHabit(x.key), { dimColor: true, about: x.title })])] }),
         ],
       }),
-    ), { gap: 'md', keepCaption: true, accessory: k.footnote(ideas.length + (open > ideas.length ? ' of ' + open : '') + ' suggested', { tabular: true }) }),
+    ), { gap: 'md', keepCaption: true, accessory: open > ideas.length ? k.footnote('Showing ' + ideas.length + ' of ' + open, { tabular: true }) : undefined }),
   ]
 }
 
@@ -3600,29 +4052,31 @@ function homeNext(k, d, act) {
 // it back.
 function homeTour(k, d, act, h) {
   if (d.habits && d.habits.isTourDone) return []
-  if (h.w.needs.length) return []
+  // it waits while anything needs an answer: a chat, a pull request, a workflow's go-ahead
+  if (waitingCount(h.w.needs, d.flows && d.flows.approval).total) return []
   const last = 3
   const step = Math.max(0, Math.min(last, d.view.tourStep || 0))
   const set = (n) => () => act.setView({ tourStep: n })
+  // one primary action per view: while records couldn't be read, "Read projects again" is the one
+  const lead = h.read === 'failed' ? {} : { variant: 'primary' }
   let title = ''
   let words = ''
   let preview = null
   if (step === 0) {
-    title = 'The line above your prompt'
-    words = 'It is in every session and shows what is about to run out: this conversation’s context, your plan’s limits and what you have spent. Its button opens this pane. This is it, live.'
+    title = 'The line above the prompt'
+    words = 'It is in every chat and shows what is about to run out: this chat’s context, your plan’s limits and what you have spent. Its button opens this dashboard. This is it, live.'
     preview = k.Box({ flexDirection: 'column', paddingY: 'sm', children: [drawBand(k, { ...d, bandRows: 2, isPreview: true }, act)] })
   } else if (step === 1) {
-    const n = h.w.needs.length
     title = 'Chats that need you'
-    words = 'When a chat in another session stops for a permission, a question or a decision, it shows on Home, and you can answer it from here without switching. ' + (d.opts.scanProjects ? 'Nothing is waiting for you now.' : 'Turn on Read every project in Settings to see them.')
+    words = 'When another chat stops for a permission, a question or a decision, it shows on Home, and you can answer it from here without switching.' + (h.read === 'off' ? ' Turn on Read every project in Settings to see them.' : h.read === 'read' ? ' Nothing is waiting for you now.' : '')
   } else if (step === 2) {
     title = 'Your limits, on a calendar'
-    words = 'The bar is your plan’s window. The fill is what you have used, the thin line under it is how much of the window has passed, and the white mark is now. When the fill is ahead of the mark, you will run out early: it turns amber and says when.'
+    words = 'The bar is your plan’s window. The fill is what you have used, the thin line under it is how much of the window has passed, and the white mark is now. When the fill is ahead of the mark, you are on pace to run out early: it turns amber and says when.'
     if (h.tightest) preview = k.Box({ flexDirection: 'column', paddingY: 'sm', children: [runwayBar(k, h.item, 'hero', Math.max(280, k.px - 56))] })
   } else {
     const { have, total } = habitIdeas(d)
-    title = 'Habits that help most'
-    words = 'ToBeBestMe looks at your own setup and records and suggests up to three things at a time. ' + have + ' of ' + total + ' are in place now. Not now puts a suggestion off for a month.'
+    title = 'What to set up first'
+    words = 'ToBeBestMe looks at your own setup and records and suggests up to three things at a time. ' + have + ' of ' + total + ' are set up now. Not now puts a suggestion off for a month.'
   }
   return [
     k.card('Welcome to ToBeBestMe', null, [
@@ -3631,7 +4085,7 @@ function homeTour(k, d, act, h) {
       ...(preview ? [preview] : []),
       k.buttons([
         ...(step > 0 ? [k.button('tour-back', 'Back', set(step - 1), { dimColor: true })] : []),
-        step < last ? k.button('tour-next', 'Next', set(step + 1), { variant: 'primary' }) : k.button('tour-done', 'Done', act.finishTour, { variant: 'primary' }),
+        step < last ? k.button('tour-next', 'Next', set(step + 1), lead) : k.button('tour-done', 'Done', act.finishTour, lead),
         ...(step < last ? [k.button('tour-skip', 'Skip tour', act.finishTour, { dimColor: true })] : []),
       ]),
     ], { gap: 'md', accessory: k.footnote('Step ' + (step + 1) + ' of ' + (last + 1), { tabular: true }), keepCaption: true }),
@@ -3641,21 +4095,27 @@ function homeTour(k, d, act, h) {
 function allTab(k, d, act) {
   const h = homeContext(d)
   const { w, tightest } = h
-  const hero = [homeHero(k, d, h, act), ...homeTour(k, d, act, h), approvalCard(k, d, act, true)]
-  if (k.isTerminal || k.columns < SPLIT_AT) {
-    return [...hero, needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w, h), ...homeStatus(k, d, act, h), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homeProjects(k, d, act, h), ...homeChart(k, d, act, h), ...homeSessions(k, d, act, h), ...homeFooter(k, d, act, h)]
-  }
+  // what needs an answer comes before anything else: a workflow's go-ahead, then records that could not
+  // be read (nothing below can be trusted to say what waits without them)
+  const failed = h.read === 'failed'
+  const first = [approvalCard(k, d, act, true), ...(failed ? homeStatus(k, d, act, h) : [])]
+  const status = (kk) => (failed ? [] : homeStatus(kk, d, act, h))
+  const hero = [homeHero(k, d, h, act), ...first, ...homeTour(k, d, act, h)]
+  // one column, in the order a day goes: what to do, what is worth doing next, then where things are
+  const oneColumn = () => [...hero, needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w, h), ...status(k), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homeProjects(k, d, act, h), ...homeChart(k, d, act, h), ...homeSessions(k, d, act, h), ...homeFooter(k, d, act, h)]
+  if (k.isTerminal || k.columns < SPLIT_AT) return oneColumn()
   // the hero holds the limits and the week; the left column is what to do, the right where things
-  // are. With nothing for the right (no records read, no desktop sessions) the left takes the width.
+  // are. When either would be empty (no records read, no desktop sessions, nothing waiting) the other
+  // takes the width: the suggestions alone are not a column, and a lone card never sits beside a blank half.
   const [km, ka] = k.split()
-  const aside = [...homeProjects(ka, d, act, h), ...homeChart(ka, d, act, h), ...homeSessions(ka, d, act, h)]
-  if (!aside.length) return [...hero, needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w, h), ...homeStatus(k, d, act, h), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homeFooter(k, d, act, h)]
+  const places = [...homeProjects(ka, d, act, h), ...homeChart(ka, d, act, h), ...homeSessions(ka, d, act, h)]
+  if (!places.length) return oneColumn()
+  const todo = [needsCard(km, d, act, w), runningNowCard(km, d, act), pickupCard(km, d, act, w, h), ...status(km), ...homeInsights(km, d, act, h)]
+  if (!todo.some(Boolean)) return oneColumn()
   return [
     ...hero,
-    km.layout(
-      [needsCard(km, d, act, w), runningNowCard(km, d, act), pickupCard(km, d, act, w, h), ...homeStatus(km, d, act, h), ...homeInsights(km, d, act, h), ...homeNext(km, d, act)],
-      aside,
-    ),
+    // the suggestions close the right column, so the two end near each other
+    km.layout(todo, [...places, ...homeNext(ka, d, act)]),
     ...homeFooter(k, d, act, h),
   ]
 }
@@ -3664,11 +4124,15 @@ function allTab(k, d, act) {
 // One row in every session: what needs you (or that all is well), then context, limits and cost,
 // and a button to the dashboard.
 export function drawBand(k, d, act) {
+  d = withExactPct(d)
   SHARE = costShare(d)
   const h = d.health
   const needs = (d.waiting && d.waiting.needs) || []
   const chats = needs.filter((x) => x.kind !== 'pr')
-  // the headline: a chat waiting for you elsewhere comes first unless something here needs acting on
+  // what waits is counted as Home and the phone count it: chats, pull requests and a workflow's go-ahead
+  const tally = waitingCount(needs, d.flows && d.flows.approval)
+  const waits = tally.chats + tally.prs
+  // the headline: something waiting for you elsewhere comes first unless something here needs acting on
   let glyph = ['✓ ', { color: 'success' }]
   let title = 'All clear'
   let detail = ''
@@ -3679,7 +4143,7 @@ export function drawBand(k, d, act) {
     // a run waiting for your go-ahead holds up this session's work, so it comes first
     glyph = ['● ', { color: 'warning' }]
     title = 'Claude wants to run a workflow'
-    detail = fl.approval.preview.name || ''
+    detail = [fl.approval.preview.name || '', waits ? waitingParts({ ...tally, flows: 0 }) + ' waiting too' : ''].filter(Boolean).join(' · ')
   } else if (isCalm && !chats.length && !mine.length && (fl.suggestions || []).some((x) => x.isFresh)) {
     const x = fl.suggestions.find((y) => y.isFresh)
     glyph = ['● ', { color: 'suggestion' }]
@@ -3691,17 +4155,25 @@ export function drawBand(k, d, act) {
     glyph = ['● ', { color: r.paused || r.status === 'stopping' ? 'warning' : 'suggestion' }, !r.paused && r.status !== 'stopping']
     title = (r.name || 'A workflow') + (r.status === 'stopping' ? ' is stopping' : r.paused ? ' is paused' : ' is running')
     detail = [p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done' : '', p.current ? p.current.title : '', p.usd ? cost(p.usd) + ' so far' : ''].filter(Boolean).join(' · ')
-  } else if (chats.length && isCalm) {
+  } else if (waits && isCalm) {
     glyph = ['● ', { color: 'warning' }]
-    title = chats.length === 1 ? 'One chat is waiting for you' : chats.length + ' chats are waiting for you'
-    detail = chats[0].title + (chats[0].text ? ': ' + chats[0].text : '')
+    title = waitingTitle(tally)
+    detail = needs[0].title + (needs[0].text ? ': ' + needs[0].text : '')
   } else if (h.level !== 'success') {
     glyph = ['● ', h.level === 'info' ? { dimColor: true } : { color: h.level }]
     title = h.title
-    detail = chats.length ? (chats.length === 1 ? 'a chat is waiting for you' : chats.length + ' chats are waiting for you') : ''
+    detail = waits ? waitingTitle(tally).replace(/^./, (c) => c.toLowerCase()) : ''
+  }
+  // an all clear is only said when the records that say what waits were read, as Home says it
+  if (title === 'All clear' && waitingRead(d, { has: !!(d.usage && !d.usage.isEmpty), sc: d.scan || {} }) === 'failed') {
+    glyph = ['● ', { color: 'warning' }]
+    title = 'Can’t tell what’s waiting'
+    // what is known stays plain: no reassurance beside a headline that says the records could not be read
+    // the context meter below says it, when the band has the room for one
+    detail = (d.bandRows || 3) < 2 ? 'Context ' + pctText(d.pct) : ''
   }
   // the gauges: everything that can run out, each with a small meter
-  const levelOf = (pct, warn, err) => (pct >= err ? 'error' : pct >= warn ? 'warning' : 'success')
+  const levelOf = (pct, warn, err) => (shownPct(pct) >= err ? 'error' : shownPct(pct) >= warn ? 'warning' : 'success')
   const gauges = [{ key: 'context', label: 'Context', pct: d.pct, hex: RING_HEX.context, level: levelOf(d.pct, d.opts.contextWarnAt, d.opts.cheaperModelAt) }]
   for (const l of d.limits.slice(0, 2)) gauges.push({ key: l.r.kind, label: l.r.kind === 'seven_day' ? 'Weekly' : limitLabel(l.r.kind).replace(/ limit$/i, ''), pct: l.r.percentUsed, hex: RING_HEX[l.r.kind] || RING_HEX.seven_day_opus, level: l.level === 'info' ? 'success' : l.level, resetsAt: l.o.resetAt, runway: runwayOf(l.r.kind, l.r.percentUsed, l.o.resetAt, d.now) })
   // On desktop each figure takes an equal share of the row, its runway filling the room between its
@@ -3709,7 +4181,7 @@ export function drawBand(k, d, act) {
   const isNarrow = k.columns < 72
   const cellProps = isNarrow ? { width: '50%', paddingRight: 'md' } : { width: 0, flexGrow: 1 }
   const wideGauge = (g) => {
-    const shown = Math.round(g.pct) + '%'
+    const shown = pctText(g.pct)
     const item = { runway: g.runway || { used: g.pct, elapsed: null, runOut: null, ticks: g.key === 'context' ? [d.opts.contextWarnAt] : [] }, hex: tint(g.hex, g.level), label: g.label, valueText: shown }
     return k.Box({
       ...cellProps,
@@ -3725,7 +4197,7 @@ export function drawBand(k, d, act) {
   }
   const gauge = (g) => {
     if (k.hasSvg) return wideGauge(g)
-    const shown = Math.round(g.pct) + '%'
+    const shown = pctText(g.pct)
     const meter = k.hasSvg
       ? k.Box({ width: 5, flexShrink: 0, children: [k.Svg({ source: svgRunway(g.runway ? { ...g.runway, hex: tint(g.hex, g.level) } : { used: g.pct, elapsed: null, runOut: null, ticks: g.key === 'context' ? [d.opts.contextWarnAt] : [], hex: tint(g.hex, g.level) }, { width: 40, height: 14 }), alt: g.label + ' ' + shown, width: 40, height: 14 })] })
       : k.text(textMeter(g.pct, 5), g.level === 'success' ? { color: 'suggestion' } : { color: g.level })
@@ -3739,7 +4211,8 @@ export function drawBand(k, d, act) {
         const pct = p.total ? (p.done / p.total) * 100 : 0
         if (k.hasSvg)
           return k.Box({
-            ...cellProps,
+            // on a phone the workflow has a row of its own, not half of one beside a limit
+            ...(isNarrow ? { width: '100%', paddingRight: 'md' } : cellProps),
             flexDirection: 'row',
             columnGap: 'sm',
             alignItems: 'center',
@@ -3752,20 +4225,29 @@ export function drawBand(k, d, act) {
             ],
           })
         const meter = k.hasSvg ? k.Box({ width: 8, flexShrink: 0, children: [k.Svg({ source: svgMeter([{ value: pct, hex: r.paused ? HEX.warning : HEX.success }], 100, [], true), alt: (r.name || 'Workflow') + ' ' + p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done', height: 6 })] }) : k.text(textMeter(pct, 5), { color: r.paused ? 'warning' : 'suggestion' })
-        return k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', flexShrink: 0, children: [meter, k.text((r.name || 'Workflow') + ' ', { dimColor: true }), k.text(p.done + '/' + p.total, { tabular: true })] })
+        return k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', flexShrink: 0, children: [meter, k.text((r.name || 'Workflow') + ' ', { dimColor: true }), k.text(p.done + ' of ' + p.total, { tabular: true })] })
       })()
     : null
   const u = d.usage && !d.usage.isEmpty ? d.usage : null
   // two different figures, named apart: this session's own, and today across every session
-  const money = u && !flowChip ? 'Today, all sessions: ' + cost(u.today.usd) + (k.columns >= 100 ? ' in ' + plural(u.today.projects, 'project', 'projects') : '') : ''
+  const money = u && !flowChip ? 'Today, all chats: ' + cost(d.today) + (k.columns >= 100 ? ' in ' + plural(u.today.projects, 'project', 'projects') : '') : ''
   // a phone-width band keeps the headline and its button; the rest is on the line below and on Home
   const isTiny = k.columns < 56
   const hasTip = isCalm && !chats.length && !mine.length && (fl.suggestions || []).some((x) => x.isFresh)
   const button = fl.approval ? k.button('band-open', 'Review workflow', act.openWorkflows || act.openPane)
     : hasTip ? k.button('band-open', 'See suggested workflow', act.openWorkflows || act.openPane)
     : mine.length && isCalm && !chats.length ? k.button('band-open', 'Follow it', act.openWorkflows || act.openPane)
-    : chats.length ? k.button('band-open', 'See what’s waiting', act.openHome || act.openPane)
+    : waits ? k.button('band-open', 'See what’s waiting', act.openHome || act.openPane)
     : k.button('band-open', 'Open ToBeBestMe', act.openPane)
+  // a span or a range is never broken across two lines
+  const whole = k.isTerminal ? (t) => t : (t) => holdSpan(holdRange(t))
+  // after the headline and its count, the session's cost: all of it where there is room and none where there is
+  // none, so a tail is never left alone on a second line
+  const own = 'This session ' + cost(d.usd)
+  const room = Math.floor((k.columns * 8.4 - 28 - (d.isPreview || k.isTerminal ? 0 : 150)) / 6)
+  const used = title.length + (detail && !isTiny ? detail.length + 2 : 0) + 5
+  // (a share of the limit is only a figure with its unit, so it is whole or left off; dollars say what they are)
+  const tail = isTiny ? '' : [own + (SHARE ? ' of the weekly limit' : '') + (k.hasSvg && money ? ' · ' + money : ''), ...(SHARE ? [] : [own]), ''].find((t) => !t || k.isTerminal || used + t.length <= room)
   const head = k.Box({
     flexDirection: 'row',
     columnGap: 1,
@@ -3773,7 +4255,7 @@ export function drawBand(k, d, act) {
     width: '100%',
     children: [
       ...(glyph[2] ? [k.live(HEX.bar, 'suggestion', 'Running')] : []),
-      k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Text({ wrap: 'truncate-end', children: [...(glyph[2] ? [] : [k.text(glyph[0], glyph[1])]), k.text(title, { weight: 'semibold' }), ...(detail && !isTiny ? [k.text('  ' + detail, { dimColor: true })] : []), ...(isTiny ? [] : [k.text('  ·  This session ' + cost(d.usd) + (SHARE ? ' of the weekly limit' : '') + (k.hasSvg && money ? ' · ' + money : ''), { dimColor: true, tabular: true })])] })] }),
+      k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Text({ wrap: 'truncate-end', children: [...(glyph[2] ? [] : [k.text(glyph[0], glyph[1])]), k.text(whole(title), { weight: 'semibold' }), ...(detail && !isTiny ? [k.text(whole('  ' + detail), { dimColor: true })] : []), ...(tail ? [k.text(whole('  ·  ' + tail), { dimColor: true, tabular: true })] : [])] })] }),
       ...(d.isPreview ? [] : [button]),
     ],
   })
@@ -3809,12 +4291,12 @@ function autopilotItems(d) {
   const cheap = titleCase(o.cheapModel)
   const items = [
     o.mode === 'always' ? [true, 'Every request uses ' + cheap + '.'] : o.mode === 'off' ? [false, 'Switching to a cheaper model is off.'] : [true, 'Helpers move to ' + cheap + ' when context, a limit or a budget gets tight.'],
-    [o.handoffBeforeCompact, o.handoffBeforeCompact ? 'A handoff note is written before every compaction, so nothing is lost.' : 'No handoff note before compaction.'],
+    [o.handoffBeforeCompact, o.handoffBeforeCompact ? 'A handoff note is written before a compaction, so little is lost.' : 'No handoff note before compaction.'],
     [o.tellClaude, o.tellClaude ? 'Claude is told where the budget stands once things get tight, and keeps its steps small.' : 'Claude isn’t told about the budget.'],
-    [o.paceAlert, 'Alerts come only when a limit will run out early or passes ' + o.limitAlertAt + '%, once each.'],
-    [o.autoCompactAt > 0, o.autoCompactAt > 0 ? 'The conversation compacts by itself at ' + o.autoCompactAt + '%, between turns.' : 'Claude Code compacts on its own when the window fills.'],
+    [o.paceAlert, o.paceAlert ? 'A limit that will run out early or passes ' + o.limitAlertAt + '% is said once each, and so are a reached budget and the context warning.' : 'No warning when a limit will run out early. A limit past ' + o.limitAlertAt + '%, a reached budget and the context warning still alert.'],
+    [o.autoCompactAt > 0, o.autoCompactAt > 0 ? 'The chat compacts by itself at ' + o.autoCompactAt + '%, between turns.' : 'Claude Code compacts on its own when the window fills.'],
   ]
-  if (o.sessionBudget > 0 || o.dailyBudget > 0) items.push([true, 'Budgets: ' + [o.sessionBudget > 0 ? fmtUsd(o.sessionBudget) + ' a session' : '', o.dailyBudget > 0 ? fmtUsd(o.dailyBudget) + ' a day' : ''].filter(Boolean).join(', ') + '. ' + (o.atBudget === 'hold' ? 'New prompts wait once one is reached.' : o.atBudget === 'cheaper' ? 'Work moves to ' + cheap + ' once one is reached.' : 'You’re warned once one is reached.')])
+  if (o.sessionBudget > 0 || o.dailyBudget > 0) items.push([true, 'Budgets: ' + [o.sessionBudget > 0 ? fmtUsd(o.sessionBudget) + ' a chat' : '', o.dailyBudget > 0 ? fmtUsd(o.dailyBudget) + ' a day' : ''].filter(Boolean).join(', ') + '. ' + (o.atBudget === 'hold' ? 'New prompts wait once one is reached.' : o.atBudget === 'cheaper' ? 'Work moves to ' + cheap + ' once one is reached.' : 'You’re warned once one is reached.')])
   return items
 }
 
@@ -3823,22 +4305,28 @@ function autopilotItems(d) {
 function settingsLead(k, d, act) {
   const items = autopilotItems(d)
   const on = items.filter(([isOn]) => isOn).length
-  const src = d.sources || {}
-  const bad = SOURCE_WORDS.filter(([key]) => src[key] && src[key].ok === false)
-  const read = SOURCE_WORDS.filter(([key]) => src[key] && src[key].ok === true).length
-  const headline = bad.length ? (bad.length === 1 ? 'One thing couldn’t be read' : bad.length + ' things couldn’t be read') : on === items.length ? 'Everything is on autopilot' : plural(on, 'thing is', 'things are') + ' on autopilot'
+  const bad = SOURCE_WORDS.filter(([key]) => (d.sources || {})[key] && d.sources[key].ok === false)
+  const read = SOURCE_WORDS.filter(([key]) => (d.sources || {})[key] && d.sources[key].ok === true).length
+  const headline = bad.length ? (bad.length === 1 ? 'One thing couldn’t be read' : bad.length + ' things couldn’t be read') : on === items.length ? 'Everything is on autopilot' : on + ' of ' + items.length + ' things are on autopilot'
   const level = bad.length ? 'warning' : 'success'
-  const facts = bad.length ? bad.map(([, label]) => label).join(', ') + '. An update to Claude Code may have changed it; the sections that use it say less until it can be read.' : (d.version ? 'Claude Code ' + d.version + '. ' : '') + (read ? 'Everything ToBeBestMe reads was read.' : 'Nothing has been read yet.')
+  // sentence case: the first letter drops except in a name (Claude Code)
+  const names = bad.map(([, label]) => (/^Claude/.test(label) ? label : label.replace(/^./, (c) => c.toLowerCase())))
+  const facts = bad.length
+    ? 'Couldn’t read: ' + names.join(', ').replace(/, ([^,]*)$/, ' and $1') + '. An update to Claude Code may have changed ' + (bad.length === 1 ? 'it' : 'them') + '; the sections that use ' + (bad.length === 1 ? 'it say' : 'them say') + ' less until ' + (bad.length === 1 ? 'it can' : 'they can') + ' be read.'
+    : [d.version ? 'Claude Code ' + d.version + '.' : '', read ? '' : 'Nothing has been read yet.'].filter(Boolean).join(' ')
   return lead(k, {
     glyph: k.text(level === 'success' ? '✓ ' : '● ', { color: level }),
     headline,
     facts,
-    figure: { value: on + ' of ' + items.length, caption: 'on autopilot', level: 'success' },
     visual: [
       k.Box({
         flexDirection: 'column',
         rowGap: 'xs',
-        children: items.map(([isOn, words]) => k.hang(k.text(isOn ? '✓' : '○', isOn ? { color: 'success' } : { dimColor: true }), k.text(words, { wrap: 'wrap', dimColor: isOn ? undefined : true }))),
+        children: [
+          // the headline is about what couldn't be read, so say what the list below is
+          ...(bad.length ? [k.text('On autopilot: ' + on + ' of ' + items.length, { weight: 'semibold' })] : []),
+          ...items.map(([isOn, words]) => k.hang(k.text(isOn ? '✓' : '○', isOn ? { color: 'success' } : { dimColor: true }), k.text(words, { wrap: 'wrap', dimColor: isOn ? undefined : true }))),
+        ],
       }),
     ],
   })
@@ -3856,7 +4344,7 @@ function modelCard(k, d, act) {
       children: [
         k.text(m.rec.title, { weight: 'semibold', wrap: 'wrap' }),
         k.footnote(m.rec.detail),
-        ...(m.rec.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('model-advice', m.rec.action.label, () => act.run(m.rec.action.key))])] })] : []),
+        ...(m.rec.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('model-advice', m.rec.action.label, () => act.run(m.rec.action.key)), ...(m.rec.back ? [k.button('model-back', m.rec.back.label, () => act.run(m.rec.back.key), { plain: true, dimColor: true })] : [])])] })] : []),
       ],
     }),
     k.Box({
@@ -3881,7 +4369,8 @@ function longRunCard(k, d, act) {
   const goal = d.view.runGoal || ''
   const o = d.opts
   const body = []
-  if (k.Input) body.push(k.Input({ key: 'run-goal', placeholder: 'What should the run get done? For example: move the API to v2 and update every caller, with tests.', value: goal, rows: 2, submitLabel: 'Plan run', onSubmit: (value) => act.setRunGoal(value) }))
+  // the placeholder is short enough to show whole at a phone's width; the example sits under the field in words that wrap
+  if (k.Input) body.push(k.Input({ key: 'run-goal', label: 'Goal', placeholder: 'What should the run get done?', value: goal, rows: 2, submitLabel: 'Plan run', onSubmit: (value) => act.setRunGoal(value) }), ...(goal ? [] : [k.footnote('For example: move the API to v2 and update every caller, with tests.')]))
   if (goal) {
     const fit = runFit(d)
     const steps = [
@@ -3893,9 +4382,9 @@ function longRunCard(k, d, act) {
     ]
     body.push(
       k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('The plan', { size: 'footnote', weight: 'semibold', dimColor: true }), ...steps.map((s, i) => k.hang(k.text(String(i + 1), { weight: 'semibold', color: k.isTerminal ? 'suggestion' : TINT.purple }), k.text(s, { wrap: 'wrap' })))] }),
-      k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Room in your limits', { size: 'footnote', weight: 'semibold', dimColor: true }), ...(fit.lines.length ? fit.lines.map((l) => k.footnote(l)) : [k.footnote('No usage limits reported; Spending keeps the cost in view.')]), k.text('Best start: ' + fit.start + '.', { weight: 'medium', wrap: 'wrap' })] }),
+      k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Room in your limits', { size: 'footnote', weight: 'semibold', dimColor: true }), ...(fit.lines.length ? fit.lines.map((l) => k.footnote(l)) : [k.footnote('No usage limits reported; Usage keeps the cost in view.')]), k.text('Best start: ' + fit.start + '.', { weight: 'medium', wrap: 'wrap' })] }),
       k.buttons([k.button('run-start', 'Save /long-run and start here', () => act.startLongRun(goal), { variant: 'primary' }), k.button('run-save', 'Save the playbook as /long-run', act.saveLongRun, { dimColor: true })]),
-      k.footnote('Starting saves the playbook as a skill in ~/.claude/skills/long-run (if it isn’t there yet), so any session can follow it, then puts the run in the prompt box for you to send.'),
+      k.footnote('Starting saves the playbook as a skill in ~/.claude/skills/long-run (if it isn’t there yet), so any chat can follow it, then puts the run in the prompt box for you to send.'),
     )
   } else {
     body.push(k.footnote('Describe the goal and press Return to see the plan and how far your limits stretch.'))

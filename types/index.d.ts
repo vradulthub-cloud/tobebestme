@@ -40,7 +40,7 @@ export type BudgetPace = { since: number; fromPct: number; resetsAt: string | nu
 // A usage limit's readings in its current window, for the forecast chart.
 export type BudgetLimitHistory = { resetsAt: string | null; samples: { at: number; pct: number }[] }
 
-export type BudgetHandoff = { at: string | null; reason: string | null; text: string | null; isSurfaced: boolean }
+export type BudgetHandoff = { at: string | null; reason: string | null; text: string | null; isCut?: boolean; isSurfaced: boolean }
 
 // Which alerts have fired, so each fires once per step, window or crossing.
 export type BudgetAlerts = {
@@ -83,11 +83,15 @@ export type BudgetChange = {
   after: string
   note: string
   error: string
-  base: string // the whole file as it was read, checked again before writing
-  next: string // the whole file as it will be written
   done: string // what the toast says once it is written
   adopt: string // a saving idea counted as adopted once written
+  redo: BudgetChangeRedo | null // what the change was made from, for Work it out again (it survives a reload)
 }
+export type BudgetChangeRedo =
+  | { kind: 'skill'; skill: unknown }
+  | { kind: 'rule'; finding: unknown; adopt: string }
+  | { kind: 'manual'; names: string[] }
+  | { kind: 'budget'; fraction: number }
 
 export type BudgetView = {
   tab: string
@@ -117,11 +121,13 @@ export type BudgetView = {
   habitsAt?: number
   day?: string // a day of the week picked on Home's calendar ('YYYY-MM-DD'), or '' for the week
   cardHide?: boolean // the weekly report card shows 'Project 1…' instead of project names
+  showCard?: boolean // the weekly report card's picture is drawn (it is one row of buttons until then)
   project?: string // a project picked from the calendar's legend, by key, or '' for every project
 }
 
 // A workflow run in this session: what it is for, its controls, and each agent by its place.
-export type BudgetFlowAgent = { index: number; label: string; state: string; model: string; phase: string; agentId?: string; requests: number; input: number; output: number; usd: number; queuedAt?: number; startedAt?: number; endedAt?: number; ms?: number; heldFor?: string; error?: string }
+// `takenAt`: when an agent passed its run's cap check and took a place, until it is working (so agents asking together can't all pass).
+export type BudgetFlowAgent = { index: number; label: string; state: string; model: string; phase: string; agentId?: string; requests: number; input: number; output: number; usd: number; queuedAt?: number; startedAt?: number; endedAt?: number; ms?: number; heldFor?: string; error?: string; takenAt?: number }
 export type BudgetFlowRun = {
   runId: string
   taskId: string
@@ -136,18 +142,29 @@ export type BudgetFlowRun = {
   error: string
   paused: boolean
   pausedFor?: string
+  stoppedBy?: string // who stopped the run, when that is known: 'pane' (Stop workflow here) or 'taskstop' (a TaskStop call this session saw); '' when not. A new attempt clears it
   cap: number
   budget?: number
   model: string
   transcriptDir: string
   tokens?: number
   toolCalls?: number
+  tips?: string[] // what the go-ahead check noticed about the script (agents with no model named, a fan-out with no cheaper model…)
+  attempt?: number // how many times this run id has been launched in this session: 1 the first, more for each resume
+  staleRecord?: string // the fingerprint of the record an earlier attempt left, which is not this attempt's end
   agents: Record<string, BudgetFlowAgent>
 }
 export type BudgetFlows = { runs: Record<string, BudgetFlowRun> }
 
-// A model chosen for this session from the dashboard; '' leaves routing to the settings.
-export type BudgetOverride = { main: string; helpers: string }
+// A model chosen for this session; '' leaves routing to the settings. Chosen on the dashboard, requests are
+// sent there. `picked`: the person switched to it with /model, the picker or an IDE, kept from the moment of
+// the switch whatever is routing then; requests are then left as the engine asks (plan mode, a fallback).
+export type BudgetOverride = { main: string; helpers: string; picked?: boolean }
+
+// Helpers started on a model that routing leaves be, by agent id: 'person' when the model was chosen here
+// (a run's model), 'asked' when Claude or a workflow script named it. A reached budget that switches every
+// request moves the asked ones too.
+export type BudgetPinned = Record<string, 'person' | 'asked'>
 
 declare module 'claude-code' {
   interface PluginState {
@@ -170,6 +187,7 @@ declare module 'claude-code' {
       skillUse: Record<string, number>
       view: BudgetView
       override: BudgetOverride
+      pinned: BudgetPinned
       flows: BudgetFlows
       change: BudgetChange
     }

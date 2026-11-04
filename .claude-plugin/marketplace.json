@@ -4,13 +4,13 @@
     "name": "ToBeBestMe contributors"
   },
   "metadata": {
-    "description": "ToBeBestMe: one dashboard for every Claude Code project: chats waiting for you, where each project got to, the workflows Claude runs, and your usage limits, spending and context."
+    "description": "A mod that runs inside Claude Code itself, not a separate app: what waits for you, your week's limits and what workflows cost. Independent; not made by Anthropic."
   },
   "plugins": [
     {
       "name": "tobebestme",
       "source": "./",
-      "description": "A /tobebestme dashboard for every project: chats waiting for your answer, where each project got to, workflows you can follow and steer, and usage limits, spending and context in one place, with a cheaper model when things get tight, handoff notes before compaction, and a skill builder"
+      "description": "A mod that runs inside Claude Code itself, not a separate app: what waits for you, your week's limits and what workflows cost. Independent; not made by Anthropic."
     }
   ]
 }

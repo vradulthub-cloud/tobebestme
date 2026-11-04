@@ -15,6 +15,7 @@ const E2E = join(dirname(fileURLToPath(import.meta.url)), '..')
 const MOD = join(E2E, '..')
 export const OUT = join(E2E, '.out')
 export const PAGES = join(OUT, 'pages')
+export const STEPS = join(OUT, 'steps')
 const COPY = join(OUT, 'mod')
 
 // Pane widths in cells: a phone, a tablet or a narrow dock, a wide desktop pane, and one made full screen.
@@ -33,6 +34,9 @@ const e2ePrint = (meta: any, tree: any) => console.log('@@TREE\\t' + JSON.string
 async function e2eDump($: any, state: string) {
   for (const cols of E2E_COLS) {
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: cols } } as any)
+    await ui.press({ key: 'tab-workflows' }) // the month's runs are read once this tab is open
+    await new Promise((go) => setTimeout(go, 200)) // the first reads land, so no width is drawn before the month's runs are known
+    await ui.redraw()
     for (const details of cols === 88 ? [false, true] : [false]) {
       if (details) await ui.press({ key: 'details' })
       for (const view of E2E_TABS) {
@@ -43,9 +47,57 @@ async function e2eDump($: any, state: string) {
     }
     await ui.unmount()
     const band = await $.ui.mount({ plugin: 'tobebestme', component: 'AbovePrompt', surface: 'desktop', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: cols, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
+    await new Promise((go) => setTimeout(go, 200))
+    await band.redraw()
     e2ePrint({ state, view: 'band', cols, details: false }, await band.drawn())
     await band.unmount()
   }
+}
+
+// A pane or band drawn once, then through the updates that happen all the time while nothing a
+// person can see has changed (a redraw, a clock tick, a cost update, the same records read again), and
+// once through an hour's drift as a control that may change. Each step prints its whole drawing, so a
+// check can say which drawings the app would have swapped or rebuilt.
+const e2eStepPrint = (meta: any, tree: any) => console.log('@@STEP\\t' + JSON.stringify(meta) + '\\t' + JSON.stringify(tree))
+
+async function e2eSteps($: any, clock: any, usage: any, state: string) {
+  const targets = [148, 88].flatMap((cols) => ['all', 'workflows', 'usage'].map((view) => ({ view, cols }))).concat([{ view: 'band', cols: 148 }, { view: 'band', cols: 88 }])
+  for (const t of targets) {
+    clock.now = NOW
+    const isBand = t.view === 'band'
+    const ui = await $.ui.mount(isBand
+      ? ({ plugin: 'tobebestme', component: 'AbovePrompt', surface: 'desktop', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: t.cols, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as any)
+      : ({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: t.cols } } as any))
+    if (!isBand) await ui.press({ key: 'tab-' + t.view })
+    await new Promise((go) => setTimeout(go, 200)) // the first reads land
+    clock.now += 3000 // the entrance is over
+    await ui.redraw()
+    let n = 0
+    const step = async (name: string, isQuiet: boolean) => {
+      await ui.redraw()
+      e2eStepPrint({ state, view: t.view, cols: t.cols, n: n++, step: name, isQuiet }, await ui.drawn())
+    }
+    await step('drawn', true)
+    await step('a redraw with nothing changed', true)
+    const cost0 = usage.cost.usd
+    usage.cost = { usd: cost0 + 0.01 }
+    await $.session.measure({ context: usage.context, rateLimits: usage.rateLimits, cost: usage.cost, changed: ['cost'] } as any)
+    await step('a cost update', true)
+    usage.cost = { usd: cost0 }
+    if (await ui.find({ type: 'Button', key: 'usage-refresh' })) await ui.press({ key: 'usage-refresh' })
+    await step('the same records read again', true)
+    // a running workflow's own minute is real news (its timeline moves), so its tab skips the clock steps
+    if (t.view !== 'workflows') {
+      clock.now += 60_000
+      await step('a minute on', true)
+      clock.now += 5 * 60_000
+      await step('five minutes on, inside the quarter hour', true)
+    }
+    clock.now += 45 * 60_000
+    await step('three quarters of an hour on', false)
+    await ui.unmount()
+  }
+  clock.now = NOW
 }
 
 kitTest('e2e: an empty session', { timeoutMs: 120_000 }, async ($: any, on: any) => {
@@ -58,7 +110,7 @@ kitTest('e2e: an empty session', { timeoutMs: 120_000 }, async ($: any, on: any)
 kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true } }, async ($: any, on: any) => {
   const { store, usage, clock } = stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN }, rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'seven_day_opus', percentUsed: 38, resetsAt: '2026-10-25T21:00:00Z' }] })
   effects(on)
-  on('turn.start', (_$: unknown, e: any) => ({ turnId: e.turnId }))
+  on('session.measure', (_$: unknown, e: any) => ({ changed: e.changed }))
   // real sessions carry long titles and long branch names; neither may push a column off the pane
   waitingDesk(on, [], [
     { sessionId: 'local_long', title: 'Price tracker · nightly sync run (scraper tasks + scoreboard) and the follow-up review', cwd: '/Users/me/Projects/price-tracker-app', branch: 'claude/live-deployment-review-3f9a2c-remaining-cleanup-work-7b41e0', prNumber: 874, prState: 'MERGED', isRunning: false, isArchived: false, lastActivityAt: '2026-10-23T09:00:00Z' },
@@ -101,12 +153,13 @@ kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true 
     await $.turn.start({ turnId: 't' + i, text: 'go' } as any)
     usage.context = { ...usage.context, tokens: ctx - (9 - i) * 8_000 }
     usage.cost = { usd: 12.5 - (9 - i) * 0.9 }
-    await completeTurn($, { ...USAGE, input_tokens: 900, cache_read_input_tokens: ctx - (9 - i) * 8_000, output_tokens: 1_200 + i * 80, model: i % 4 === 3 ? 'claude-sonnet-5-5' : 'claude-opus-5-5' }, 70_000 + i * 6_000)
+    await completeTurn($, { ...USAGE, input_tokens: 900, cache_read_input_tokens: ctx - (9 - i) * 8_000, output_tokens: 1_200 + i * 80, model: i % 4 === 3 ? 'claude-sonnet-5-5' : 'claude-opus-5-5' }, 70_000 + i * 6_000, { started: false }) // the turn was started above, at the cost it began from
   }
   clock.now = NOW
   usage.context = { ...usage.context, tokens: ctx }
   usage.cost = { usd: 12.5 }
   await e2eDump($, 'busy')
+  await e2eSteps($, clock, usage, 'busy')
   // the phone's lobby, at a phone's width
   const lobby = await $.ui.mount({ ...PANE, surface: 'mobile', props: { ...PANE.props, bodyColumns: 40 } } as any)
   e2ePrint({ state: 'busy', view: 'lobby', cols: 40, details: false }, await lobby.drawn())
@@ -122,6 +175,15 @@ kitTest('e2e: a busy day', { timeoutMs: 180_000, options: { notifications: true 
     e2ePrint({ state: 'focused', view: 'all', cols, details: false }, await ui.drawn())
     await ui.press({ key: 'pick-week' })
     await ui.press({ key: 'pick-all' })
+    await ui.unmount()
+  }
+  // the weekly report card with its picture shown, at a phone's width and at a desktop's: it is one row of buttons until asked
+  for (const cols of [40, 88, 148]) {
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: cols } } as any)
+    await ui.press({ key: 'tab-usage' })
+    await ui.press({ key: 'card-preview' })
+    e2ePrint({ state: 'card', view: 'usage', cols, details: false }, await ui.drawn())
+    await ui.press({ key: 'card-preview' })
     await ui.unmount()
   }
 })
@@ -181,7 +243,18 @@ export function exportPages({ claude = process.env.CLAUDE_BIN || 'claude' } = {}
   rmSync(PAGES, { recursive: true, force: true })
   mkdirSync(PAGES, { recursive: true })
   const manifest = []
+  rmSync(STEPS, { recursive: true, force: true })
+  mkdirSync(STEPS, { recursive: true })
+  const stepList = []
   for (const line of out.split('\n')) {
+    const st = /@@STEP\t(\{.*?\})\t(.*)$/.exec(line)
+    if (st) {
+      const meta = JSON.parse(st[1])
+      const file = [meta.state, meta.view, meta.cols, meta.n].join('-') + '.json'
+      writeFileSync(join(STEPS, file), st[2])
+      stepList.push({ ...meta, file })
+      continue
+    }
     const m = /@@TREE\t(\{.*?\})\t(.*)$/.exec(line)
     if (!m) continue
     const meta = JSON.parse(m[1])
@@ -198,6 +271,7 @@ export function exportPages({ claude = process.env.CLAUDE_BIN || 'claude' } = {}
     }
   }
   writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1))
+  writeFileSync(join(OUT, 'steps.json'), JSON.stringify(stepList, null, 1))
   return manifest
 }
 

@@ -3,10 +3,11 @@
 // spacing steps, its type sizes, absolutely placed boxes against their parent, hover cards revealed
 // by their keyed Box or their hover `scope` group, and Buttons as real buttons with their names.
 // It is an approximation of the app, not the app: checks here catch layout and paint-order bugs
-// (a card cut off at the top, text drawn over another), not the app's exact pixels. Where the app's
-// own renderer sets a rule, this follows it: a drawing with no words is dropped, a still drawing is
-// sized as an image and an interactive one as a frame (300 by 150 where not told), and a box is a
-// positioning parent only when it holds an absolutely placed box, with no stacking order beyond that.
+// (a card cut off at the top, text drawn over another), not the app's exact pixels. Where the mod
+// types state a rule, this follows it, otherwise it is an approximation: a
+// drawing with no words is dropped, a still drawing is sized as an image and an interactive one as a
+// frame (300 by 150 where not told), and a box is a positioning parent only when it holds an
+// absolutely placed box, with no stacking order beyond that.
 
 const STEP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 }
 const CELL_X = 8.4
@@ -14,10 +15,15 @@ const CELL_Y = 18
 // The app's colours on a dark pane and on a light one: the theme's own names resolve to one or the
 // other, and the mod's own hex colours are drawn as they are.
 const SCHEMES = {
-  dark: { theme: { success: '#4CC38A', warning: '#E8A33D', error: '#F2555A', suggestion: '#5AA9FF', inactive: '#8a8a8a', subtle: '#555', text: '#ececec' }, dim: '#9b9b9b', dimButton: '#a0a0a0', text: '#ececec', bg: '#1e1e1e', button: '#353535', buttonText: '#ececec', primary: '#f2f2f2', primaryText: '#111', border: '#3b3b3b', field: '#1e1e1e', fieldBorder: '#444', link: '#5AA9FF' },
-  light: { theme: { success: '#1B7A34', warning: '#B34C00', error: '#D70015', suggestion: '#0040DD', inactive: '#636366', subtle: '#b0b0b6', text: '#1d1d1f' }, dim: '#636366', dimButton: '#636366', text: '#1d1d1f', bg: '#ffffff', button: '#e3e3e8', buttonText: '#1d1d1f', primary: '#1d1d1f', primaryText: '#ffffff', border: '#b4b4ba', field: '#ffffff', fieldBorder: '#a8a8ae', link: '#0040DD' },
+  dark: { theme: { success: '#4CC38A', warning: '#E8A33D', error: '#FF6B64', suggestion: '#5AA9FF', inactive: '#8a8a8a', subtle: '#555', text: '#ececec' }, dim: '#9b9b9b', dimButton: '#a0a0a0', text: '#ececec', bg: '#1e1e1e', button: '#353535', buttonText: '#ececec', primary: '#f2f2f2', primaryText: '#111', border: '#3b3b3b', field: '#1e1e1e', fieldBorder: '#444', link: '#5AA9FF' },
+  light: { theme: { success: '#1B7A34', warning: '#B34C00', error: '#C4001A', suggestion: '#0040DD', inactive: '#636366', subtle: '#b0b0b6', text: '#1d1d1f' }, dim: '#636366', dimButton: '#636366', text: '#1d1d1f', bg: '#ffffff', button: '#e3e3e8', buttonText: '#1d1d1f', primary: '#1d1d1f', primaryText: '#ffffff', border: '#b4b4ba', field: '#ffffff', fieldBorder: '#a8a8ae', link: '#0040DD' },
 }
 let S = SCHEMES.dark
+// With `frames`, an interactive drawing is a real <iframe srcdoc>, as the app draws it (the markup goes
+// through a sanitiser into a sandboxed frame). A still drawing is an inline image either way. Off by
+// default: the layout and paint checks read a drawing's own text and shapes, which a frame hides
+// from the page; the checks of what a redraw rebuilds turn it on.
+let FRAMES = false
 const THEME = SCHEMES.dark.theme
 const SIZE = { caption: 11, footnote: 12, body: 14, heading: 15, title: 22 }
 const WEIGHT = { regular: 400, medium: 500, semibold: 600, bold: 700 }
@@ -94,11 +100,13 @@ function node(n) {
       return '<span class="t" style="' + style(st) + '">' + kids + '</span>'
     }
     case 'Button': {
+      // the label names the control; words given as children are what is drawn on it
       const label = p.label ?? textOf(n)
+      const shown = textOf(n) || label
       const st = p.plain
         ? { color: p.dimColor ? S.dim : S.text, 'font-size': 13, background: 'none', border: 0, padding: 0 }
         : { background: p.variant === 'primary' ? S.primary : S.button, color: p.variant === 'primary' ? S.primaryText : p.dimColor ? S.dimButton : S.buttonText, 'border-radius': 7, padding: '3px 10px', 'font-size': 13, 'white-space': 'nowrap', border: 0 }
-      return '<button type="button" data-key="' + esc(p.key || '') + '" data-variant="' + esc(p.variant || '') + '" aria-label="' + esc(label) + '" style="' + style(st) + '">' + esc(label) + '</button>'
+      return '<button type="button" data-key="' + esc(p.key || '') + '" data-variant="' + esc(p.variant || '') + '" aria-label="' + esc(label) + '" style="' + style(st) + '">' + esc(shown) + '</button>'
     }
     case 'Svg': {
       // the app refuses a drawing whose words are blank, and draws nothing in its place
@@ -118,6 +126,9 @@ function node(n) {
         // an image: the size it is given, or its own; with only a height, as wide as its proportions make it
         width = p.width ?? own('width') ?? (p.height && box ? (p.height * Number(box[1])) / Number(box[2]) : 300)
         height = p.height ?? own('height') ?? (box ? (width * Number(box[2])) / Number(box[1]) : 150)
+      }
+      if (FRAMES && p.isInteractive) {
+        return '<div data-svg="1" data-frame-slot="1" style="' + style({ width, 'max-width': '100%', height, 'flex-shrink': 0, display: 'flex' }) + '"><iframe title="' + esc(p.alt) + '" sandbox="" scrolling="no" srcdoc="' + esc(p.source) + '" style="border:0;width:100%;height:100%;color-scheme:normal"></iframe></div>'
       }
       return '<div role="img" aria-label="' + esc(p.alt) + '" data-svg="1"' + (p.isInteractive && p.width === undefined ? ' data-frame="default"' : '') + (/preserveAspectRatio="none"/.test(root) ? ' data-fluid="1"' : '') + ' style="' + style({ width, 'max-width': '100%', height, 'flex-shrink': 0, display: 'flex' }) + '">' + src + '</div>'
     }
@@ -146,6 +157,22 @@ function hoverAt(target) {
   if (scope) document.querySelectorAll('[data-scope]').forEach((x) => { if (x.getAttribute('data-scope') === scope) x.classList.add('lit') })
 }
 window.hoverAt = hoverAt
+// The app's rebuild, as far as frames go: a redraw hands it the new tree, and a frame whose element
+// is equal to the one already there is left alone, while any other has its document replaced (which
+// loads it again). \`window.frameLoads\` counts every load, so a check can say how many a redraw cost.
+window.frameLoads = 0
+document.addEventListener('load', (e) => { if (e.target && e.target.tagName === 'IFRAME') window.frameLoads++ }, true)
+window.applyTree = (html) => {
+  const next = new DOMParser().parseFromString(html, 'text/html')
+  const old = [...document.querySelectorAll('iframe')]
+  const fresh = [...next.querySelectorAll('iframe')]
+  if (old.length !== fresh.length) {
+    // a different set of frames is a different tree: every frame in it is new
+    document.getElementById('pane').innerHTML = next.getElementById('pane').innerHTML
+    return
+  }
+  fresh.forEach((f, i) => { if (!old[i].isEqualNode(f)) old[i].setAttribute('srcdoc', f.getAttribute('srcdoc')) })
+}
 document.addEventListener('mouseover', (e) => hoverAt(e.target))
 document.addEventListener('mouseleave', () => hoverAt(null))
 `
@@ -155,9 +182,11 @@ const CSS = `
 button:focus-visible { outline: 2px solid #5AA9FF; outline-offset: 2px; }
 `
 
-export function renderPage(tree, { width = 720, title = 'ToBeBestMe', scheme = 'dark' } = {}) {
+export function renderPage(tree, { width = 720, title = 'ToBeBestMe', scheme = 'dark', frames = false } = {}) {
   S = SCHEMES[scheme] || SCHEMES.dark
+  FRAMES = frames
   const body = node(tree)
+  FRAMES = false
   return (
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="' + scheme + '"><title>' + esc(title) + '</title><style>' + CSS + '</style></head>' +
     '<body style="margin:0;background:' + S.bg + ';color:' + S.text + ';font:14px -apple-system,BlinkMacSystemFont,system-ui,sans-serif;">' +

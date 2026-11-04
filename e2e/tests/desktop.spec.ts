@@ -2,10 +2,11 @@ import { test, expect, type Page } from '@playwright/test'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { renderPage } from '../lib/render.mjs'
 
 // Every view of ToBeBestMe, in an empty session, a busy day and with a workflow waiting for an
-// answer, at a phone, a tablet and a desktop width, checked against the design rules it follows
-// (Apple's Human Interface Guidelines): nothing spills sideways, no type under 11px, no text drawn
+// answer, at a phone, a tablet and a desktop width, checked against the design rules in DESIGN.md:
+// nothing spills sideways, no type under 11px, no text drawn
 // over other text, every hover card fully in view and on top, every control named, no
 // ALL-CAPS labels, and the mod's own colours readable on the pane.
 
@@ -189,15 +190,22 @@ for (const v of manifest) {
         const ratio = contrast(cs.fill, paneBg)
         if (ratio < 3) drawn.push(`${ratio.toFixed(2)}:1 mark ${cs.fill} (${m.tagName})`)
       }
-      return { small, overlaps, unnamed, shouting, faint, drawn: [...new Set(drawn)].slice(0, 6), buttons: document.querySelectorAll('button').length }
+      // a label, a figure or a sentence is never ended with an ellipsis: a narrow pane stacks a value under its label and
+      // wraps what it says. Only a long name (a session's title, a branch) is cut, and a name that long runs past 60 characters.
+      const cut = [...document.querySelectorAll('#pane *')]
+        .filter((el) => !inCard(el) && getComputedStyle(el).textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1)
+        .map((el) => (el.textContent || '').trim())
+        .filter((text) => text.length < 60)
+      return { small, overlaps, unnamed, shouting, faint, cut: [...new Set(cut)].slice(0, 5), drawn: [...new Set(drawn)].slice(0, 6), buttons: document.querySelectorAll('button').length }
     })
     expect.soft(report.small, 'type under 11px: ' + JSON.stringify(report.small)).toEqual([])
     expect.soft(report.overlaps, 'text drawn over other text: ' + JSON.stringify(report.overlaps)).toEqual([])
     expect.soft(report.unnamed, 'controls without a name: ' + JSON.stringify(report.unnamed)).toEqual([])
     expect.soft(report.shouting, 'labels in capitals: ' + JSON.stringify(report.shouting)).toEqual([])
     expect.soft(report.faint, 'text below WCAG AA contrast: ' + JSON.stringify(report.faint)).toEqual([])
+    expect.soft(report.cut, 'words cut short with an ellipsis: ' + JSON.stringify(report.cut)).toEqual([])
     expect.soft(report.drawn, 'a drawing’s words or marks below WCAG contrast on this pane: ' + JSON.stringify(report.drawn)).toEqual([])
-    // one primary action per view (Apple's rule): the white button is the main thing to do
+    // one primary action per view: the white button is the main thing to do
     const primaries = await page.locator('button[data-variant=primary]').allTextContents()
     expect.soft(primaries.length, 'more than one primary button: ' + primaries.join(', ')).toBeLessThanOrEqual(1)
 
@@ -243,6 +251,28 @@ for (const v of manifest) {
     info.annotations.push({ type: 'buttons', description: String(report.buttons) })
   })
 }
+
+// The weekly report card is a picture to keep and post: whatever the pane's width, it wraps what it says, so a figure in it
+// (a run-out time, a dollar amount) is never cut short and nothing runs past the card's own edge.
+test('the weekly report card keeps every word inside its picture, at every width', async ({ page }) => {
+  for (const v of manifest.filter((m) => m.state === 'card')) {
+    await open(page, v)
+    const spill = await page.evaluate(() => {
+      const card = document.querySelector('#pane svg[data-poster]')
+      if (!card) return ['no report card is drawn']
+      const box = card.getBoundingClientRect()
+      const out: string[] = []
+      for (const t of card.querySelectorAll('text')) {
+        const r = t.getBoundingClientRect()
+        const text = (t.textContent || '').trim()
+        if (r.right > box.right - 8 || r.left < box.left + 8) out.push(`“${text.slice(0, 40)}” ${Math.round(r.left - box.left)}–${Math.round(r.right - box.left)}px of ${Math.round(box.width)}`)
+        if (/…$/.test(text) && /[\d$%]/.test(text)) out.push(`a figure cut short: “${text}”`)
+      }
+      return out.slice(0, 5)
+    })
+    expect(spill, v.page + ': words past the picture’s edge or cut short').toEqual([])
+  }
+})
 
 test('hovering a row shows its card and leaving hides it, with the real pointer', async ({ page }) => {
   const v = manifest.find((m) => m.state === 'busy' && m.view === 'all' && m.cols === 88 && !m.details)!
@@ -345,14 +375,16 @@ test('the run-out is hatched, its marker pulses, bars spring up and the figure i
   expect(await live(), 'nothing animates with motion allowed').toBeGreaterThan(0)
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
   expect(await live(), 'something still animates with reduced motion set').toBe(0)
-  // the decoration (falling tokens, sheen, halo) is not drawn at all
+  // the decoration (sheen, halo) is not drawn at all
   const shown = await page.evaluate(() => [...document.querySelectorAll('#pane svg .mpt, #pane svg .msh, #pane svg .mhalo')].filter((e) => getComputedStyle(e).display !== 'none').length)
   expect(shown, 'decorative marks are still drawn with reduced motion set').toBe(0)
 })
 
-test('every drawing is one the Claude app draws as made: it has words and a size within the app’s bounds, and an interactive one comes through the app’s scrub whole', async ({ page }) => {
-  // the app's own rules, read from its renderer: blank words draw nothing, a frame with no width is
-  // 300px, sizes stop at 4096px, and an interactive drawing is cleaned by DOMPurify before its frame
+test('every drawing meets the mod types’ Svg contract: it has words, a size within bounds, and an interactive one holds only markup a script-less frame keeps whole', async ({ page }) => {
+  // the contract in the mod types: blank words draw nothing, sizes run 1 to 4096px, and an interactive
+  // drawing is shown in a sandboxed frame with no script, so its markup holds none of what a
+  // conservative scrub would strip (script, foreignObject, image, a or iframe, on* attributes, a
+  // link that leaves the drawing)
   const trees = [...new Set(manifest.map((m) => join(OUT, 'pages', m.page.replace(/\.html$/, '.json'))))].filter((f) => existsSync(f)).map((f) => JSON.parse(readFileSync(f, 'utf8')))
   const svgs = new Map<string, any>()
   const walk = (n: any) => {
@@ -368,29 +400,37 @@ test('every drawing is one the Claude app draws as made: it has words and a size
     expect(String(p.source).length).toBeLessThanOrEqual(131072)
   }
   await page.setContent('<!doctype html><body></body>')
-  await page.addScriptTag({ path: join(fileURLToPath(new URL('.', import.meta.url)), '..', 'node_modules', 'dompurify', 'dist', 'purify.min.js') })
   const interactive = [...svgs.values()].filter((p) => p.isInteractive).map((p) => ({ alt: String(p.alt), source: String(p.source) }))
   expect(interactive.length).toBeGreaterThan(3)
   const losses = await page.evaluate((list) => {
-    const keep = (name: string, value: string) => name.startsWith('on') ? false : name === 'href' || name === 'xlink:href' ? value.trim().startsWith('#') : true
+    const banned = new Set(['script', 'foreignobject', 'image', 'a', 'iframe'])
+    // a second net, because a banned list alone passes any tag it has not heard of: an interactive drawing
+    // may use only these, so a new element has to be added here on purpose. This is a weaker check than
+    // the renderer's own scrub, which may drop more than it lists
+    const allowed = new Set(['svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'defs', 'lineargradient', 'radialgradient', 'stop', 'filter', 'fegaussianblur', 'style', 'title', 'clippath', 'mask', 'pattern', 'animate'])
     return list.flatMap(({ alt, source }) => {
-      const purify = (window as any).DOMPurify(window)
-      purify.addHook('uponSanitizeAttribute', (_: any, a: any) => { if (!keep(a.attrName, a.attrValue)) a.keepAttr = false })
-      const frag = purify.sanitize(source, { USE_PROFILES: { svg: true, svgFilters: true }, ADD_TAGS: ['animate', 'set', 'use'], ADD_ATTR: ['from', 'to', 'calcMode'], FORBID_TAGS: ['script', 'foreignObject', 'image', 'a', 'iframe'], ALLOW_DATA_ATTR: false, ALLOW_UNKNOWN_PROTOCOLS: false, FORCE_BODY: true, RETURN_DOM_FRAGMENT: true })
-      const kids = [...frag.childNodes].filter((n: any) => n.nodeType !== 3 || n.textContent.trim())
-      if (kids.length !== 1 || kids[0].localName !== 'svg') return [alt + ': the scrub left no drawing, so the app shows its words instead']
-      const before = new DOMParser().parseFromString('<body>' + source + '</body>', 'text/html').body
-      const count = (root: any) => { const m: Record<string, number> = {}; root.querySelectorAll('*').forEach((el: any) => { m['<' + el.localName + '>'] = (m['<' + el.localName + '>'] || 0) + 1; for (const a of el.attributes) m[a.name] = (m[a.name] || 0) + 1 }); return m }
-      const a = count(before), b = count(frag)
-      // non-scaling strokes are scrubbed, which only matters in a drawing stretched to its slot
-      const isStretched = /preserveAspectRatio="none"/.test(source)
-      return Object.keys(a).filter((k) => (b[k] || 0) < a[k] && (k !== 'vector-effect' || isStretched)).map((k) => alt + ': the scrub drops ' + k)
+      const doc = new DOMParser().parseFromString(source, 'image/svg+xml')
+      const root = doc.documentElement
+      if (doc.querySelector('parsererror') || root.localName !== 'svg') return [alt + ': the markup is not one SVG document']
+      const out: string[] = []
+      root.querySelectorAll('*').forEach((el: any) => {
+        if (banned.has(el.localName.toLowerCase())) out.push(alt + ': holds <' + el.localName + '>')
+        else if (!allowed.has(el.localName.toLowerCase())) out.push(alt + ': holds <' + el.localName + '>, which the scrub may change')
+        for (const a of el.attributes) {
+          const name = a.name.toLowerCase()
+          if (name.startsWith('on')) out.push(alt + ': holds the ' + a.name + ' attribute')
+          else if ((name === 'href' || name === 'xlink:href') && !a.value.trim().startsWith('#')) out.push(alt + ': links outside the drawing')
+          // the scrub strips vector-effect, so an interactive drawing is made at its own width and carries none
+          else if (name === 'vector-effect') out.push(alt + ': holds vector-effect, which the scrub strips')
+        }
+      })
+      return out
     })
   }, interactive)
   expect(losses).toEqual([])
 })
 
-test('a drawing stretched to its slot fills it, and the lead figure’s glow is drawn inside it, under the digits', async ({ page }) => {
+test('a drawing stretched to its slot fills it, and the lead figure’s glow, when it is live, is drawn inside it, under the digits', async ({ page }) => {
   for (const view of ['all', 'overview', 'usage']) {
     const v = manifest.find((m) => m.state === 'busy' && m.view === view && m.cols === 148 && !m.details && !m.scheme)!
     await open(page, v)
@@ -401,6 +441,76 @@ test('a drawing stretched to its slot fills it, and the lead figure’s glow is 
       return { alt: el.getAttribute('aria-label')!.slice(0, 50), width: Math.round(el.getBoundingClientRect().width), room: Math.round(room) }
     }).filter((x) => x.width < x.room - 2))
     expect(short, view + ': a stretched drawing short of its slot').toEqual([])
-    expect(await page.locator('svg[data-fig] .bloom text, svg.mwk .bloom text').count(), view + ': the lead figure has no glow').toBeGreaterThan(0)
+    // the figure is a gradient; its glow is drawn under the digits, inside the drawing, and only for what is live now
+    expect(await page.locator('svg[data-fig] text, svg.mwk text').count(), view + ': the lead figure is not drawn').toBeGreaterThan(0)
+    const lone = await page.evaluate(() => [...document.querySelectorAll('svg[data-fig] .bloom, svg.mwk .bloom')].filter((b) => !b.closest('svg')!.querySelector('text:not(.bloom text)')).length)
+    expect(lone, view + ': a glow without its digits').toBe(0)
   }
 })
+
+// What the app does with a redraw: an image whose markup changed is swapped (its loops start over)
+// and a frame whose markup changed is rebuilt (it blanks for a frame or two and its animations start
+// over). So a redraw where nothing visible changed must hand every drawing over byte for byte. The
+// export drew each pane and the band, then walked them through the updates that come all the time:
+// a redraw, a cost update, the same records read again, and the clock moving inside a quarter hour.
+type Step = { state: string; view: string; cols: number; n: number; step: string; isQuiet: boolean; file: string }
+const steps: Step[] = existsSync(join(OUT, 'steps.json')) ? JSON.parse(readFileSync(join(OUT, 'steps.json'), 'utf8')) : []
+const treeOf = (s: Step) => JSON.parse(readFileSync(join(OUT, 'steps', s.file), 'utf8'))
+const drawingsOf = (tree: any): { alt: string; source: string; isInteractive: boolean }[] => {
+  const out: any[] = []
+  const walk = (n: any) => {
+    if (!n || typeof n !== 'object') return
+    if (n.type === 'Svg' && String(n.props?.alt ?? '').trim()) out.push({ alt: String(n.props.alt), source: String(n.props.source), isInteractive: !!n.props.isInteractive })
+    for (const c of n.children || []) walk(c)
+  }
+  walk(tree)
+  return out
+}
+const groups = new Map<string, Step[]>()
+for (const s of steps) groups.set(s.view + ' at ' + s.cols, [...(groups.get(s.view + ' at ' + s.cols) || []), s])
+
+test('the steps were drawn', () => {
+  expect(groups.size, 'the export drew no update steps').toBeGreaterThanOrEqual(8)
+})
+
+for (const [name, list] of groups) {
+  test(`a quiet update swaps no image and rebuilds no frame › ${name}`, async ({ page }) => {
+    const base = list[0]
+    const first = drawingsOf(treeOf(base))
+    expect(first.length, name + ': something is drawn').toBeGreaterThan(0)
+    // the drawings the app would swap or rebuild at each step
+    const swapped = (s: Step) => {
+      const now = drawingsOf(treeOf(s))
+      return now.length !== first.length ? ['count ' + first.length + ' -> ' + now.length] : first.flatMap((w, i) => (w.source === now[i].source ? [] : [(w.isInteractive ? 'frame ' : 'image ') + w.alt.slice(0, 50)]))
+    }
+    const quiet = list.filter((s) => s.isQuiet && s !== base)
+    expect(quiet.length, name + ': has quiet steps').toBeGreaterThan(2)
+    for (const s of quiet) expect(swapped(s), name + ' › ' + s.step).toEqual([])
+    // the control: after three quarters of an hour the forecasts really have moved, so the check can fail
+    const drift = list.find((s) => !s.isQuiet)!
+    if (name.startsWith('all') || name.startsWith('usage')) expect(swapped(drift).length, name + ': a real change is seen').toBeGreaterThan(0)
+
+    // and in a browser: interactive drawings as real frames, a redraw applied as the app applies it
+    // (an equal frame left alone, any other loaded again), counting every load
+    const render = (s: Step) => renderPage(treeOf(s), { width: Math.round(s.cols * 8.4) + 28, frames: true })
+    await page.setViewportSize({ width: VIEWPORT[base.cols] ?? 1280, height: 900 })
+    await page.setContent(render(base))
+    const frames = await page.locator('iframe').count()
+    expect(frames, name + ': it has frames').toBe(first.filter((d) => d.isInteractive).length)
+    if (name.startsWith('all') || name.startsWith('usage')) expect(frames, name + ': the forecasts are frames').toBeGreaterThan(0)
+    if (frames) await page.waitForFunction((n) => (window as any).frameLoads >= n, frames)
+    await page.evaluate(() => ((window as any).frameLoads = 0))
+    for (const s of quiet) {
+      await page.evaluate((html) => (window as any).applyTree(html), render(s))
+      await page.waitForTimeout(120)
+      expect(await page.evaluate(() => (window as any).frameLoads), name + ' › ' + s.step + ': frames loaded').toBe(0)
+    }
+    // the control rebuilds exactly the frames whose markup changed
+    const after = drawingsOf(treeOf(drift))
+    const changed = after.length === first.length ? swapped(drift).filter((x) => x.startsWith('frame ')).length : after.filter((d) => d.isInteractive).length
+    await page.evaluate((html) => (window as any).applyTree(html), render(drift))
+    await page.waitForTimeout(400)
+    expect(await page.evaluate(() => (window as any).frameLoads), name + ': the frames that really changed load').toBe(changed)
+    if (name.startsWith('all') || name.startsWith('usage')) expect(changed, name + ': a real change rebuilds a frame').toBeGreaterThan(0)
+  })
+}

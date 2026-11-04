@@ -1,0 +1,62 @@
+# Checks every change before it is merged, and before a release is signed: the scripts parse, the shell and
+# awk programs that read Claude Code's transcripts give the right sums on Linux and macOS, the mod validates,
+# and its test kit passes. It needs no secrets and reads the repository only. The release workflow calls it
+# first, so the build provenance it signs only ever vouches for code these checks passed.
+# Each action is pinned to a full commit SHA (its release tag in the comment), so a moved tag can't change
+# what runs here.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  programs:
+    name: Scripts and search programs (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Every script parses
+        run: |
+          for f in hooks/*.js tools/*.mjs e2e/lib/*.mjs tests/*.mjs; do node --check "$f" || exit 1; done
+      - name: The shell and awk programs give the sums the JavaScript reader gives
+        run: node --test tests/scan.test.mjs
+  mod:
+    name: Validate and test kit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: The shipped files match the manifest (main only; a release checks it itself)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: node tools/release-manifest.mjs --check
+      - name: Install the Claude Code version the mod was verified on
+        run: |
+          version=$(sed -n 's/^\/\/ Verified against Claude Code \([0-9][0-9.]*\).*/\1/p' hooks/register.js)
+          test -n "$version" || { echo "::error::hooks/register.js no longer says which Claude Code version it was verified on."; exit 1; }
+          npm install --global "@anthropic-ai/claude-code@$version"
+          claude --version
+      - name: Validate the mod
+        run: claude plugin validate --strict .
+      - name: Run the test kit
+        run: |
+          claude plugin test --help >/dev/null 2>&1 || { echo "::error::Claude Code $(claude --version) has no 'plugin test' command, so the test kit did not run. A check that did not run is not a pass."; exit 1; }
+          claude plugin test .
