@@ -270,4 +270,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for what a change needs.
 
 ## License
 
-MIT, © 2026 ToBeBestMe contributors. The name and icon aren't covered by the license; see [TRADEMARKS.md](TRADEMARKS.md).
+MIT, © 2026 Eclatech LLC. The name and icon aren't covered by the license; see [TRADEMARKS.md](TRADEMARKS.md).

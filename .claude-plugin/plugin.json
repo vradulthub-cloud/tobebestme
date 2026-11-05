@@ -6,7 +6,7 @@
   "repository": "https://github.com/vradulthub-cloud/tobebestme",
   "license": "MIT",
   "author": {
-    "name": "ToBeBestMe contributors"
+    "name": "Eclatech LLC"
   },
   "types": "./types/index.d.ts",
   "userConfig": {

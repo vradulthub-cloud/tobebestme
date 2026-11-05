@@ -1,6 +1,6 @@
 # The ToBeBestMe name and icon
 
-The MIT License covers ToBeBestMe's code. It does not cover the name "ToBeBestMe" or its icon (`assets/icon.svg`, `assets/icon.png`). The holder of both is the ToBeBestMe project, whose canonical repository is <https://github.com/vradulthub-cloud/tobebestme>. Questions about using the name or icon go there, as an issue.
+The MIT License covers ToBeBestMe's code. It does not cover the name "ToBeBestMe" or its icon (`assets/icon.svg`, `assets/icon.png`). The holder of both is Eclatech LLC. The canonical repository is <https://github.com/vradulthub-cloud/tobebestme>. Questions about using the name or icon go there, as an issue.
 
 - You may use, change and share the code, as the license says.
 - If you share a changed version, give it a different name and icon, and don't present it as the official ToBeBestMe. Saying it is "based on ToBeBestMe" is fine.
@@ -8,4 +8,4 @@ The MIT License covers ToBeBestMe's code. It does not cover the name "ToBeBestMe
 
 ToBeBestMe is an independent project, not made by or affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.
 
-This is a statement of how the ToBeBestMe project asks its name and icon to be used. It is not a claim of a registered trademark.
+This is a statement of how Eclatech LLC asks ToBeBestMe's name and icon to be used. It is not a claim of a registered trademark.
