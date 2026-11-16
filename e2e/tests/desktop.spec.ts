@@ -145,8 +145,10 @@ for (const v of manifest) {
         const isMark = /^[●■◆○◐✓✕‖▬█░]+$/.test(text)
         if (ratio < (px >= 18 || isMark ? 3 : 4.5)) faint.push(`${ratio.toFixed(2)}:1 “${text.slice(0, 40)}”`)
       }
-      // drawings: their words need 4.5:1 on the pane (hover cards carry their own dark box), and
-      // their coloured marks 3:1 (WCAG's rule for graphics). Greys are neutrals, drawn to read on both.
+      // drawings: their words need 4.5:1 on the pane, and their coloured marks 3:1 (WCAG's rule for graphics). What a drawing
+      // paints is read as the browser resolves it, so the pane's own ink (currentColor) and the scheme's properties (var(--w),
+      // var(--c), var(--k), var(--i2), which the stylesheet in each drawing sets for the dark and the light pane) arrive here
+      // as the colours they are on this pane. Ink and the greys are neutrals, drawn to read on both.
       const paneBg = getComputedStyle(document.body).backgroundColor
       const rgb = (c: string) => (c.match(/[\d.]+/g) || []).map(Number)
       const contrast = (a: string, b: string) => {
@@ -165,15 +167,9 @@ for (const v of manifest) {
           if (r < 4.5) drawn.push(`${r.toFixed(2)}:1 poster text “${(t.textContent || '').slice(0, 30)}” (${cs.fill})`)
           continue
         }
-        // a gradient: every one of its stops must hold the ratio, on this pane's own colour for it
-        const grad = /url\(["']?#([^"')]+)/.exec(cs.fill)
-        if (grad) {
-          const stops = [...(t.ownerSVGElement!.querySelectorAll('#' + CSS.escape(grad[1]) + ' stop') as NodeListOf<SVGStopElement>)]
-          for (const stop of stops) {
-            const r = contrast(getComputedStyle(stop).stopColor, paneBg)
-            if (r < 4.5) drawn.push(`${r.toFixed(2)}:1 gradient text “${(t.textContent || '').slice(0, 30)}” (${getComputedStyle(stop).stopColor})`)
-          }
-          if (!stops.length) drawn.push('gradient text with no stops “' + (t.textContent || '').slice(0, 30) + '”')
+        // words are never painted with a gradient or a pattern any more: a figure that falls back to text is ink or a status colour
+        if (/^url\(/.test(cs.fill)) {
+          drawn.push('text painted with a gradient or pattern “' + (t.textContent || '').slice(0, 30) + '”')
           continue
         }
         const r = contrast(cs.fill, paneBg)
@@ -189,6 +185,17 @@ for (const v of manifest) {
         if (box.width * box.height < 20) continue
         const ratio = contrast(cs.fill, paneBg)
         if (ratio < 3) drawn.push(`${ratio.toFixed(2)}:1 mark ${cs.fill} (${m.tagName})`)
+      }
+      // strokes are marks too: the numerals of a figure, the line of what has been used, a ring, a rule. A coloured one (a status
+      // colour, a project's hue) holds 3:1 on the pane; ink and greys are neutral, as are the pane's own cuts and hairlines (drawn faint)
+      for (const m of document.querySelectorAll('#pane svg path, #pane svg line, #pane svg circle, #pane svg rect')) {
+        if (m.closest('.tip') || !visible(m) || m.ownerSVGElement?.hasAttribute('data-poster')) continue
+        const cs = getComputedStyle(m)
+        if (cs.stroke === 'none' || cs.stroke.startsWith('url(') || cs.stroke.startsWith('rgba') || Number(cs.strokeOpacity) < 0.9 || Number(cs.opacity) < 0.9 || parseFloat(cs.strokeWidth) < 1.5) continue
+        const [r, g, b] = rgb(cs.stroke)
+        if (Math.max(r, g, b) - Math.min(r, g, b) < 28) continue // a grey, or the ink: neutral
+        const ratio = contrast(cs.stroke, paneBg)
+        if (ratio < 3) drawn.push(`${ratio.toFixed(2)}:1 stroke ${cs.stroke} (${m.tagName})`)
       }
       // a label, a figure or a sentence is never ended with an ellipsis: a narrow pane stacks a value under its label and
       // wraps what it says. Only a long name (a session's title, a branch) is cut, and a name that long runs past 60 characters.
@@ -348,10 +355,11 @@ test('Home lays the tightest limit out on its calendar: the days, Now, where it 
   }
 })
 
-test('each limit is drawn as a runway, not a ring: the weekly one shows its run-out and the playhead, and nothing is a circle', async ({ page }) => {
+test('each limit is drawn as a runway, not a ring: the weekly one shows its run-out and the playhead, and no runway holds a circle', async ({ page }) => {
   const v = manifest.find((m) => m.state === 'busy' && m.view === 'overview' && m.cols === 88 && !m.details)!
   await open(page, v)
   expect(await page.locator('svg circle[stroke-dasharray]').count(), 'a ring-style arc is still drawn').toBe(0)
+  expect(await page.locator('[role=img]:has(line.now):not(:has(text)) circle').count(), 'a runway holds a circle').toBe(0)
   const tracks = page.locator('svg line.now')
   expect(await tracks.count(), 'a limit has no playhead').toBeGreaterThan(0)
   // the weekly limit runs out early in this state: its run-out stop and dry line are drawn
@@ -362,22 +370,26 @@ test('each limit is drawn as a runway, not a ring: the weekly one shows its run-
   expect(names.every((n) => /\d+%/.test(n))).toBe(true)
 })
 
-test('the run-out is hatched, its marker pulses, bars spring up and the figure is a gradient, and reduced motion turns every animation off', async ({ page }) => {
+test('the run-out is hatched, its marker pulses, bars spring up and the figure is drawn stroke by stroke with no gradient or glow, and reduced motion turns every animation off', async ({ page }) => {
   const v = manifest.find((m) => m.state === 'busy' && m.view === 'all' && m.cols === 148 && !m.details && !m.scheme)!
   await open(page, v)
   expect(await page.locator('svg rect[fill^="url(#mh"]').count(), 'the stretch after the run-out is not hatched').toBeGreaterThan(0)
   expect(await page.locator('svg line.ro.mpu').count(), 'the run-out marker does not pulse').toBeGreaterThan(0)
   expect(await page.locator('svg g.mbar').count(), 'the week’s bars do not spring up').toBeGreaterThan(0)
-  expect(await page.locator('svg[data-fig] text[fill^="url("], svg.mwk text[fill^="url("]').count(), 'the lead figure is not a gradient').toBeGreaterThan(0)
+  // the lead figure is strokes of numerals, drawn on one after another (or, where the numerals cannot draw a value, plain text in ink or a status colour)
+  expect(await page.locator('svg[data-fig] path.mdr, svg.mwk path.mdr, svg[data-fig] text, svg.mwk text').count(), 'the lead figure is not drawn').toBeGreaterThan(0)
+  expect(await page.locator('svg[data-fig] path.mdr, svg.mwk path.mdr').count(), 'the lead figure is not drawn in strokes').toBeGreaterThan(0)
+  // and nothing in a drawing is a gradient, a filter or a glow
+  expect(await page.locator('#pane svg linearGradient, #pane svg radialGradient, #pane svg filter, #pane svg .bloom').count(), 'a gradient, filter or glow is drawn').toBe(0)
   // with motion allowed the marker is animating; with reduced motion nothing is
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'no-preference' })
-  const live = () => page.evaluate(() => [...document.querySelectorAll('#pane svg .mpu, #pane svg .msw, #pane svg .mbar, #pane svg .msh, #pane svg .mrise')].filter((e) => getComputedStyle(e).animationName !== 'none').length)
+  const live = () => page.evaluate(() => [...document.querySelectorAll('#pane svg .mpu, #pane svg .msw, #pane svg .mbar, #pane svg .mdr, #pane svg .mrise')].filter((e) => getComputedStyle(e).animationName !== 'none').length)
   expect(await live(), 'nothing animates with motion allowed').toBeGreaterThan(0)
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
   expect(await live(), 'something still animates with reduced motion set').toBe(0)
-  // the decoration (sheen, halo) is not drawn at all
-  const shown = await page.evaluate(() => [...document.querySelectorAll('#pane svg .mpt, #pane svg .msh, #pane svg .mhalo')].filter((e) => getComputedStyle(e).display !== 'none').length)
-  expect(shown, 'decorative marks are still drawn with reduced motion set').toBe(0)
+  // there is no decoration to switch off: no sheen, halo or falling mark exists in any drawing
+  const shown = await page.evaluate(() => document.querySelectorAll('#pane svg .mpt, #pane svg .msh, #pane svg .msl, #pane svg .mhalo').length)
+  expect(shown, 'decorative marks are still drawn').toBe(0)
 })
 
 test('every drawing meets the mod types’ Svg contract: it has words, a size within bounds, and an interactive one holds only markup a script-less frame keeps whole', async ({ page }) => {
@@ -407,7 +419,7 @@ test('every drawing meets the mod types’ Svg contract: it has words, a size wi
     // a second net, because a banned list alone passes any tag it has not heard of: an interactive drawing
     // may use only these, so a new element has to be added here on purpose. This is a weaker check than
     // the renderer's own scrub, which may drop more than it lists
-    const allowed = new Set(['svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'defs', 'lineargradient', 'radialgradient', 'stop', 'filter', 'fegaussianblur', 'style', 'title', 'clippath', 'mask', 'pattern', 'animate'])
+    const allowed = new Set(['svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'defs', 'style', 'title', 'clippath', 'mask', 'pattern', 'animate'])
     return list.flatMap(({ alt, source }) => {
       const doc = new DOMParser().parseFromString(source, 'image/svg+xml')
       const root = doc.documentElement
@@ -420,8 +432,9 @@ test('every drawing meets the mod types’ Svg contract: it has words, a size wi
           const name = a.name.toLowerCase()
           if (name.startsWith('on')) out.push(alt + ': holds the ' + a.name + ' attribute')
           else if ((name === 'href' || name === 'xlink:href') && !a.value.trim().startsWith('#')) out.push(alt + ': links outside the drawing')
-          // the scrub strips vector-effect, so an interactive drawing is made at its own width and carries none
-          else if (name === 'vector-effect') out.push(alt + ': holds vector-effect, which the scrub strips')
+          // the scrub strips vector-effect, so an interactive drawing is made at its own width and carries none that scales a stroke
+          // (a stroke that says "none", as the numerals do, says what it would say without it)
+          else if (name === 'vector-effect' && a.value !== 'none') out.push(alt + ': holds vector-effect, which the scrub strips')
         }
       })
       return out
@@ -430,7 +443,7 @@ test('every drawing meets the mod types’ Svg contract: it has words, a size wi
   expect(losses).toEqual([])
 })
 
-test('a drawing stretched to its slot fills it, and the lead figure’s glow, when it is live, is drawn inside it, under the digits', async ({ page }) => {
+test('a drawing stretched to its slot fills it, and the lead figure is drawn inside it with nothing under its digits: no glow, bloom or filter', async ({ page }) => {
   for (const view of ['all', 'overview', 'usage']) {
     const v = manifest.find((m) => m.state === 'busy' && m.view === view && m.cols === 148 && !m.details && !m.scheme)!
     await open(page, v)
@@ -441,10 +454,9 @@ test('a drawing stretched to its slot fills it, and the lead figure’s glow, wh
       return { alt: el.getAttribute('aria-label')!.slice(0, 50), width: Math.round(el.getBoundingClientRect().width), room: Math.round(room) }
     }).filter((x) => x.width < x.room - 2))
     expect(short, view + ': a stretched drawing short of its slot').toEqual([])
-    // the figure is a gradient; its glow is drawn under the digits, inside the drawing, and only for what is live now
-    expect(await page.locator('svg[data-fig] text, svg.mwk text').count(), view + ': the lead figure is not drawn').toBeGreaterThan(0)
-    const lone = await page.evaluate(() => [...document.querySelectorAll('svg[data-fig] .bloom, svg.mwk .bloom')].filter((b) => !b.closest('svg')!.querySelector('text:not(.bloom text)')).length)
-    expect(lone, view + ': a glow without its digits').toBe(0)
+    // the figure is strokes of numerals (or text, where they cannot draw a value), and nothing is drawn under the digits
+    expect(await page.locator('svg[data-fig] path.mdr, svg.mwk path.mdr, svg[data-fig] text, svg.mwk text').count(), view + ': the lead figure is not drawn').toBeGreaterThan(0)
+    expect(await page.locator('svg[data-fig] .bloom, svg.mwk .bloom, svg[data-fig] filter, svg.mwk filter').count(), view + ': a glow is drawn under the digits').toBe(0)
   }
 })
 

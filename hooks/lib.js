@@ -1,5 +1,7 @@
 // tobebestme: settings, words and numbers, figures, suggestions, skills and charts.
 // Pure functions: nothing here touches $. DESIGN.md says why each piece exists.
+// The numerals of the big figures (hooks/glyphs.js); a namespace import, so a build without them still loads and falls back to text.
+import * as glyphs from './glyphs.js'
 
 // Lengths of time, in milliseconds.
 export const MIN_MS = 60_000
@@ -3333,141 +3335,212 @@ export function reportMarkdown(d) {
 }
 
 // ---- charts ------------------------------------------------------------------------
-// SVG colours are mid tones that read on light and dark backgrounds alike; on the terminal
-// the same roles use the theme's keys, so they follow its light or dark theme. Charts drawn
-// with `isInteractive` say what each part is on hover (<title>), and the part under the
-// pointer stays bright while the rest dims.
+// Meridian: one line is always "now". What is left of it happened and is drawn solid; what is right of
+// it is forecast and is hollow (outlined, ghosted); time spent out of limit is lined (striped or hatched).
+// Colour is spent on meaning alone: nominal data is the drawing's own ink (`currentColor`, which is the
+// pane's text colour in any theme), status is amber, red or green, a project has one of six hues, and
+// a model is a step on an ink ramp (the fainter, the cheaper). No gradient, glow, bloom or sheen.
+// Drawings carry one scheme stylesheet that sets custom properties for the light and the dark pane, and
+// marks name them (var(--w), var(--c), var(--k), var(--s), var(--i2)). The text has no font of its own:
+// the app sets the drawing in its own UI font. Drawings made with `isInteractive` say what each part is
+// on hover (<title>), and the part under the pointer stays bright while the rest dims.
 
-export const HEX = { track: '#8E8E9338', marker: '#8E8E93', bar: '#0A84FF', barPast: '#0A84FF66', buffer: '#8E8E9366', success: '#30D158', warning: '#FF9F0A', error: '#FF6B64' }
-// What fills a context bar, by category: blues, purples and cyan only, because red, amber and green mean status alone.
-// Each is a mid tone that reads on a dark pane and a white one, so a legend dot is the colour of its bar.
-export const CATEGORY_HEX = ['#0A84FF', '#7D7AFF', '#BF5AF2', '#1F9FD6', '#D054C8', '#6C8BD9', '#8A7CF0', '#7C8DB5']
+export const MERIDIAN = {
+  ink: 'currentColor',
+  // opacities of ink for the things that are not data: hairlines, the empty track, ticks and ghosts
+  op: { ink2: 0.72, rule: 0.14, track: 0.16, tick: 0.32, ghost: 0.34, post: 0.5 },
+  // what a cut or a ring knocks out to: the pane, near enough
+  surface: { dark: '#1a1a19', light: '#ffffff' },
+  text: { dark: { primary: '#f0efec', secondary: '#c3c2b7', muted: '#898781' }, light: { primary: '#0b0b0b', secondary: '#52514e', muted: '#898781' } },
+  // status: a mark must hold 3:1 and a word 4.5:1 on the pane's surfaces (checked in tests)
+  status: { warn: { dark: '#F2A93B', light: '#A66000' }, crit: { dark: '#F0706A', light: '#C7332E' }, ok: { dark: '#3FBF6A', light: '#1B7F3B' } },
+  // six project hues: each holds 3:1 on both panes, so one hex serves a legend dot that cannot follow the theme
+  projects: ['#0A8D83', '#3896F0', '#EF45A0', '#979915', '#594EE6', '#A336AE'],
+  other: '#898781',
+  // models, by family: the opacity of ink (Haiku faintest, Fable and Mythos full)
+  // 0.47 / 0.64 / 0.81 / 1: about 14 to 21 steps of lightness apart on either pane, so the four are told apart at the size
+  // of a legend dot, and Haiku, the faintest, still holds 3:1 on a light pane (it did not at 0.42)
+  models: { haiku: 0.47, sonnet: 0.64, opus: 0.81, fable: 1, mythos: 1, other: 0.47 },
+  // what a context window is made of, in eight steps of one cool hue
+  context: ['#0080B3', '#0082BE', '#0084C8', '#0085D2', '#3187DA', '#4988E1', '#5E88E8', '#6A89EB'],
+}
+
+const INK = MERIDIAN.ink
+const OP = MERIDIAN.op
+const KNOCK = 'var(--s)'
+
+// The one stylesheet every drawing carries (the same string wherever it appears).
+export const SCHEME_CSS =
+  '<style>svg{--s:' + MERIDIAN.surface.dark + ';--i2:' + MERIDIAN.text.dark.secondary + ';--w:' + MERIDIAN.status.warn.dark + ';--c:' + MERIDIAN.status.crit.dark + ';--k:' + MERIDIAN.status.ok.dark + '}' +
+  '@media (prefers-color-scheme:light){svg{--s:' + MERIDIAN.surface.light + ';--i2:' + MERIDIAN.text.light.secondary + ';--w:' + MERIDIAN.status.warn.light + ';--c:' + MERIDIAN.status.crit.light + ';--k:' + MERIDIAN.status.ok.light + '}}</style>'
+
+// Compatibility names: the older files draw with these. Each still holds a usable value, in the new system.
+export const HEX = {
+  track: '#89878120',
+  marker: '#898781',
+  bar: INK,
+  barPast: INK,
+  buffer: 'ink:0.18',
+  success: MERIDIAN.status.ok.dark,
+  warning: MERIDIAN.status.warn.dark,
+  error: MERIDIAN.status.crit.dark,
+}
+export const CATEGORY_HEX = MERIDIAN.context
 const BLOCKS = '▁▂▃▄▅▆▇█'
-const FONT = ' font-family="-apple-system, BlinkMacSystemFont, system-ui, sans-serif"'
+export const FAMILY_HEX = { Opus: 'ink:' + MERIDIAN.models.opus, Sonnet: 'ink:' + MERIDIAN.models.sonnet, Fable: 'ink:1', Mythos: 'ink:1', Haiku: 'ink:' + MERIDIAN.models.haiku }
+export const RING_HEX = { context: INK, seven_day: INK, seven_day_opus: INK, session: INK, daily: INK, spending: INK }
+export const PROJECT_HEX = MERIDIAN.projects
+export const OTHER_HEX = MERIDIAN.other
+// The colours of the sections and categories, kept for the callers that still ask: grey, and the project hues
+export const TINT = { blue: '#3896F0', green: MERIDIAN.status.ok.dark, orange: MERIDIAN.status.warn.dark, purple: '#A336AE', gray: '#898781', yellow: MERIDIAN.status.warn.dark, teal: '#0A8D83', indigo: '#594EE6', pink: '#EF45A0', red: MERIDIAN.status.crit.dark, brown: '#898781', mint: '#0A8D83', slate: '#898781' }
+// A figure's colour is its status's: amber past an alert, red when nearly out, ink otherwise. Where an older caller asks
+// for a pair of ends it is given one colour twice, since a figure is not a gradient any more.
+const INK_HEX = { dark: MERIDIAN.text.dark.primary, light: MERIDIAN.text.light.primary }
+export const LEVEL_HUES = { success: [INK_HEX.dark, INK_HEX.dark], info: [INK_HEX.dark, INK_HEX.dark], warning: [MERIDIAN.status.warn.dark, MERIDIAN.status.warn.dark], error: [MERIDIAN.status.crit.dark, MERIDIAN.status.crit.dark] }
+export function figureHues(level) {
+  return LEVEL_HUES[level] || LEVEL_HUES.info
+}
+
+// Which scheme property a colour is, when it is a status colour in either scheme (or an older one).
+const STATUS_REF = Object.create(null)
+for (const [key, name] of [['warn', 'w'], ['crit', 'c'], ['ok', 'k']]) for (const v of Object.values(MERIDIAN.status[key])) STATUS_REF[v.toUpperCase()] = name
+for (const [v, name] of [['#FF9F0A', 'w'], ['#FFB340', 'w'], ['#FF6B64', 'c'], ['#FF8A84', 'c'], ['#FF453A', 'c'], ['#30D158', 'k'], ['#5EE6A8', 'k']]) STATUS_REF[v] = name
+
+// What a colour handed to a drawing means: its paint, and how much of it. `currentColor` is ink, `ink:0.6` is ink at
+// 60%, a status colour is its scheme property, anything else is a literal colour (a project's hue).
+function paintOf(c) {
+  if (typeof c !== 'string' || !c) return { v: INK, op: 1 }
+  if (c === INK) return { v: INK, op: 1 }
+  const ink = /^ink:([\d.]+)$/.exec(c)
+  if (ink) return { v: INK, op: Number(ink[1]) }
+  if (c.startsWith('var(')) return { v: c, op: 1 }
+  const s = STATUS_REF[c.toUpperCase()]
+  return s ? { v: 'var(--' + s + ')', op: 1 } : { v: c, op: 1 }
+}
+// whether a colour is already a status (so it is not painted amber again where the pace runs early)
+const isStatusPaint = (c) => paintOf(c).v.startsWith('var(--')
+const dnum = (v) => String(Math.round(v * 1000) / 1000)
+// ` fill="…"` or, for a scheme property, ` style="fill:var(--w)"`, with its opacity
+function paint(prop, c, op = 1) {
+  const p = paintOf(c)
+  const o = p.op * op
+  if (p.v.startsWith('var(')) return ' style="' + prop + ':' + p.v + (o < 1 ? ';' + prop + '-opacity:' + dnum(o) : '') + '"'
+  return ' ' + prop + '="' + p.v + '"' + (o < 1 ? ' ' + prop + '-opacity="' + dnum(o) + '"' : '')
+}
+const fillOf = (c, op = 1) => paint('fill', c, op)
+const strokeOf = (c, w, op = 1, extra = '') => paint('stroke', c, op) + ' stroke-width="' + w + '"' + extra
+
+// A status colour in the words of the text it carries: a property of the scheme, or the ink itself.
+const CSS_OF = { ink: INK, i2: 'var(--i2)', w: 'var(--w)', c: 'var(--c)', k: 'var(--k)' }
+
+// Words in a drawing: no font of its own (the app sets its own), tabular figures, widths reckoned at
+// 0.58 em a character (0.62 when bold).
+function tw(str, size = 11, weight = 500) {
+  return String(str).length * size * (weight >= 600 ? 0.62 : 0.58)
+}
+function dtext(x, y, str, { size = 11, weight = 500, fill = 'i2', anchor = 'start', cls = '' } = {}) {
+  return '<text' + (cls ? ' class="' + cls + '"' : '') + ' x="' + Number(x).toFixed(1) + '" y="' + Number(y).toFixed(1) + '" font-size="' + size + '"' + (weight && weight !== 400 ? ' font-weight="' + weight + '"' : '') + (anchor !== 'start' ? ' text-anchor="' + anchor + '"' : '') + ' style="font-variant-numeric:tabular-nums;fill:' + (CSS_OF[fill] || fill) + '">' + escapeXml(str) + '</text>'
+}
+
 // Hover styles for the interactive charts: the other parts dim, a dot grows, and a tooltip fades
 // and rises into place in 150 ms (at once, without the rise, where reduced motion is set).
 const HOVER_CSS =
   '<style>.p{transition:opacity .15s}svg:hover .p{opacity:.45}svg .p:hover{opacity:1}.d{transition:r .15s}.d:hover{r:7px}' +
   '.tip{opacity:0;transform:translateY(3px);transition:opacity .15s ease-out,transform .15s ease-out;pointer-events:none}' +
   '.h:hover+.tip{opacity:1;transform:none}.h{cursor:default}' +
+  '.tp{fill:var(--s);fill-opacity:.98;stroke:currentColor;stroke-opacity:.2}' +
   '@media (prefers-reduced-motion:reduce){.p,.d,.tip{transition:none;transform:none}}</style>'
 
-// A chart tooltip for the point (x, y) in a W×H drawing: a dark rounded label above the point, or
-// below it near the top edge, kept inside the drawing. It follows an invisible hover target.
+// A chart tooltip for the point (x, y) in a W×H drawing: a small panel above the point, or below it near
+// the top edge, kept inside the drawing. It follows an invisible hover target.
 function svgTip(x, y, text, W, H) {
   return '<circle class="h" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="8" fill="transparent"/>' + tipLabel(x, y, text, W, H)
 }
 
 function tipLabel(x, y, text, W, H, cls = 'tip') {
   // never wider than the drawing: a long reading is cut short rather than run off the edge
-  const room = Math.max(8, Math.floor((W - 4 - 16) / 6.7))
+  const room = Math.max(8, Math.floor((W - 4 - 14) / 6.4))
   if (text.length > room) text = text.slice(0, room - 1) + '…'
-  const w = Math.round(text.length * 6.7 + 16)
-  const h = 22
+  const w = Math.round(text.length * 6.4 + 14)
+  const h = 20
   const tx = Math.max(2, Math.min(W - w - 2, x - w / 2))
   const ty = y - 12 - h >= 2 ? y - 12 - h : Math.min(H - h - 2, y + 12)
   return (
-    '<g class="' + cls + '"><rect x="' + tx.toFixed(1) + '" y="' + ty.toFixed(1) + '" width="' + w + '" height="' + h + '" rx="6" fill="#1C1C1E" fill-opacity="0.96" stroke="#48484A"/>' +
-    '<text x="' + (tx + w / 2).toFixed(1) + '" y="' + (ty + 15).toFixed(1) + '" font-size="12" fill="#F2F2F7" text-anchor="middle"' + FONT + '>' + escapeXml(text) + '</text></g>'
+    '<g class="' + cls + '"><rect class="tp" x="' + tx.toFixed(1) + '" y="' + ty.toFixed(1) + '" width="' + w + '" height="' + h + '" rx="4"/>' +
+    '<text x="' + (tx + w / 2).toFixed(1) + '" y="' + (ty + 14).toFixed(1) + '" font-size="11" text-anchor="middle" style="font-variant-numeric:tabular-nums;fill:currentColor">' + escapeXml(text) + '</text></g>'
   )
 }
 
-// On a light pane the vivid colours above are too pale to read against white, so every drawing
-// carries the system's light-theme variants of the same colours, chosen by the appearance the app
-// reports. Only the vivid colours change: either variant still reads on the other pane, so a drawing
-// stays legible even where the reported appearance and the pane's own disagree. Neutrals, the
-// playhead and its knockout among them, are drawn to read on both and never change.
-// A drawing's words are held to the same rule as the page's (4.5:1), so the grey of its labels, the
-// white of "Now" and the amber of "Runs out" each have a light-theme variant too. Words inside a hover
-// card sit on the card's own dark box and keep theirs (they are not direct children of the drawing).
-const LIGHT_PAIRS = [['#0A84FF', '#007AFF'], ['#BF5AF2', '#AF52DE'], ['#64D2FF', '#0A84C2'], ['#30D158', '#28A745'], ['#FF9F0A', '#D47000'], ['#FF6B64', '#E5302A'], ['#FFD60A', '#B8860B']]
-const LIGHT_TEXT = [['#F2F2F7', '#1C1C1E'], ['#8E8E93', '#636366'], ['#FF9F0A', '#B34C00'], ['#FF6B64', '#C4001A'], ['#AEAEB2', '#636366']]
-const LIGHT_CSS =
-  '<style>@media (prefers-color-scheme:light){' +
-  LIGHT_PAIRS.map(([dark, light]) => '[fill="' + dark + '"]{fill:' + light + '}[stroke="' + dark + '"]{stroke:' + light + '}[stop-color="' + dark + '"]{stop-color:' + light + '}').join('') +
-  LIGHT_TEXT.map(([dark, light]) => 'svg>text[fill="' + dark + '"]{fill:' + light + '}').join('') +
-  // what is drawn to read on dark and nearly vanishes on white is turned round or darkened: the track
-  // is firmer, the strand under it and the posts are a mid grey, and the playhead is dark with a
-  // white knockout (it is white with a dark one on a dark pane)
-  'svg>rect[fill="#8E8E93"][fill-opacity="0.24"]{fill-opacity:.4}' +
-  'svg>rect[fill="#AEAEB2"]{fill:#6E6E73}svg>line[stroke="#AEAEB2"]{stroke:#6E6E73}' +
-  'svg>line[stroke="#1C1C1E"]{stroke:#FFFFFF}svg>line.now[stroke="#F2F2F7"]{stroke:#1C1C1E}' +
-  'svg>line[stroke="#8E8E93"]{stroke-opacity:.8}' +
-  'svg path.hl{stroke:#FFFFFF}' +
-  '}</style>'
-
-// A colour for words and dots drawn as text, which cannot follow the appearance the way a drawing's
-// colours do: the vivid colour where it reads on a white pane too, else its light-theme variant,
-// which reads on a dark one as well (3:1 on both).
+// A colour for words and dots drawn as host text, which cannot follow the appearance the way a drawing can: a hex
+// is kept (the project hues hold 3:1 on both panes), and an ink or a model's ramp step, which has no hex, is the muted grey.
 export function midHex(hex) {
-  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ''))
-  if (!m) return hex
-  const lin = (v) => {
-    const c = v / 255
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-  }
-  const n = parseInt(m[1], 16)
-  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
-  if (L <= 0.3) return hex
-  const pair = LIGHT_PAIRS.find(([dark]) => dark.toLowerCase() === m[0].toLowerCase())
-  return pair ? pair[1] : hex
+  return /^#[0-9a-f]{6}$/i.test(String(hex || '')) ? hex : MERIDIAN.other
 }
-function withLight(svg) {
+// What a figure (or an older caller's pair of ends) is in each scheme: a status's own, else the ink.
+export function toneFor(hex, isDark) {
+  const s = STATUS_REF[String(hex).toUpperCase()]
+  if (s) return MERIDIAN.status[{ w: 'warn', c: 'crit', k: 'ok' }[s]][isDark ? 'dark' : 'light']
+  if (hex === INK || String(hex).toUpperCase() === INK_HEX.dark.toUpperCase()) return INK_HEX[isDark ? 'dark' : 'light']
+  return hex
+}
+
+// A mark can be given its colour and something else by style (a status colour is a style); an element that was handed
+// two style attributes gets one, with both in it.
+function oneStyle(svg) {
+  return svg.replace(/<[a-zA-Z][^<>]*>/g, (tag) => {
+    const all = tag.match(/ style="[^"]*"/g)
+    if (!all || all.length < 2) return tag
+    const merged = ' style="' + all.map((s) => s.slice(8, -1)).join(';') + '"'
+    let first = true
+    return tag.replace(/ style="[^"]*"/g, () => (first ? ((first = false), merged) : ''))
+  })
+}
+function withScheme(svg) {
   const at = svg.indexOf('>') + 1
-  return svg.slice(0, at) + LIGHT_CSS + svg.slice(at)
+  return oneStyle(svg.slice(0, at) + SCHEME_CSS + svg.slice(at))
 }
 
 function title(s) {
   return s ? '<title>' + escapeXml(s) + '</title>' : ''
 }
 
-// ---- motion and atmosphere (desktop drawings only) ---------------------------------------------
-// The desktop pane is allowed to be bold: fills sweep in when a drawing first appears, a faint
-// sheen travels along the projected ghost twice, the run-out marker pulses three times (neither is live, so
-// neither loops for ever; only a live dot does), the part of a window past the
-// run-out is hatched, the week's bars spring up, and the big figures
-// are drawn in gradients with a soft bloom of their own colours behind them. Every animation stops, and the
-// still drawing is the finished one, where the viewer has asked for reduced motion; the decorative
-// ones (the sheen) are then not drawn at all. Class names are shared by every
-// drawing on the page, so this stylesheet is the same string wherever it appears.
+// ---- motion (desktop drawings only) ---------------------------------------------
+// Fills sweep in when a drawing first appears, the week's bars rise, a big figure is drawn stroke by stroke,
+// and the run-out stop pulses three times (it is not live, so it does not loop for ever; only a live dot
+// does). Every animation stops, and the still drawing is the finished one, where the viewer has asked for
+// reduced motion. Class names are shared by every drawing on the page, so this stylesheet is the same string
+// wherever it appears.
 export const MOTION_CSS =
   '<style>' +
-  '.msw{transform-box:fill-box;transform-origin:0 50%;animation:msw .9s cubic-bezier(.22,1,.36,1) both}' +
+  '.msw{transform-box:fill-box;transform-origin:0 50%;animation:msw .9s cubic-bezier(.165,.84,.44,1) both}' +
   '@keyframes msw{from{transform:scaleX(0)}to{transform:scaleX(1)}}' +
-  '.msh{animation:msh 1.4s ease-in-out .6s both}.msh.msl{animation-duration:3.2s;animation-delay:0s;animation-iteration-count:2;animation-timing-function:linear}' +
-  '@keyframes msh{from{transform:translateX(0)}to{transform:translateX(var(--d,200px))}}' +
   '.mpu{animation:mpu 1.8s ease-in-out 3}@keyframes mpu{0%,100%{opacity:1}50%{opacity:.35}}' +
-  '.mhalo{transform-box:fill-box;transform-origin:center;animation:mhalo 1.8s ease-out 3 forwards}@keyframes mhalo{from{transform:scale(.5);opacity:.8}to{transform:scale(2.6);opacity:0}}' +
-  '.mbar{transform-box:fill-box;transform-origin:50% 100%;animation:mbar .85s cubic-bezier(.34,1.56,.64,1) both}' +
+  '.mbar{transform-box:fill-box;transform-origin:50% 100%;animation:mbar .85s cubic-bezier(.165,.84,.44,1) both}' +
   '@keyframes mbar{from{transform:scaleY(0)}to{transform:scaleY(1)}}' +
-  '.mrise{animation:mrise .7s cubic-bezier(.22,1,.36,1) both}@keyframes mrise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}' +
-  '@media (prefers-reduced-motion:reduce){.msw,.msh,.mpu,.mhalo,.mbar,.mrise{animation:none}.msh,.mhalo{display:none}}' +
+  '.mrise{animation:mrise .7s cubic-bezier(.165,.84,.44,1) both}@keyframes mrise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}' +
+  '.mdr{animation:mdr .7s cubic-bezier(.165,.84,.44,1) backwards}@keyframes mdr{from{stroke-dasharray:1;stroke-dashoffset:1}to{stroke-dasharray:1;stroke-dashoffset:0}}' +
+  '@media (prefers-reduced-motion:reduce){.msw,.mpu,.mbar,.mrise,.mdr{animation:none}}' +
   '</style>'
 
 // The app draws every drawing afresh on each redraw, and a drawing whose markup changed is a new
 // image, so its entrance would play again from the start each time a figure moved. Instead the
 // entrance plays once, from when the tab was opened (`ageMs` ago): a redraw part-way through carries
 // each animation on from where it had got to, and one after that draws the finished state, still,
-// so its markup stops changing and the app keeps the image it has. The loops (the pulse, the halo, the
-// travelling sheen, the live ring) are carried on the same way: each starts `age` into its cycle, so a
-// drawing whose figures really changed does not make them start over, and one whose loop has run its
-// course draws it finished. The age is counted in tenths of a second, so the markup of a drawing
-// nothing changed in is the same string for as long as a visit lasts (see `settledOnce` in draw.js).
-// With no age, the markup is left as it is.
+// so its markup stops changing and the app keeps the image it has. The loops (the pulse and the live
+// ring) are carried on the same way: each starts `age` into its cycle, so a drawing whose figures
+// really changed does not make them start over, and one whose loop has run its course draws it finished.
+// The age is counted in tenths of a second, so the markup of a drawing nothing changed in is the same
+// string for as long as a visit lasts (see `settledOnce` in draw.js). With no age, the markup is left as it is.
 export const SETTLE_MS = 2600
 const LOOP_STEP_MS = 100
-const PULSE_MS = 5400 // the run-out marker's pulse and halo: three turns of 1.8 s
-const SHEEN_MS = 6400 // the sheen on a live track: two crossings of 3.2 s
+const PULSE_MS = 5400 // the run-out stop's pulse: three turns of 1.8 s
 const RING_MS = 1600 // the live ring, which never ends
 function loopMotion(src, ageMs) {
   const age = Math.floor(ageMs / LOOP_STEP_MS) * LOOP_STEP_MS
   if (age <= 0) return ''
   const back = '-' + (age / 1000).toFixed(2) + 's'
   let css = ''
-  if (/class="[^"]*\b(?:mpu|mhalo|msl)\b/.test(src)) {
-    css += age < PULSE_MS ? '.mpu,.mhalo{animation-delay:' + back + '}' : '.mpu{animation:none}.mhalo{display:none}'
-    css += age < SHEEN_MS ? '.msh.msl{animation-delay:' + back + '}' : '.msh.msl{display:none}'
-  }
+  if (/class="[^"]*\bmpu\b/.test(src)) css += age < PULSE_MS ? '.mpu{animation-delay:' + back + '}' : '.mpu{animation:none}'
   if (src.includes(LIVE_CSS)) css += '.ring{animation-delay:-' + ((age % RING_MS) / 1000).toFixed(2) + 's}'
   return css
 }
@@ -3477,166 +3550,260 @@ export function settleMotion(source, ageMs) {
   if (src.includes(LIVE_CSS) && !src.includes(MOTION_CSS)) return src.replace(LIVE_CSS, LIVE_CSS + '<style>' + loopMotion(src, ageMs) + '</style>')
   if (!src.includes(MOTION_CSS)) return src
   const loops = loopMotion(src, ageMs)
+  // a figure drawn stroke by stroke carries its own class, so only a drawing that has one is told to hold still
+  const drawn = /class="[^"]*\bmdr\b/.test(src.replace(MOTION_CSS, ''))
   if (ageMs >= SETTLE_MS) {
-    return src.replace(MOTION_CSS, MOTION_CSS + '<style>.msw,.mbar,.mrise{animation:none}.msh:not(.msl){display:none}' + loops + '</style>')
+    return src.replace(MOTION_CSS, MOTION_CSS + '<style>.msw,.mbar,.mrise{animation:none}' + (drawn ? '.mdr{animation:none}' : '') + loops + '</style>')
   }
   const at = (ms) => (ms / 1000).toFixed(2) + 's'
   return src
-    .replace(MOTION_CSS, MOTION_CSS + '<style>.msw,.mbar,.mrise{animation-delay:' + at(-ageMs) + '}.msh:not(.msl){animation-delay:' + at(600 - ageMs) + '}' + loops + '</style>')
+    .replace(MOTION_CSS, MOTION_CSS + '<style>.msw,.mbar,.mrise{animation-delay:' + at(-ageMs) + '}' + loops + '</style>')
     .replace(/animation-delay:(\d+)ms/g, (_, ms) => 'animation-delay:' + at(Number(ms) - ageMs))
 }
 
 // Wider than any pane: a drawing stretched to its slot is given this width, and the app caps it at the slot.
 export const FLUID_PX = 4000
 
-// The moving highlight's gradient, and the hatching of the part of a window after its run-out.
-const SHEEN_DEFS = '<defs><linearGradient id="msheen" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.55"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient></defs>'
-function hatchDefs(period) {
-  return '<defs><pattern id="mh' + period + '" width="' + period + '" height="' + period + '" patternUnits="userSpaceOnUse" patternTransform="skewX(-35)"><rect width="' + Math.max(1.5, period / 3).toFixed(1) + '" height="' + period + '" fill="' + HEX.warning + '" fill-opacity="0.7"/></pattern></defs>'
-}
-// A band of light that travels across [x, x + w) of a track at y, once (or for ever, `isLoop`); it is
-// clipped to the part it is over by a drawing of its own, so no clip needs a name.
-function sheen(x, y, w, h, isLoop) {
-  if (w < 6) return ''
-  const band = Math.min(70, Math.max(24, w * 0.4))
-  return '<svg x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '" overflow="hidden"><rect class="msh' + (isLoop ? ' msl' : '') + '" x="' + (-band).toFixed(1) + '" y="0" width="' + band.toFixed(1) + '" height="' + h + '" fill="url(#msheen)" style="--d:' + (w + band).toFixed(1) + 'px"/></svg>'
-}
-// The hatched stretch of a track after its run-out: stripes in the warning colour, so "out" is a
-// texture as well as a colour.
-function outZone(x, y, w, h, period) {
-  return w > 2 ? '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '" fill="url(#mh' + period + ')"/>' : ''
+// ---- shared parts of a drawing ---------------------------------------------------------
+
+// The top end of a column rounded, and the foot square, so a stack reads as one bar.
+function topRound(x, y, w, h, r, attrs) {
+  const k = Math.max(0, Math.min(r, w / 2, h))
+  return '<path d="M' + x.toFixed(1) + ' ' + (y + h).toFixed(1) + 'V' + (y + k).toFixed(1) + 'Q' + x.toFixed(1) + ' ' + y.toFixed(1) + ' ' + (x + k).toFixed(1) + ' ' + y.toFixed(1) + 'H' + (x + w - k).toFixed(1) + 'Q' + (x + w).toFixed(1) + ' ' + y.toFixed(1) + ' ' + (x + w).toFixed(1) + ' ' + (y + k).toFixed(1) + 'V' + (y + h).toFixed(1) + 'Z"' + attrs + '/>'
 }
 
-// Contrast: a gradient's stops are each pulled toward white (on a dark pane) or black (on a light one)
-// until their words hold 4.5:1 with a little to spare, so a gradient figure reads wherever it lands.
-function lumHex(hex) {
-  const n = parseInt(String(hex).slice(1), 16)
-  const lin = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
-  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+// A column of segments standing on `base`, bottom up: [{ h, c, op }]. A 2px cut of the pane's colour lies between
+// neighbours and the top end is rounded 2px.
+function column(x, base, w, segs) {
+  let y = base
+  const bars = []
+  const cuts = []
+  segs.forEach((s, i) => {
+    const top = y - s.h
+    const isTop = i === segs.length - 1
+    bars.push(isTop && s.h > 3 ? topRound(x, top, w, s.h, 2, fillOf(s.c, s.op)) : '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.max(0.5, s.h).toFixed(1) + '"' + fillOf(s.c, s.op) + '/>')
+    if (!isTop && s.h > 2.5) cuts.push('<rect x="' + x.toFixed(1) + '" y="' + (top - 1).toFixed(1) + '" width="' + w.toFixed(1) + '" height="2" style="fill:' + KNOCK + '"/>')
+    y = top
+  })
+  return bars.join('') + cuts.join('')
 }
-function ratioHex(a, b) {
-  const [x, y] = [lumHex(a), lumHex(b)]
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+
+// Vertical stripes across a stretch of a track: out of limit, the time you would spend without Claude. A thick dashed
+// line (2px on, 3px off) so it is exact at any width; `ns` keeps the pitch when the drawing is stretched.
+function stripes(x1, x2, y, h, ns, cls = '') {
+  if (x2 - x1 < 1.5) return ''
+  return '<line' + (cls ? ' class="' + cls + '"' : '') + ' x1="' + x1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y1="' + (y + h / 2) + '" y2="' + (y + h / 2) + '" style="stroke:var(--w);stroke-opacity:.6" stroke-width="' + h + '" stroke-dasharray="2 3"' + ns + '/>'
 }
-function mixHex(hex, to, t) {
-  const n = parseInt(hex.slice(1), 16)
-  const m = parseInt(to.slice(1), 16)
-  const ch = (s) => Math.round(((n >> s) & 255) * (1 - t) + ((m >> s) & 255) * t)
-  return '#' + [16, 8, 0].map((s) => ch(s).toString(16).padStart(2, '0')).join('').toUpperCase()
+
+// The hatching of the part of a plot after its run-out: 45 degrees, amber at 24%, 7px pitch.
+const HATCH = '<defs><pattern id="mh" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="7" style="fill:var(--w);fill-opacity:.24"/></pattern></defs>'
+
+// The meridian: now, a 1.5px ink line the full height with a 1.5px cut of the pane's colour each side, so it
+// reads over any fill. `cls` names the ink line.
+function meridian(x, y1, y2, ns, cls = 'now') {
+  const xs = x.toFixed(1)
+  return '<line x1="' + xs + '" x2="' + xs + '" y1="' + y1 + '" y2="' + y2 + '" style="stroke:' + KNOCK + '" stroke-width="4.5"' + ns + '/><line class="' + cls + '" x1="' + xs + '" x2="' + xs + '" y1="' + y1 + '" y2="' + y2 + '" stroke="currentColor" stroke-width="1.5"' + ns + '/>'
 }
-// The light pane's twin of each status end of a figure's gradient: the same hue, kept saturated and deepened until it
-// reads on white (4.8:1). Mixing with black instead turns amber to a muddy brown and a soft red to rose, so the
-// figure would not look like the status words beside it (those are #B34C00 and #C4001A on white).
-const LIGHT_ENDS = { '#30D158': '#178237', '#5EE6A8': '#0E815A', '#0A84FF': '#006CE8', '#64D2FF': '#007AA6', '#FFB340': '#B35900', '#FF9F0A': '#C04800', '#FF8A84': '#E21220', '#FF6B64': '#C4001A' }
-export function toneFor(hex, isDark) {
-  if (!isDark && LIGHT_ENDS[String(hex).toUpperCase()]) return LIGHT_ENDS[String(hex).toUpperCase()]
-  const bg = isDark ? '#1E1E1E' : '#FFFFFF'
-  const to = isDark ? '#FFFFFF' : '#000000'
-  const need = isDark ? 5.2 : 4.8
-  let out = String(hex).toUpperCase()
-  for (let t = 0; t <= 1 && ratioHex(out, bg) < need; t += 0.04) out = mixHex(String(hex), to, t)
+
+// Flags over a track or plot: each kept inside the drawing and dropped where it would run into another one.
+// flags: [{ at, text, fill, weight, edge, anchor, rank }] (the higher rank is placed first)
+// Where each flag goes: kept inside the drawing, and dropped when it would run into another already placed. With
+// `rows` 2 a flag that would collide goes on a second line above the first instead of being dropped (a phone's week has
+// no room for the run-out beside Now), and is dropped only when it would collide there too.
+function placeFlags(flags, W, size = 11, gap = 8, rows = 1) {
+  const placed = [[], []]
+  const out = []
+  for (const f of [...flags].sort((a, z) => (z.rank || 0) - (a.rank || 0))) {
+    const wide = tw(f.text, size, f.weight || 500)
+    let anchor = f.anchor || f.edge || 'middle'
+    let from = anchor === 'end' ? f.at - wide : anchor === 'start' ? f.at : f.at - wide / 2
+    if (from < 0) {
+      anchor = 'start'
+      from = Math.max(0, f.at)
+    }
+    if (from + wide > W) {
+      anchor = 'end'
+      from = W - wide
+    }
+    const row = [0, 1].slice(0, rows).find((r) => !placed[r].some(([a, z]) => from < z + gap && from + wide > a - gap))
+    if (row === undefined) continue
+    placed[row].push([from, from + wide])
+    out.push({ f, anchor, from, wide, row })
+  }
   return out
 }
 
-// The two colours a big figure is drawn in, by the status it carries: amber for a warning, red for what is nearly
-// out, green for good, the neutral accent for a figure that is information and no status. The figure stays bold, and
-// its colour says something: it is never a tab's colour chosen for the look of it.
-export const LEVEL_HUES = { success: ['#30D158', '#5EE6A8'], info: ['#0A84FF', '#64D2FF'], warning: ['#FFB340', '#FF9F0A'], error: ['#FF8A84', '#FF6B64'] }
-export function figureHues(level) {
-  return LEVEL_HUES[level] || LEVEL_HUES.info
+function flagsAt(flags, W, y, size = 11, gap = 8, rows = 1) {
+  return placeFlags(flags, W, size, gap, rows)
+    .map(({ f, anchor, from, wide, row }) => dtext(anchor === 'start' ? from : anchor === 'end' ? from + wide : from + wide / 2, y - row * (size + 4), f.text, { size, weight: f.weight || 500, fill: f.fill || 'i2', anchor }))
+    .join('')
 }
 
-// A figure drawn big, in a gradient between the two colours of its status (figureHues): the number a tab leads
-// with. The glow (isGlowing) is for a figure that is live now; a settled one has the gradient alone. `hexes` are the two ends; the dark and the light pane each get ends that read on them. A
-// blurred copy of it glows underneath, inside the drawing, so the glow is always under the digits
-// and fades out before the drawing's edge; it is fainter on a light pane, where it would read as a smudge.
-export function svgFigure(value, { size = 36, align = 'start', hexes = LEVEL_HUES.info, isGlowing = true } = {}) {
+// ---- big figures -------------------------------------------------------------------------
+
+// The numerals are drawn by hooks/glyphs.js (monoline strokes, one even weight). Where they cannot draw a value
+// the figure is set as text in the app's font.
+function glyphsFor(str, size) {
+  try {
+    const g = glyphs && typeof glyphs.figureGlyphs === 'function' ? glyphs.figureGlyphs(str, { size }) : null
+    return g && typeof g.markup === 'string' && g.markup && g.width > 0 && g.height > 0 ? g : null
+  } catch {
+    return null
+  }
+}
+
+// A figure's numeric run, and the words that follow it ("2.9" and "weeks’ worth").
+function splitFigure(str) {
+  const m = /^([<+−~$]*[0-9][0-9.,]*%?)\s*(.*)$/s.exec(str)
+  return m ? [m[1], m[2]] : [str, '']
+}
+
+// The scheme property a figure takes from its status, or none for ink. 'good' is a result that is good.
+function levelColour(level) {
+  return level === 'warning' ? 'var(--w)' : level === 'error' ? 'var(--c)' : level === 'good' ? 'var(--k)' : ''
+}
+// The status an older caller's pair of ends meant (see figureHues).
+function levelOfHexes(hexes) {
+  const s = Array.isArray(hexes) ? STATUS_REF[String(hexes[0]).toUpperCase()] : ''
+  return s === 'w' ? 'warning' : s === 'c' ? 'error' : ''
+}
+
+// Glyph strokes draw on one after another: each drawable element is told its own class, a path length of 1 and
+// its own start (40 ms a glyph: each glyph is one path).
+function drawOn(markup) {
+  let el = 0
+  return markup.replace(/<(g|path|line|polyline|polygon|circle|ellipse|rect)\b([^>]*?)(\/?)>/g, (all, tag, attrs, close) => {
+    if (tag === 'g') return all
+    const delay = Math.min(10, el++) * 40
+    let a = attrs
+    a = /\bclass="/.test(a) ? a.replace(/\bclass="/, 'class="mdr ') : a + ' class="mdr"'
+    a = /\bstyle="/.test(a) ? a.replace(/\bstyle="/, 'style="animation-delay:' + delay + 'ms;') : a + ' style="animation-delay:' + delay + 'ms"'
+    if (!/\bpathLength=/.test(a)) a += ' pathLength="1"'
+    return '<' + tag + a + close + '>'
+  })
+}
+
+// The numerals at a digit height of `h` px: asked for at that size, then once more at the size that makes the height exact
+// (whatever the numerals' own idea of "size" is), so a figure is as tall as it was told.
+function glyphAt(str, h) {
+  const g1 = glyphsFor(str, h)
+  if (!g1) return null
+  if (Math.abs(g1.height - h) <= 0.5) return g1
+  return glyphsFor(str, (h * h) / g1.height) || g1
+}
+
+// A figure drawn big: the number a tab leads with. It is ink, or amber or red where it carries a status (`level`);
+// green only where `level` is 'good'. Its digits are drawn stroke by stroke when it first appears. `size` is the type
+// size the figure stands in for: its digits are as tall as that text's capitals (0.72 of it).
+export function svgFigure(value, { size = 36, level, align = 'start', hexes } = {}) {
   const str = String(value)
+  const lvl = level || levelOfHexes(hexes)
+  const colour = levelColour(lvl)
+  const id = 'mf-' + (lvl || 'ink')
+  const [run, rest] = splitFigure(str)
+  const g = glyphAt(run, Math.round(size * 0.72)) // the digits stand as tall as the capitals of a text figure of the same size
+  if (g) {
+    const pad = Math.max(2, Math.ceil(size * 0.07))
+    const gap = Math.max(4, Math.round(size * 0.14))
+    const small = Math.max(12, Math.round(size * 0.42))
+    const trail = rest ? gap + Math.ceil(tw(rest, small, 600)) : 0
+    const px = 1 // the numerals start at the drawing's own left edge, so a figure lines up with the words above it
+    const W = Math.ceil(px + pad + g.width + trail)
+    const H = Math.ceil(pad * 2 + g.height)
+    const base = pad + g.height
+    return withScheme(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" data-fig="' + id + '" overflow="visible">' +
+      MOTION_CSS +
+      '<g class="mrise"' + (colour ? ' style="color:' + colour + '"' : '') + '><g transform="translate(' + px + ' ' + pad + ')">' + drawOn(g.markup) + '</g>' +
+      (rest ? dtext(px + g.width + gap, base, rest, { size: small, weight: 500, fill: 'ink' }) : '') + '</g></svg>',
+    )
+  }
+  // the app's own font, bold, tight: where the numerals cannot draw the value
   const charW = (c) => (/[0-9]/.test(c) ? 0.6 : c === '%' ? 0.9 : c === ' ' ? 0.28 : /[.,:]/.test(c) ? 0.3 : /[A-Z]/.test(c) ? 0.68 : 0.58)
-  const pad = Math.max(3, Math.round(size * 0.09)) // room for the glow, and no more, so the figure stays flush with its words
+  const pad = Math.max(3, Math.round(size * 0.09))
   const W = Math.ceil([...str].reduce((n, c) => n + charW(c) * size, 0)) + 2 + pad * 2
   const H = Math.round(size * 1.18)
-  const dark = hexes.map((h) => toneFor(h, true))
-  const light = hexes.map((h) => toneFor(h, false))
-  const id = 'mf' + dark.map((h) => h.slice(1)).join('')
   const x = align === 'end' ? W - pad : pad
-  const glyphs = (cls) => '<text class="' + cls + '" x="' + x + '" y="' + Math.round(size * 0.92) + '" font-size="' + size + '" font-weight="700" text-anchor="' + (align === 'end' ? 'end' : 'start') + '" fill="url(#' + id + ')" style="font-variant-numeric:tabular-nums;letter-spacing:-0.02em"' + FONT + '>' + escapeXml(str) + '</text>'
-  // the gradient's ends are custom properties on the drawing, so a light pane's pair replaces them
-  // (an attribute colour would be caught by the light rules every other drawing carries)
-  return (
+  return withScheme(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" data-fig="' + id + '" overflow="visible">' +
     MOTION_CSS +
-    '<style>svg[data-fig="' + id + '"]{--a:' + dark[0] + ';--b:' + dark[1] + '}svg[data-fig="' + id + '"] .bloom{opacity:.75}@media (prefers-color-scheme:light){svg[data-fig="' + id + '"]{--a:' + light[0] + ';--b:' + light[1] + '}svg[data-fig="' + id + '"] .bloom{opacity:.3}}</style>' +
-    '<defs><linearGradient id="' + id + '" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--a)"/><stop offset="1" style="stop-color:var(--b)"/></linearGradient>' +
-    '<filter id="' + id + 'b" x="-10%" y="-25%" width="120%" height="150%"><feGaussianBlur stdDeviation="' + (size * 0.035).toFixed(1) + '"/></filter></defs>' +
-    (isGlowing ? '<g class="bloom" filter="url(#' + id + 'b)">' + glyphs('mrise') + '</g>' : '') + glyphs('mrise') + '</svg>'
+    '<text class="mrise" x="' + x + '" y="' + Math.round(size * 0.92) + '" font-size="' + size + '" font-weight="700" text-anchor="' + (align === 'end' ? 'end' : 'start') + '" style="font-variant-numeric:tabular-nums;letter-spacing:-0.02em;fill:' + (colour || INK) + '">' + escapeXml(str) + '</text></svg>',
   )
 }
 
-// A rounded horizontal meter: parts [{ value, hex, title }] over total; markers are
-// percentages, or { at, title }.
+// ---- meters, bars, stages ----------------------------------------------------------------
+
+// A horizontal meter: parts [{ value, hex, title, dim }] over total; markers are percentages, or { at, title }.
+// 8px high (thin 6px), square-ended with a 1.5px radius, a 2px cut of the pane's colour between parts.
 export function svgMeter(parts, total, markers, thin = false) {
   const W = 600
-  const H = thin ? 8 : 16
-  const y = thin ? 1 : 3
-  const h = thin ? 6 : 10
+  const H = thin ? 6 : 14
+  const y = thin ? 0 : 3
+  const h = thin ? 6 : 8
+  const marks = markers.map((m) => (typeof m === 'number' ? { at: m } : m)).filter((m) => m.at > 0 && m.at < 100)
+  // a drawing that says things on hover keeps its geometry in the drawing's own units; one that does not is exact at any width
+  const isHover = parts.some((p) => p.title) || marks.some((m) => m.title)
+  const ns = isHover ? '' : ' vector-effect="non-scaling-stroke"'
   let x = 0
-  const rects = parts.map((p) => {
+  const rects = []
+  const cuts = []
+  parts.forEach((p, i) => {
     const w = total > 0 ? Math.max(0, Math.min(W - x, (p.value / total) * W)) : 0
-    const rect = '<rect class="p" x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '" fill="' + p.hex + '">' + title(p.title) + '</rect>'
+    rects.push('<rect class="p" x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '"' + fillOf(p.hex, (p.dim ? 0.4 : 1) * (p.hex === INK ? 0.8 : 1)) + '>' + title(p.title) + '</rect>')
+    if (i > 0 && w > 0 && x > 0) cuts.push(isHover ? '<rect x="' + (x - 1).toFixed(1) + '" y="' + y + '" width="2" height="' + h + '" style="fill:' + KNOCK + '"/>' : '<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + y + '" y2="' + (y + h) + '" style="stroke:' + KNOCK + '" stroke-width="2"' + ns + '/>')
     x += w
-    return rect
   })
-  const ticks = markers
-    .map((m) => (typeof m === 'number' ? { at: m } : m))
-    .filter((m) => m.at > 0 && m.at < 100)
-    .map((m) => '<rect x="' + ((m.at / 100) * W - 1).toFixed(1) + '" y="0" width="2" height="' + H + '" fill="' + HEX.marker + '">' + title(m.title) + '</rect>')
-  return withLight(
+  const ticks = marks.map((m) => {
+    const mx = ((m.at / 100) * W).toFixed(1)
+    return isHover
+      ? '<rect x="' + (Number(mx) - 0.6).toFixed(1) + '" y="' + (thin ? 0 : 1) + '" width="1.2" height="' + (thin ? H : H - 2) + '"' + fillOf(INK, OP.post) + '>' + title(m.title) + '</rect>'
+      : '<line x1="' + mx + '" x2="' + mx + '" y1="' + (thin ? 0 : 1) + '" y2="' + (thin ? H : H - 1) + '"' + strokeOf(INK, 1, OP.post, ns) + '/>'
+  })
+  return withScheme(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + MOTION_CSS +
-    '<clipPath id="m"><rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" rx="' + h / 2 + '"/></clipPath>' +
-    '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" rx="' + h / 2 + '" fill="' + HEX.track + '"/>' +
-    '<g clip-path="url(#m)"><g class="msw">' + rects.join('') + '</g></g>' + ticks.join('') + '</svg>'
+    '<clipPath id="m' + y + 'x' + h + '"><rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" rx="1.5"/></clipPath>' +
+    '<rect x="0" y="' + y + '" width="' + W + '" height="' + h + '" rx="1.5"' + fillOf(INK, OP.track) + '/>' +
+    '<g clip-path="url(#m' + y + 'x' + h + ')"><g class="msw">' + rects.join('') + cuts.join('') + '</g></g>' + ticks.join('') + '</svg>',
   )
 }
 
-// Bars from the left, one slot each, so the first turn is on the left and room is left for
-// more. `colors` and `titles` give each bar its own colour and hover text; `average`
-// draws a dashed line at the mean.
+// Bars from the left, one slot each, so the first turn is on the left and room is left for more. `colors` and
+// `titles` give each bar its own colour and hover text; `average` draws a line at the mean. Each is at most 24px wide.
 // With `extra.stacks`, each bar is split into its parts ([{ value, hex }] per bar), bottom up.
 export function svgBars(values, slots, extra = {}) {
   const W = 600
-  const H = 64
-  const gap = 4
+  const H = extra.height || 64
   const n = Math.max(slots, values.length)
+  const slot = W / n
+  const bw = Math.max(2, Math.min(extra.maxBar || 22, slot - 3))
   const max = Math.max(...values, 0.0001)
-  const bw = (W - gap * (n - 1)) / n
+  const base = H - 1
+  const room = H - 5
   const bars = values.map((v, i) => {
-    const h = Math.max(2, (v / max) * (H - 4))
-    const x = (i * (bw + gap)).toFixed(1)
+    const h = Math.max(2, (v / max) * room)
+    const x = i * slot + (slot - bw) / 2 // centred in its slot, so a label centred under the slot is under its bar
     const stack = extra.stacks && extra.stacks[i] ? extra.stacks[i].filter((p) => p.value > 0) : null
+    const delay = ' style="animation-delay:' + Math.min(i, 24) * 30 + 'ms"'
     if (stack && stack.length && v > 0) {
-      let y = H - 1
-      const rects = stack.map((p) => {
-        const ph = (p.value / v) * h
-        y -= ph
-        return '<rect x="' + x + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + ph.toFixed(1) + '" fill="' + p.hex + '"/>'
-      })
-      return '<g class="p">' + title(extra.titles && extra.titles[i]) + '<g class="mbar" style="animation-delay:' + Math.min(i, 24) * 30 + 'ms">' + rects.join('') + '</g></g>'
+      const total = stack.reduce((a, p) => a + p.value, 0)
+      return '<g class="p">' + title(extra.titles && extra.titles[i]) + '<g class="mbar"' + delay + '>' + column(x, base, bw, stack.map((p) => ({ h: (p.value / total) * h, c: p.hex, op: 1 }))) + '</g></g>'
     }
-    const fill = extra.colors ? extra.colors[i] : i === values.length - 1 ? HEX.bar : HEX.barPast
-    return '<g class="p">' + title(extra.titles && extra.titles[i]) + '<g class="mbar" style="animation-delay:' + Math.min(i, 24) * 30 + 'ms"><rect x="' + x + '" y="' + (H - 1 - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + fill + '"/></g></g>'
+    // the turns before the latest are fainter than it, so the latest reads first
+    const c = extra.colors ? extra.colors[i] : INK
+    const op = extra.colors ? 1 : i === values.length - 1 ? 1 : 0.55
+    return '<g class="p">' + title(extra.titles && extra.titles[i]) + '<g class="mbar"' + delay + '>' + topRound(x, base - h, bw, h, 2, fillOf(c, op)) + '</g></g>'
   })
   const mean = extra.average && values.length >= 2 ? avg(values) : null
-  const my = mean !== null ? (H - 1 - (mean / max) * (H - 4)).toFixed(1) : 0
-  const line = mean !== null ? '<line x1="0" x2="' + W + '" y1="' + my + '" y2="' + my + '" stroke="' + HEX.marker + '" stroke-width="1.5" stroke-dasharray="4 4">' + title(extra.averageTitle) + '</line>' : ''
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + MOTION_CSS + '<rect x="0" y="' + (H - 1) + '" width="' + W + '" height="1" fill="' + HEX.track + '"/>' + bars.join('') + line + '</svg>')
+  const my = mean !== null ? base - (mean / max) * room : 0
+  const line = mean !== null ? '<g>' + title(extra.averageTitle) + '<rect x="0" y="' + (my - 0.5).toFixed(1) + '" width="' + W + '" height="1"' + fillOf(INK, OP.post) + '/><rect x="' + (W - 2) + '" y="' + (my - 3).toFixed(1) + '" width="2" height="6"' + fillOf(INK, OP.post) + '/></g>' : ''
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + MOTION_CSS + '<rect x="0" y="' + base + '" width="' + W + '" height="1"' + fillOf(INK, OP.rule) + '/>' + bars.join('') + line + '</svg>')
 }
 
 // Text as an SVG text node or attribute. XML 1.0 has no place for most control characters or for half of
 // a surrogate pair (a cut can leave one), and one of them makes the whole drawing fail to parse, so they go.
 export function escapeXml(s) {
   return String(s)
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '')
     .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, (m) => (m.length === 2 ? m : ''))
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -3644,8 +3811,8 @@ export function escapeXml(s) {
     .replace(/"/g, '&quot;')
 }
 
-// A run's stages side by side, each as wide as its share of the agents: done in green, working in
-// blue, failed in red, the rest waiting on the track. Each stage says where it is on hover.
+// A run's stages side by side, each as wide as its share of the agents: done in ink, working in lighter ink,
+// failed in red, the rest the empty track. Each stage says where it is on hover.
 // phases: [{ title, total, done, running, failed }]
 export function svgStages(phases) {
   const W = 600
@@ -3659,22 +3826,23 @@ export function svgStages(phases) {
   const parts = list.map((p, i) => {
     const w = (weights[i] / sum) * room
     const total = Math.max(1, p.total)
-    const seg = (n, hex, from) => (n > 0 ? '<rect x="' + (x + (from / total) * w).toFixed(1) + '" y="2" width="' + ((n / total) * w).toFixed(1) + '" height="10" fill="' + hex + '"/>' : '')
-    const words = p.title + ': ' + (p.total ? p.done + ' of ' + p.total + ' done' + (p.running ? ', ' + p.running + ' working' : '') + (p.failed ? ', ' + p.failed + ' failed' : '') : 'not started')
+    const seg = (n, c, op, from) => (n > 0 ? '<rect x="' + (x + (from / total) * w).toFixed(1) + '" y="3" width="' + ((n / total) * w).toFixed(1) + '" height="8"' + fillOf(c, op) + '/>' : '')
+    const cut = (from) => (from > 0 && from < total ? '<rect x="' + (x + (from / total) * w - 1).toFixed(1) + '" y="3" width="2" height="8" style="fill:' + KNOCK + '"/>' : '')
+    const said = p.title + ': ' + (p.total ? p.done + ' of ' + p.total + ' done' + (p.running ? ', ' + p.running + ' working' : '') + (p.failed ? ', ' + p.failed + ' failed' : '') : 'not started')
     const g =
-      '<g class="p">' + title(words) +
-      '<clipPath id="s' + i + '"><rect x="' + x.toFixed(1) + '" y="2" width="' + w.toFixed(1) + '" height="10" rx="5"/></clipPath>' +
-      '<rect x="' + x.toFixed(1) + '" y="2" width="' + w.toFixed(1) + '" height="10" rx="5" fill="' + HEX.track + '"/>' +
-      '<g clip-path="url(#s' + i + ')">' + seg(p.done, HEX.success, 0) + seg(p.failed, HEX.error, p.done) + seg(p.running, HEX.bar, p.done + p.failed) + '</g></g>'
+      '<g class="p">' + title(said) +
+      '<clipPath id="s' + Math.round(x) + 'x' + Math.round(w) + '"><rect x="' + x.toFixed(1) + '" y="3" width="' + w.toFixed(1) + '" height="8" rx="1.5"/></clipPath>' +
+      '<rect x="' + x.toFixed(1) + '" y="3" width="' + w.toFixed(1) + '" height="8" rx="1.5"' + fillOf(INK, OP.track) + '/>' +
+      '<g clip-path="url(#s' + Math.round(x) + 'x' + Math.round(w) + ')">' + seg(p.done, INK, 1, 0) + seg(p.failed, 'var(--c)', 1, p.done) + seg(p.running, INK, 0.6, p.done + p.failed) + cut(p.done) + cut(p.done + p.failed) + '</g></g>'
     x += w + gap
     return g
   })
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + parts.join('') + '</svg>')
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + parts.join('') + '</svg>')
 }
 
-// Every agent of a run on one time line, a row each, from when it started to when it ended (or
-// now): working in blue, done in green, failed in red, and waiting (paused or at the run's limit)
-// as a faint orange bar from when it queued. A straggler shows as the one long bar.
+// Every agent of a run on one time line, a row each, from when it started to when it ended (or now): working in
+// lighter ink, done in ink, failed in red, waiting (paused or at the run's limit) outlined in amber from when it
+// queued, and one not yet started the empty track. A straggler shows as the one long bar.
 // agents: [{ label, state, queuedAt, startedAt, endedAt, usd, model }]
 // A timeline is scaled to the run's length, so every row moves with the clock. It is drawn at the
 // last whole step of it instead (a minute while the run is short, longer as it grows, so a step is
@@ -3693,7 +3861,6 @@ export function svgTimeline(agents, startedAt, now) {
   const gap = 4
   const span = Math.max(MIN_MS, now - startedAt)
   const xOf = (t) => Math.max(0, Math.min(W, ((t - startedAt) / span) * W))
-  const fill = { running: HEX.bar, done: HEX.success, failed: HEX.error, stopped: HEX.marker, held: HEX.warning, queued: HEX.marker }
   const bars = agents.map((a, i) => {
     const y = i * (row + gap)
     const from = a.state === 'held' || a.state === 'queued' ? a.queuedAt || now : a.startedAt || a.queuedAt || now
@@ -3701,37 +3868,28 @@ export function svgTimeline(agents, startedAt, now) {
     const x = xOf(from)
     // an agent that has only just begun still shows as a bar, not a speck
     const w = Math.max(14, xOf(to) - x)
-    const isWaiting = a.state === 'held' || a.state === 'queued'
-    const words = a.label + ': ' + ({ running: 'working', done: 'done', failed: 'failed', stopped: 'stopped', held: 'waiting', queued: 'starting' }[a.state] || a.state) + ', ' + fmtSpan(to - from) + (a.usd ? ', ' + fmtUsd(a.usd) : '')
-    return '<rect class="p" x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + row + '" rx="4" fill="' + (fill[a.state] || HEX.marker) + '"' + (isWaiting ? ' fill-opacity="0.45"' : '') + '>' + title(words) + '</rect>'
+    const said = a.label + ': ' + ({ running: 'working', done: 'done', failed: 'failed', stopped: 'stopped', held: 'waiting', queued: 'starting' }[a.state] || a.state) + ', ' + fmtSpan(to - from) + (a.usd ? ', ' + fmtUsd(a.usd) : '')
+    const geo = ' x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + row + '" rx="1.5"'
+    let look
+    if (a.state === 'held') look = fillOf('var(--w)', 0.16) + strokeOf('var(--w)', 1, 0.5)
+    else if (a.state === 'queued') look = fillOf(INK, OP.track)
+    else if (a.state === 'failed') look = fillOf('var(--c)')
+    else if (a.state === 'running') look = fillOf(INK, 0.6)
+    else if (a.state === 'stopped') look = fillOf(INK, OP.tick)
+    else look = fillOf(INK)
+    return '<rect class="p"' + geo + look + '>' + title(said) + '</rect>'
   })
   const H = Math.max(row, agents.length * (row + gap) - gap)
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none"/>' + bars.join('') + '</svg>')
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' + HOVER_CSS + '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none"/>' + bars.join('') + '</svg>')
 }
 
-// The colour each model family takes wherever it is drawn (a share of a cost bar, a turn's bar, a legend dot):
-// one per family, from the blues and purples only, since amber, red and green mean status alone. Each is a
-// mid tone that reads on a dark pane and a white one, so a dot is the colour of its bar in both.
-export const FAMILY_HEX = { Opus: '#0A84FF', Sonnet: '#BF5AF2', Fable: '#7D7AFF', Mythos: '#7D7AFF', Haiku: '#1F9FD6' }
-
-// Identity colours: one per thing that can run out, and one per model family. A ring keeps
-// its identity colour whatever its state; the words beside it carry the state.
-// One meaning per colour: a limit or a budget is drawn in a neutral, told apart by its name and place;
-// red, amber and green mean status alone, and blue, purple and cyan name models alone.
-// Each thing that can run out keeps one vivid colour everywhere it is drawn, so it is found at a
-// glance: the weekly limit in blue, a model's own weekly limit in that model's colour (Opus a lighter blue),
-// context in cyan and a budget in cornflower. None is a status colour or close to one: amber and red alone say
-// a limit is running out early or nearly out, and green alone says all is well.
-export const RING_HEX = { context: '#64D2FF', seven_day: '#0A84FF', seven_day_opus: '#3A8EF0', session: '#6C8BD9', daily: '#6C8BD9', spending: '#0A84FF' }
+// ---- models, projects ---------------------------------------------------------------------
 
 // Each project's own colour, kept wherever the project is drawn (the week's bars, the projects list,
 // the busiest project), so it can be followed down the page. The six most used this fortnight get
 // one each, from the key's hash so a project keeps its colour from day to day; the rest are grey.
-// Teal, rose, sand, terracotta, olive and orchid: none is a model's colour (the blues and purples above), a
-// limit's, a context category's or a status colour (red, amber, green), so a dot is never taken for one of
-// those, and each is a mid tone, so a dot is the colour of its bar. A test keeps every one clear of all of them.
-export const PROJECT_HEX = ['#0FA39B', '#CC6B8E', '#B39A6E', '#C27A5A', '#9DA85A', '#C28FB5']
-export const OTHER_HEX = '#8E8E93'
+// Six mid tones that each hold 3:1 on a dark pane and a white one, so a dot is the colour of its bar
+// in both. A test keeps them apart from each other, from ink and from the status colours.
 export function projectHues(projects) {
   const out = Object.create(null)
   const taken = new Set()
@@ -3746,73 +3904,93 @@ export function projectHues(projects) {
   }
   return out
 }
-export function modelHex(model) {
+const FAMILIES = ['opus', 'sonnet', 'haiku', 'fable', 'mythos']
+// How much ink a model is drawn in: the cheaper the family, the fainter.
+export function modelInk(model) {
   const m = String(model || '').toLowerCase()
-  const family = ['opus', 'sonnet', 'haiku', 'fable', 'mythos'].find((f) => m.includes(f))
-  return family ? FAMILY_HEX[family[0].toUpperCase() + family.slice(1)] : OTHER_HEX
+  const family = FAMILIES.find((f) => m.includes(f)) || FAMILIES.find((f) => f === m)
+  return family ? MERIDIAN.models[family] : MERIDIAN.models.other
+}
+// A model as something a drawing can be handed (`ink:0.8`: ink at 80%). Host text cannot draw it, so legends for
+// models use svgSwatch, and midHex turns it to the muted grey.
+export function modelHex(model) {
+  return 'ink:' + modelInk(model)
 }
 
-// Concentric rings, outermost first: [{ value 0–100, hex, title }], like Activity's rings.
-// The runway: ToBeBestMe's gauge for anything that can run out, one square-ended track scaled 0 to
-// 100. The fill is what is used, in the item's colour. For a limit, a thin strand under it is the
-// share of the window gone, ending in a "now" playhead: fill past the playhead is ahead of the
-// clock. When that pace runs the limit out early, the part past the playhead turns warning orange
-// and the strand stops at the run-out with an upright stop, then a thin dry line to the reset.
-// Every track ends in a reset post. Context has no clock: neutral ticks mark where it warns and
-// where Claude Code compacts. Drawn at `width`×`height` (stretched to the slot when `isFluid`,
+// A small still drawing, 10 by 10, for a legend: kind 'model' is ink at the family's step (`value` is the model),
+// 'ink', 'warn', 'crit' or 'ok' are those marks, and a hex is that colour.
+export function svgSwatch(kind, value) {
+  let c
+  if (kind === 'model') c = 'ink:' + modelInk(value)
+  else if (kind === 'warn' || kind === 'crit' || kind === 'ok') c = 'var(--' + { warn: 'w', crit: 'c', ok: 'k' }[kind] + ')'
+  else if (typeof kind === 'string' && /^#[0-9a-f]{6}$/i.test(kind)) c = kind
+  else if (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) c = value
+  else c = INK
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10"><circle cx="5" cy="5" r="4.5"' + fillOf(c) + '/></svg>')
+}
+
+// ---- the runway ---------------------------------------------------------------------------
+// ToBeBestMe's gauge for anything that can run out: one square-ended track scaled 0 to 100. The fill is what is
+// used, in ink (or amber or red where the item is past its alert). For a limit, the meridian marks how much of the
+// window is gone: fill past it is ahead of the clock. When that pace runs the limit out early, the part past the
+// meridian turns amber, a hollow ghost carries on to where the pace lands by the reset, and from the run-out
+// the track is striped (out of limit) behind a 2px stop. Every track ends in a reset post. Context has no clock: ticks
+// mark where it warns and where Claude Code compacts. Drawn at `width`×`height` (stretched to the slot when `isFluid`,
 // with strokes that keep their width).
-// `isCompact`, for a gauge too short to hold them (the line above the prompt on a narrow pane), keeps the
-// track, the fill (orange past the playhead when the pace is early) and the playhead, and leaves out the
-// ghost of where the pace lands, the hatched stretch, the strand and the run-out stop: the words beside it
-// already say the limit runs out early.
-//   g: { used, elapsed?: 0–100 | null, runOut?: 0–100 | null, ticks?: number[], hex }
+// `isCompact`, for a gauge too short to hold them (the line above the prompt on a narrow pane), keeps the track,
+// the fill and the meridian, and leaves out the ghost, the stripes and the stop: the words beside it already say
+// the limit runs out early.
+//   g: { used, elapsed?: 0–100 | null, runOut?: 0–100 | null, projected?, ticks?: number[], hex }
 export function svgRunway(g, { width = 600, height = 14, isFluid = false, isCompact = false } = {}) {
   const W = width
   const x = (v) => (Math.max(0, Math.min(100, v || 0)) / 100) * W
   const ns = isFluid ? ' vector-effect="non-scaling-stroke"' : ''
+  const TY = 3
+  const TH = 8
+  const rx = isFluid ? '' : ' rx="1.5"'
   const u = x(g.used)
   const hasClock = g.elapsed !== null && g.elapsed !== undefined
   const e = hasClock ? x(g.elapsed) : null
   const early = hasClock && g.runOut !== null && g.runOut !== undefined
-  const parts = ['<rect x="0" y="0" width="' + W + '" height="6" fill="#8E8E93" fill-opacity="0.24"/>']
-  // the fill sweeps in from the left when the drawing first appears, and a band of light crosses it once
+  const ro = early ? x(g.runOut) : null
+  const hex = g.hex
+  const parts = ['<rect x="0" y="' + TY + '" width="' + W + '" height="' + TH + '"' + rx + fillOf(INK, OP.track) + '/>']
+  // the fill sweeps in from the left when the drawing first appears; past the meridian, where the pace is early, it is amber
   const fills = []
-  if (u > 0) fills.push('<rect x="0" y="0" width="' + u.toFixed(1) + '" height="6" fill="' + g.hex + '"/>')
-  if (early && u > e) fills.push('<rect x="' + e.toFixed(1) + '" y="0" width="' + (u - e).toFixed(1) + '" height="6" fill="' + HEX.warning + '"/>')
-  if (fills.length) parts.push('<g class="msw">' + fills.join('') + '</g>', sheen(0, 0, u, 6, false))
-  // where the pace lands by the reset: a faint ghost of the fill ahead of it, with a slow sheen moving over it
+  if (u > 0) fills.push('<rect x="0" y="' + TY + '" width="' + u.toFixed(1) + '" height="' + TH + '"' + fillOf(hex) + '/>')
+  if (early && u > e && !isStatusPaint(hex)) fills.push('<rect x="' + e.toFixed(1) + '" y="' + TY + '" width="' + (u - e).toFixed(1) + '" height="' + TH + '" style="fill:var(--w)"/>')
+  // where the pace lands by the reset: the fill's own ghost, hollow
   const pr = hasClock && g.projected !== null && g.projected !== undefined ? x(g.projected) : null
-  if (!isCompact && pr !== null && pr > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="0" width="' + (pr - u).toFixed(1) + '" height="6" fill="' + (early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>', sheen(u, 0, pr - u, 6, true))
-  const period = Math.max(5, Math.round(W / 110))
+  const ghost = []
+  if (!isCompact && pr !== null && pr > u + 1) {
+    const c = early ? 'var(--w)' : hex
+    ghost.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + TY + '" width="' + (pr - u).toFixed(1) + '" height="' + TH + '"' + fillOf(c, 0.16) + '/>')
+    for (const ly of [TY + 0.5, TY + TH - 0.5]) ghost.push('<line x1="' + u.toFixed(1) + '" x2="' + pr.toFixed(1) + '" y1="' + ly + '" y2="' + ly + '"' + strokeOf(c, 1, 0.5, ns) + '/>')
+  }
+  const inner = '<g class="msw">' + fills.join('') + '</g>' + ghost.join('') + (early && !isCompact ? stripes(Math.max(ro, u), W, TY, TH, ' vector-effect="non-scaling-stroke"') : '')
+  parts.push(isFluid ? inner : '<clipPath id="rt' + Math.round(W) + 'x' + TH + '"><rect x="0" y="' + TY + '" width="' + W + '" height="' + TH + '" rx="1.5"/></clipPath><g clip-path="url(#rt' + Math.round(W) + 'x' + TH + ')">' + inner + '</g>')
+  // day or warning ticks, 1px inside the track: ink on the empty track, a cut where the fill is
+  for (const t of g.ticks || []) {
+    if (!(t > 0 && t < 100)) continue
+    const tx = x(t).toFixed(1)
+    parts.push('<line x1="' + tx + '" x2="' + tx + '" y1="' + TY + '" y2="' + (TY + TH) + '"' + (x(t) < u ? ' style="stroke:' + KNOCK + ';stroke-opacity:.5" stroke-width="1"' + ns : strokeOf(INK, 1, OP.tick, ns)) + '/>')
+  }
   if (hasClock) {
-    const ro = early ? x(g.runOut) : null
-    if (early && !isCompact) parts.push(hatchDefs(period), outZone(ro, 0, W - ro, 6, period))
-    if (e > 0 && !isCompact) parts.push('<rect x="0" y="9" width="' + e.toFixed(1) + '" height="3" fill="#AEAEB2"/>')
-    if (early && !isCompact) {
-      parts.push('<line x1="' + ro.toFixed(1) + '" x2="' + W + '" y1="10.5" y2="10.5" stroke="' + HEX.warning + '" stroke-width="1.5"' + ns + '/>')
-      parts.push('<line class="mpu" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="6" y2="' + height + '" stroke="' + HEX.warning + '" stroke-width="9" stroke-opacity="0.28"' + ns + '/>')
-      parts.push('<line class="ro mpu" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="7" y2="' + height + '" stroke="' + HEX.warning + '" stroke-width="3"' + ns + '/>')
-    }
-    // the playhead, with a knockout in the card's colour so it reads on any fill
-    parts.push('<line x1="' + e.toFixed(1) + '" x2="' + e.toFixed(1) + '" y1="0" y2="12" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
-    parts.push('<line class="now" x1="' + e.toFixed(1) + '" x2="' + e.toFixed(1) + '" y1="0" y2="12" stroke="#F2F2F7" stroke-width="2"' + ns + '/>')
-  } else {
-    for (const t of g.ticks || []) if (t > 0 && t < 100) parts.push('<line x1="' + x(t).toFixed(1) + '" x2="' + x(t).toFixed(1) + '" y1="0" y2="12" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
+    if (early && !isCompact) parts.push('<line class="ro mpu" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="0" y2="' + height + '" style="stroke:var(--w)" stroke-width="2"' + ns + '/>')
+    parts.push(meridian(e, 0, height, ns))
   }
   // the reset post: the end of every runway
-  parts.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="0" y2="12" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + height + '" width="' + W + '" height="' + height + '"' + (isFluid ? ' preserveAspectRatio="none"' : '') + '>' + MOTION_CSS + SHEEN_DEFS + parts.join('') + '</svg>')
+  parts.push('<line class="post" x1="' + (W - 0.5) + '" x2="' + (W - 0.5) + '" y1="0" y2="' + height + '"' + strokeOf(INK, 1, OP.post, ns) + '/>')
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + height + '" width="' + W + '" height="' + height + '"' + (isFluid ? ' preserveAspectRatio="none"' : '') + '>' + MOTION_CSS + parts.join('') + '</svg>')
 }
 
-// Where a limit stands on its runway: the share used, the share of its window gone, and where the
-// window's own average pace runs it out when that is early enough to matter (as isEarly decides).
-// The same runway, laid out on a calendar: the window's days (or hours) along the bottom, "Now" over
-// the playhead, and where the window runs out and resets in words over their posts. It is the runway
-// of the tiles made large enough to read at a glance, for the one limit that matters most.
+// The runway laid out on a calendar: the window's days (or hours) along the bottom, "Now" over the meridian,
+// and where the window runs out and resets in words over their posts. It is the runway of the tiles made large
+// enough to read at a glance, for the one limit that matters most.
 // g: { used, elapsed, runOut (% of the window, or null), hex, startMs, endMs, unit: 'day' | 'hour',
 //      nowLabel, runLabel, endLabel, days }.
 // `days`, for a window of days: [{ startMs, endMs, parts: [{ value, hex, isDim }], tip }], each
-// day's use drawn as a bar under the runway, in that day's column, stacked by project in each
+// day's use drawn as a column under the runway, in that day's column, stacked by project in each
 // project's colour. So the week's fill and the work that made it sit on one calendar; a day says what
 // it held on hover. `picked` is the index of a day picked below the drawing: the others step back.
 // `isFluid` draws it at whatever width its slot has, with no day names of its own, so a row of
@@ -3820,29 +3998,34 @@ export function svgRunway(g, { width = 600, height = 14, isFluid = false, isComp
 export function svgWindow(g, { width = 600, isFluid = false } = {}) {
   const W = Math.max(240, Math.round(width))
   const days = g.unit === 'day' && Array.isArray(g.days) && g.days.some((x) => x.parts.some((p) => p.value > 0)) ? g.days : null
-  const BY = 96 // the bars' baseline, under the runway's strand
-  const H = days ? (isFluid ? BY + 4 : BY + 20) : 64
+  const T = 22 // the track's top, under the flag labels
+  const TH = 10
+  const BY = 98 // the columns' baseline, under the runway
+  const H = days ? (isFluid ? BY + 4 : BY + 20) : 52
   const span = Math.max(1, g.endMs - g.startMs)
   const clamp = (v) => Math.max(0, Math.min(100, v || 0))
   const x = (pct) => (clamp(pct) / 100) * W
   const xMs = (ms) => Math.max(0, Math.min(W, ((ms - g.startMs) / span) * W))
-  const ns = isFluid ? ' vector-effect="non-scaling-stroke"' : ''
-  const T = 20 // the track's top, under the flag labels
+  const ns = isFluid && !days ? ' vector-effect="non-scaling-stroke"' : ''
   const u = x(g.used)
   const hasClock = g.elapsed !== null && g.elapsed !== undefined
   const e = hasClock ? x(g.elapsed) : null
   const early = hasClock && g.runOut !== null && g.runOut !== undefined
-  const label = (tx, ty, str, anchor, fill, weight) => '<text x="' + tx.toFixed(1) + '" y="' + ty + '" font-size="12" fill="' + (fill || HEX.marker) + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
-  const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="10" fill="#8E8E93" fill-opacity="0.24"/>']
+  const ro = early ? x(g.runOut) : null
+  const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="' + TH + '"' + (isFluid ? '' : ' rx="1.5"') + fillOf(INK, OP.track) + '/>']
   const fills = []
-  if (u > 0) fills.push('<rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/>')
-  if (early && u > e) fills.push('<rect x="' + e.toFixed(1) + '" y="' + T + '" width="' + (u - e).toFixed(1) + '" height="10" fill="' + HEX.warning + '"/>')
-  if (fills.length) parts.push('<g class="msw">' + fills.join('') + '</g>', sheen(0, T, u, 10, false))
+  if (u > 0) fills.push('<rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="' + TH + '"' + fillOf(g.hex, g.hex === INK ? 0.85 : 1) + '/>')
+  if (early && u > e && !isStatusPaint(g.hex)) fills.push('<rect x="' + e.toFixed(1) + '" y="' + T + '" width="' + (u - e).toFixed(1) + '" height="' + TH + '" style="fill:var(--w)"/>')
   const pr = hasClock && g.projected !== null && g.projected !== undefined ? x(g.projected) : null
-  if (pr !== null && pr > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (pr - u).toFixed(1) + '" height="10" fill="' + (early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>', sheen(u, T, pr - u, 10, true))
-  const period = Math.max(5, Math.round(W / 110))
-  if (early) parts.push(hatchDefs(period), outZone(x(g.runOut), T, W - x(g.runOut), 10, period))
-  // the days, or hours, of the window: a hairline between them and the name of each under it
+  const ghost = []
+  if (pr !== null && pr > u + 1) {
+    const c = early ? 'var(--w)' : g.hex
+    ghost.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (pr - u).toFixed(1) + '" height="' + TH + '"' + fillOf(c, 0.16) + '/>')
+    for (const ly of [T + 0.5, T + TH - 0.5]) ghost.push('<line x1="' + u.toFixed(1) + '" x2="' + pr.toFixed(1) + '" y1="' + ly + '" y2="' + ly + '"' + strokeOf(c, 1, 0.5, ns) + '/>')
+  }
+  const inner = '<g class="msw">' + fills.join('') + '</g>' + ghost.join('') + (early ? stripes(Math.max(ro, u), W, T, TH, ns) : '')
+  parts.push(isFluid ? inner : '<clipPath id="rt' + Math.round(W) + 'x' + TH + '"><rect x="0" y="' + T + '" width="' + W + '" height="' + TH + '" rx="1.5"/></clipPath><g clip-path="url(#rt' + Math.round(W) + 'x' + TH + ')">' + inner + '</g>')
+  // the days, or hours, of the window: a tick between them inside the track and the name of each under it
   const marks = []
   const side = []
   try {
@@ -3878,76 +4061,45 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
   } catch {
     // no Intl: the window is drawn without its calendar
   }
-  for (const m of marks) parts.push('<line x1="' + m.toFixed(1) + '" x2="' + m.toFixed(1) + '" y1="' + T + '" y2="' + (T + 10) + '" stroke="#8E8E93" stroke-opacity="0.55" stroke-width="1"' + ns + '/>')
-  let flagY = 13
+  for (const m of marks) parts.push('<line x1="' + m.toFixed(1) + '" x2="' + m.toFixed(1) + '" y1="' + T + '" y2="' + (T + TH) + '"' + (m < u ? ' style="stroke:' + KNOCK + ';stroke-opacity:.5" stroke-width="1"' + ns : strokeOf(INK, 1, OP.tick, ns)) + '/>')
   const flags = []
   if (hasClock) {
-    if (e > 0) parts.push('<rect x="0" y="' + (T + 14) + '" width="' + e.toFixed(1) + '" height="3" fill="#AEAEB2"/>')
     if (early) {
-      const ro = x(g.runOut)
-      parts.push('<line x1="' + ro.toFixed(1) + '" x2="' + W + '" y1="' + (T + 15.5) + '" y2="' + (T + 15.5) + '" stroke="' + HEX.warning + '" stroke-width="1.5"' + ns + '/>')
-      parts.push('<circle class="mhalo" cx="' + ro.toFixed(1) + '" cy="' + (T + 5) + '" r="9" fill="' + HEX.warning + '" fill-opacity="0.45"/>')
-      parts.push('<line class="ro mpu" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="' + (T - 4) + '" y2="' + (T + 20) + '" stroke="' + HEX.warning + '" stroke-width="3"' + ns + '/>')
-      if (g.runLabel) flags.push({ at: ro, text: g.runLabel, fill: HEX.warning, weight: 600, wide: g.runLabel.length * 6.9 })
+      parts.push('<line class="ro mpu" x1="' + ro.toFixed(1) + '" x2="' + ro.toFixed(1) + '" y1="' + (T - 4) + '" y2="' + (T + TH + 6) + '" style="stroke:var(--w)" stroke-width="2"' + ns + '/>')
+      if (g.runLabel) flags.push({ at: ro, text: g.runLabel, fill: 'w', weight: 600, rank: 2 })
     }
-    parts.push('<line x1="' + e.toFixed(1) + '" x2="' + e.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 20) + '" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
-    parts.push('<line class="now" x1="' + e.toFixed(1) + '" x2="' + e.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 20) + '" stroke="#F2F2F7" stroke-width="2"' + ns + '/>')
-    if (g.nowLabel) flags.push({ at: e, text: g.nowLabel, fill: '#F2F2F7', weight: 600, wide: g.nowLabel.length * 6.9 })
+    parts.push(meridian(e, T - 6, T + TH + 6, ns))
+    if (g.nowLabel) flags.push({ at: e, text: g.nowLabel, fill: 'ink', weight: 600, rank: 3 })
   }
-  parts.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="' + (T - 6) + '" y2="' + (T + 20) + '" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
-  if (g.endLabel) flags.push({ at: W, text: g.endLabel, fill: HEX.marker, wide: g.endLabel.length * 6.9, edge: 'end' })
+  parts.push('<line class="post" x1="' + (W - 0.5) + '" x2="' + (W - 0.5) + '" y1="' + (T - 6) + '" y2="' + (T + TH + 6) + '"' + strokeOf(INK, 1, OP.post, ns) + '/>')
+  if (g.endLabel) flags.push({ at: W, text: g.endLabel, fill: 'i2', weight: 500, edge: 'end', rank: 1 })
   // flags over the track, each kept inside the drawing and dropped when it would run into another
-  const placed = []
-  for (const f of flags.sort((a, z) => (z.weight || 0) - (a.weight || 0))) {
-    let anchor = f.edge || 'middle'
-    let from = anchor === 'end' ? f.at - f.wide : f.at - f.wide / 2
-    if (from < 0) {
-      anchor = 'start'
-      from = Math.max(0, f.at)
-    }
-    if (from + f.wide > W) {
-      anchor = 'end'
-      from = W - f.wide
-    }
-    if (placed.some(([a, b]) => from < b + 8 && from + f.wide > a - 8)) continue
-    placed.push([from, from + f.wide])
-    parts.push(label(anchor === 'start' ? from : anchor === 'end' ? from + f.wide : from + f.wide / 2, flagY, f.text, anchor, f.fill, f.weight))
-  }
-  const today = days ? days.findIndex((x) => x.isToday) : -1
-  if (!(days && isFluid)) for (const [at, text, anchor, i] of side) parts.push(label(at, H - 4, text, anchor, i === today ? '#F2F2F7' : undefined, i === today ? 600 : undefined))
+  parts.push(flagsAt(flags, W, 13))
+  const today = days ? days.findIndex((d) => d.isToday) : -1
+  if (!(days && isFluid)) for (const [at, text, anchor, i] of side) parts.push(dtext(at, H - 5, text, { anchor, fill: i === today ? 'ink' : 'i2', weight: i === today ? 600 : 500 }))
   let css = ''
   if (days) {
     // each day a column: its bar, stacked from the baseline, and an invisible target the height of
     // the column; the cards come after every column, so a card is never under the next day's bar
-    const top = 44
-    const max = Math.max(...days.map((x) => x.parts.reduce((n, p) => n + p.value, 0)), 0.0001)
-    parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="1" fill="#8E8E93" fill-opacity="0.35"/>')
+    const top = 46
+    const max = Math.max(...days.map((d) => d.parts.reduce((n, p) => n + p.value, 0)), 0.0001)
+    parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="1"' + fillOf(INK, OP.rule) + '/>')
     const tips = []
     days.forEach((day, i) => {
       const a = xMs(day.startMs)
       const b = xMs(day.endMs)
       if (b - a < 4) return
-      const bw = Math.min(30, Math.max(5, (b - a) * 0.46))
+      const bw = Math.min(22, Math.max(5, (b - a) * 0.46))
       const cx = (a + b) / 2
       const total = day.parts.reduce((n, p) => n + p.value, 0)
       const height = total > 0 ? Math.max(3, (total / max) * (BY - top)) : 0
-      let y = BY
       const shown = day.parts.filter((p) => p.value > 0)
-      const rects = shown.map((p, j) => {
-        const h = j === shown.length - 1 ? y - (BY - height) : (p.value / total) * height
-        y -= h
-        const isTop = j === shown.length - 1
-        const fill = ' fill="' + p.hex + '"' + (p.isDim ? ' fill-opacity="0.3"' : '')
-        // the top of each bar is rounded and the rest square, so a stack reads as one bar
-        return isTop && h > 3
-          ? '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2.5"' + fill + '/><rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (y + h / 2).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (h / 2).toFixed(1) + '"' + fill + '/>'
-          : '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '"' + fill + '/>'
-      })
+      const segs = shown.map((p) => ({ h: (p.value / total) * height, c: p.hex, op: p.isDim ? 0.3 : 1 }))
       // a picked day stands out: the others step back, and it keeps a mark under its bar
       const isBack = g.picked !== undefined && g.picked !== null && g.picked >= 0 && g.picked !== i
-      if (g.picked === i) parts.push('<rect class="pick" x="' + (cx - bw / 2 - 3).toFixed(1) + '" y="' + (BY + 1) + '" width="' + (bw + 6).toFixed(1) + '" height="2" rx="1" fill="#AEAEB2"/>')
-      // each bar springs up from its baseline a beat after the one before it
-      parts.push('<g class="p d' + i + '"' + (isBack ? ' opacity="0.35"' : '') + '><g class="mbar" style="animation-delay:' + i * 70 + 'ms">' + rects.join('') + '</g><rect x="' + a.toFixed(1) + '" y="' + (top - 6) + '" width="' + (b - a).toFixed(1) + '" height="' + (BY - top + 6) + '" fill="transparent"/></g>')
+      if (g.picked === i) parts.push('<rect class="pick" x="' + (cx - bw / 2 - 3).toFixed(1) + '" y="' + (BY + 3) + '" width="' + (bw + 6).toFixed(1) + '" height="2" rx="1"' + fillOf(INK) + '/>')
+      // each bar rises from its baseline a beat after the one before it
+      parts.push('<g class="p d' + i + '"' + (isBack ? ' opacity="0.35"' : '') + '><g class="mbar" style="animation-delay:' + i * 70 + 'ms">' + column(cx - bw / 2, BY, bw, segs) + '</g><rect x="' + a.toFixed(1) + '" y="' + (top - 6) + '" width="' + (b - a).toFixed(1) + '" height="' + (BY - top + 6) + '" fill="transparent"/></g>')
       if (day.tip) tips.push(tipLabel(cx, BY - height, day.tip, W, H, 'tip t' + i))
       if (day.tip) css += '.d' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
     })
@@ -3956,16 +4108,15 @@ export function svgWindow(g, { width = 600, isFluid = false } = {}) {
   // fluid, it stretches to its slot's width; its strokes keep their weight as it does
   // every drawing names its size: the app draws markup without one at the browser's default 300px
   const size = ' width="' + W + '" height="' + H + '"'
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '"' + size + '>' + MOTION_CSS + SHEEN_DEFS + (days ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>'
-  return withLight(svg)
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '"' + size + '>' + MOTION_CSS + (days ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>')
 }
 
 // The week as one drawing: the limit's big figure and its forecast top left, then the week's days
 // as columns, each day's work stacked by project behind a line of what has been used so far (the
-// bars' own shape, scaled so it ends at the limit's reading), a dashed projection from Now to the
-// limit ending at a pulsing run-out dot, the reset at the right edge, and the stretch between the
+// columns' own shape, scaled so it ends at the limit's reading), a dashed projection from Now to the
+// limit ending in a hollow ring at the run-out, the reset at the right edge, and the stretch between the
 // run-out and the reset hatched and named. No day names: buttons laid out by the same fractions sit
-// under the columns. g: svgWindow's, plus { label, sentence, level, early, gap, figHexes }.
+// under the columns. g: svgWindow's, plus { label, sentence, level, early, gap }.
 export function svgWeek(g, { width = 600 } = {}) {
   const W = Math.max(240, Math.round(width))
   const days = (g.days || []).filter(Boolean)
@@ -3977,9 +4128,9 @@ export function svgWeek(g, { width = 600 } = {}) {
   const S = W >= 640 ? 68 : W >= 480 ? 60 : W >= 340 ? 52 : 44
   const hasClock = g.elapsed !== null && g.elapsed !== undefined
   const early = hasClock && g.runOut !== null && g.runOut !== undefined
-  const text = (x, y, size, str, anchor, fill, weight) => '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" font-size="' + size + '" fill="' + fill + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
+  const lvl = g.level || levelOfHexes(g.figHexes)
   const wrap = (str, room) => {
-    const per = Math.max(12, Math.floor(room / 6.6))
+    const per = Math.max(12, Math.floor(room / 7.5))
     const lines = []
     let line = ''
     // a span ("32 h 38 min") or a time ("5:21 AM") is one word: a line breaks before it, not inside it
@@ -3995,63 +4146,60 @@ export function svgWeek(g, { width = 600 } = {}) {
   }
   // the header: the figure, and beside it (under it, when narrow) what it is and where it is heading
   const figure = pctText(g.used)
-  const figW = Math.ceil([...figure].reduce((n, c) => n + (/[0-9]/.test(c) ? 0.62 : 0.94) * S, 0)) + 4
-  const beside = W - figW - 18 >= 190
+  const figH = Math.round(S * 0.76)
+  const gf = glyphAt(figure, figH)
+  const figW = gf ? Math.ceil(gf.width) + 4 : Math.ceil([...figure].reduce((n, c) => n + (/[0-9]/.test(c) ? 0.62 : 0.94) * S, 0)) + 4
+  const beside = isWide && W - figW - 18 >= 190 // a narrow pane puts the words under the figure, at the pane's full width
   const room = beside ? W - figW - 18 : W
   const sentenceLines = wrap(g.sentence, room)
   const labelLines = wrap(g.label, room).slice(0, 2)
-  const block = [...labelLines.map((t) => ({ t, size: 13, fill: g.level === 'success' || !g.level ? HEX.marker : g.level === 'error' ? HEX.error : HEX.warning, weight: 600 })), ...sentenceLines.map((t) => ({ t, size: 13, fill: g.early ? HEX.warning : '#F2F2F7' }))]
+  const block = [...labelLines.map((t) => ({ t, size: 13, fill: lvl === 'error' ? 'c' : lvl === 'warning' ? 'w' : 'i2', weight: 600 })), ...sentenceLines.map((t) => ({ t, size: 13, fill: 'ink', weight: 500 }))]
   // the figure's baseline is also the last line of the words beside it, so a long label and sentence push both
   // down rather than up over the top edge: the first line keeps room for its own height
-  const y0 = beside ? Math.max(Math.round(S * 0.86), 14 + (block.length - 1) * 18) : Math.round(S * 0.86)
+  const y0 = beside ? Math.max(figH + 3, 14 + (block.length - 1) * 18) : figH + 3
   const parts = []
-  // the figure is a gradient in the colours of its status (figureHues), glowing under the digits when critical; the ends are custom properties
-  // on the drawing so a light pane's pair replaces them (the app strips data attributes from an interactive frame, so the
-  // drawing's own class says it as well)
-  const hues = g.figHexes || LEVEL_HUES.info
-  const dark = hues.map((h) => toneFor(h, true))
-  const light = hues.map((h) => toneFor(h, false))
-  const id = 'mw' + dark.map((h) => h.slice(1)).join('')
-  const vars = (c) => '{--a:' + c[0] + ';--b:' + c[1] + '}'
-  const css0 = 'svg[data-fig="' + id + '"]' + vars(dark) + 'svg.mwk' + vars(dark) + 'svg.mwk .bloom{opacity:.75}@media (prefers-color-scheme:light){svg[data-fig="' + id + '"]' + vars(light) + 'svg.mwk' + vars(light) + 'svg.mwk .bloom{opacity:.3}}'
-  parts.push('<defs><linearGradient id="' + id + '" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--a)"/><stop offset="1" style="stop-color:var(--b)"/></linearGradient></defs>')
-  parts.push('<defs><filter id="' + id + 'b" x="-10%" y="-25%" width="120%" height="150%"><feGaussianBlur stdDeviation="' + (S * 0.035).toFixed(1) + '"/></filter></defs>')
-  const glyphs = '<text class="mrise" x="2" y="' + y0 + '" font-size="' + S + '" font-weight="800" fill="url(#' + id + ')" style="font-variant-numeric:tabular-nums;letter-spacing:-0.02em"' + FONT + '>' + escapeXml(figure) + '</text>'
-  // the glow marks a limit at its critical level; a figure that is only past its alert has the gradient alone
-  parts.push((g.level === 'error' || g.isLive ? '<g class="bloom" filter="url(#' + id + 'b)">' + glyphs + '</g>' : '') + glyphs)
+  const colour = levelColour(lvl)
+  const figOpen = '<g class="mrise"' + (colour ? ' style="color:' + colour + '"' : '') + '>'
+  if (gf) parts.push(figOpen + '<g transform="translate(2 ' + (y0 - gf.height).toFixed(1) + ')">' + drawOn(gf.markup) + '</g></g>')
+  else parts.push('<text class="mrise" x="2" y="' + y0 + '" font-size="' + S + '" font-weight="700" style="font-variant-numeric:tabular-nums;letter-spacing:-0.02em;fill:' + (colour || INK) + '">' + escapeXml(figure) + '</text>')
   let headEnd
   if (beside) {
     const top = y0 - (block.length - 1) * 18
-    block.forEach((b, i) => parts.push(text(figW + 18, top + i * 18, b.size, b.t, 'start', b.fill, b.weight)))
+    block.forEach((b, i) => parts.push(dtext(figW + 18, top + i * 18, b.t, b)))
     headEnd = y0 + 8
   } else {
-    block.forEach((b, i) => parts.push(text(2, y0 + 24 + i * 18, b.size, b.t, 'start', b.fill, b.weight)))
+    block.forEach((b, i) => parts.push(dtext(2, y0 + 24 + i * 18, b.t, b)))
     headEnd = y0 + 24 + (block.length - 1) * 18 + 8
   }
+  // flags over the plot: run-out, now and reset, each kept inside; one that would run into another goes on a line above it
+  // (the plot then starts lower to make room), and is dropped only when it would run into one there too
+  const flags = []
+  const xroFlag = early ? pctX(g.runOut) : null
+  const xNowFlag = hasClock ? pctX(g.elapsed) : W
+  if (early && g.runLabel) flags.push({ at: xroFlag, text: g.runLabel, fill: 'w', weight: 600, rank: 2 })
+  if (hasClock && g.nowLabel) flags.push({ at: xNowFlag, text: g.nowLabel, fill: 'ink', weight: 600, rank: 3 })
+  if (g.endLabel) flags.push({ at: W, text: g.endLabel, fill: 'i2', weight: 500, edge: 'end', rank: 1 })
+  const hasTwoRows = placeFlags(flags, W, 11, 8, 2).some((x) => x.row === 1)
   // the plot
-  const PT = Math.max(headEnd, 40) + 30
+  const PT = Math.max(headEnd, 40) + 30 + (hasTwoRows ? 15 : 0)
   const PH = isWide ? 168 : 138
   const BY = PT + PH
   const H = BY + 6
   const yAt = (p) => BY - (Math.max(0, Math.min(100, p || 0)) / 100) * PH
   const xNow = hasClock ? pctX(g.elapsed) : W
   const nowMs = g.startMs + ((hasClock ? g.elapsed : 100) / 100) * span
-  // 100% of the limit, and the days' own hairlines
-  parts.push('<rect x="0" y="' + PT + '" width="' + W + '" height="1" fill="#8E8E93" fill-opacity="0.45"/>')
-  parts.push(text(2, PT + 15, 12, '100% of the limit', 'start', HEX.marker))
+  // 100% of the limit (a firmer rule), and the days' own hairlines
+  parts.push('<rect x="0" y="' + PT + '" width="' + W + '" height="1"' + fillOf(INK, OP.tick) + '/>')
+  parts.push(dtext(2, PT + 15, '100% of the limit', { fill: 'i2' }))
   days.forEach((d, i) => {
-    if (i > 0) parts.push('<line x1="' + xMs(d.startMs).toFixed(1) + '" x2="' + xMs(d.startMs).toFixed(1) + '" y1="' + (PT + 18) + '" y2="' + BY + '" stroke="#8E8E93" stroke-opacity="0.22" stroke-width="1"' + ns + '/>')
+    if (i > 0) parts.push('<line x1="' + xMs(d.startMs).toFixed(1) + '" x2="' + xMs(d.startMs).toFixed(1) + '" y1="' + (PT + 18) + '" y2="' + BY + '"' + strokeOf(INK, 1, 0.18, ns) + '/>')
   })
-  parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="1" fill="#8E8E93" fill-opacity="0.45"/>')
+  parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="1"' + fillOf(INK, OP.rule) + '/>')
   // the stretch after the run-out: hatched, and named
-  const period = 7
   const xro = early ? pctX(g.runOut) : null
-  if (early) {
-    parts.push(hatchDefs(period))
-    parts.push('<g opacity="0.4"><rect x="' + xro.toFixed(1) + '" y="' + PT + '" width="' + (W - xro).toFixed(1) + '" height="' + PH + '" fill="url(#mh' + period + ')"/></g>')
-  }
-  // each day's bar, stacked by project in the project's own colour (the same as its legend dot and its share
-  // bars; the line over them has a halo to lead by); a column per day for hover
+  if (early) parts.push(HATCH + '<rect x="' + xro.toFixed(1) + '" y="' + PT + '" width="' + (W - xro).toFixed(1) + '" height="' + PH + '" fill="url(#mh)"/>')
+  // each day's column, stacked by project in the project's own colour (the same as its legend dot and its share
+  // bars); a column per day for hover
   const top = PT + 22
   const maxDay = Math.max(...days.map((x) => x.parts.reduce((n, p) => n + p.value, 0)), 0.0001)
   const hovers = []
@@ -4061,20 +4209,15 @@ export function svgWeek(g, { width = 600 } = {}) {
     const a = xMs(day.startMs)
     const b = xMs(day.endMs)
     if (b - a < 4) return
-    const bw = Math.min(34, Math.max(6, (b - a) * 0.5))
-    const cx = (a + b) / 2
+    const bw = Math.min(22, Math.max(6, (b - a) * 0.5))
+    // the day that now falls in: its bar stands left of the meridian, so nothing solid is drawn in the forecast
+    const cx = hasClock && xNow > a && xNow < b ? Math.max(a + bw / 2, Math.min((a + b) / 2, xNow - bw / 2 - 2)) : (a + b) / 2
     const total = day.parts.reduce((n, p) => n + p.value, 0)
     const height = total > 0 ? Math.max(3, (total / maxDay) * (BY - top) * 0.52) : 0
-    let y = BY
-    const shown = day.parts.filter((p) => p.value > 0)
-    const rects = shown.map((p, j) => {
-      const h = j === shown.length - 1 ? y - (BY - height) : (p.value / total) * height
-      y -= h
-      return '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(0.5, h).toFixed(1) + '" fill="' + p.hex + '"' + (p.isDim ? ' fill-opacity="0.2"' : '') + '/>'
-    })
+    const segs = day.parts.filter((p) => p.value > 0).map((p) => ({ h: (p.value / total) * height, c: p.hex, op: p.isDim ? 0.2 : 1 }))
     const isBack = g.picked !== undefined && g.picked !== null && g.picked >= 0 && g.picked !== i
-    if (g.picked === i) parts.push('<rect class="pick" x="' + (cx - bw / 2 - 3).toFixed(1) + '" y="' + (BY + 1) + '" width="' + (bw + 6).toFixed(1) + '" height="2" rx="1" fill="#AEAEB2"/>')
-    hovers.push('<g class="p d' + i + '"' + (isBack ? ' opacity="0.35"' : '') + '><g class="mbar" style="animation-delay:' + i * 70 + 'ms">' + rects.join('') + '</g><rect x="' + a.toFixed(1) + '" y="' + PT + '" width="' + (b - a).toFixed(1) + '" height="' + PH + '" fill="transparent"/></g>')
+    if (g.picked === i) parts.push('<rect class="pick" x="' + (cx - bw / 2 - 3).toFixed(1) + '" y="' + (BY + 1) + '" width="' + (bw + 6).toFixed(1) + '" height="2" rx="1"' + fillOf(INK) + '/>')
+    hovers.push('<g class="p d' + i + '"' + (isBack ? ' opacity="0.35"' : '') + '><g class="mbar" style="animation-delay:' + i * 70 + 'ms">' + column(cx - bw / 2, BY, bw, segs) + '</g><rect x="' + a.toFixed(1) + '" y="' + PT + '" width="' + (b - a).toFixed(1) + '" height="' + PH + '" fill="transparent"/></g>')
     if (day.tip) tips.push(tipLabel(cx, BY - height, day.tip, W, H, 'tip t' + i))
     if (day.tip) css += '.d' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
   })
@@ -4094,78 +4237,53 @@ export function svgWeek(g, { width = 600 } = {}) {
     const last = pts[pts.length - 1]
     if (last[0] < xNow - 0.5) pts.push([xNow, g.used])
     const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + yAt(p[1]).toFixed(1)).join('')
-    const grad = 'mwa' + id.slice(2)
-    over.push('<defs><linearGradient id="' + grad + '" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="' + g.hex + '" stop-opacity="0.34"/><stop offset="1" stop-color="' + g.hex + '" stop-opacity="0"/></linearGradient></defs>')
-    over.push('<g class="msw"><path d="' + line + 'L' + pts[pts.length - 1][0].toFixed(1) + ' ' + BY + 'L0 ' + BY + 'Z" fill="url(#' + grad + ')"/><path class="hl" d="' + line + '" fill="none" stroke="#1C1C1E" stroke-opacity="0.75" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"' + ns + '/><path d="' + line + '" fill="none" stroke="' + g.hex + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"' + ns + '/></g>')
-    // the pace from now: dashed to the limit at the run-out, or to where the week ends
-    const x1 = xNow
-    const y1 = yAt(g.used)
+    over.push('<g class="msw"><path d="' + line + 'L' + pts[pts.length - 1][0].toFixed(1) + ' ' + BY + 'L0 ' + BY + 'Z"' + fillOf(INK, 0.06) + '/><path d="' + line + '" fill="none" style="stroke:' + KNOCK + '" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"' + ns + '/><path d="' + line + '" fill="none"' + strokeOf(g.hex, 2, 1, ' stroke-linejoin="round" stroke-linecap="round"' + ns) + '/></g>')
+    // the pace from now: dashed to the limit at the run-out, or to where the week ends, in a hollow ring
     const hasEnd = early || (g.projected !== null && g.projected !== undefined)
     if (hasEnd) {
-      const x2 = early ? xro : W
+      const x2 = early ? xro : W - 5.5
       const y2 = early ? PT : yAt(g.projected)
-      over.push('<line class="mrise" x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="' + (early ? HEX.warning : g.hex) + '" stroke-width="2.5" stroke-dasharray="6 5" stroke-linecap="round"' + ns + '/>')
+      const c = early ? 'var(--w)' : g.hex
+      over.push('<line class="mrise" x1="' + xNow.toFixed(1) + '" y1="' + yAt(g.used).toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '"' + strokeOf(c, 2, 1, ' stroke-dasharray="5 4"' + ns) + '/>')
+      over.push('<circle class="mrise' + (early ? ' mpu' : '') + '" cx="' + x2.toFixed(1) + '" cy="' + y2.toFixed(1) + '" r="4.5" style="fill:' + KNOCK + ';stroke:' + (early ? 'var(--w)' : paintOf(g.hex).v) + '" stroke-width="2"/>')
     }
   }
   if (hasClock) {
-    over.push('<line x1="' + xNow.toFixed(1) + '" x2="' + xNow.toFixed(1) + '" y1="' + (PT - 6) + '" y2="' + BY + '" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
-    over.push('<line class="now" x1="' + xNow.toFixed(1) + '" x2="' + xNow.toFixed(1) + '" y1="' + (PT - 6) + '" y2="' + BY + '" stroke="#F2F2F7" stroke-width="2"' + ns + '/>')
-    if (g.used > 0) over.push('<circle cx="' + xNow.toFixed(1) + '" cy="' + yAt(g.used).toFixed(1) + '" r="4.5" fill="' + g.hex + '" stroke="#1C1C1E" stroke-width="2"/>')
+    over.push(meridian(xNow, PT - 6, BY, ns))
+    if (g.used > 0) over.push('<circle cx="' + xNow.toFixed(1) + '" cy="' + yAt(g.used).toFixed(1) + '" r="4.5"' + fillOf(g.hex) + ' style="stroke:' + KNOCK + '" stroke-width="2"/>')
   }
-  over.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="' + (PT - 6) + '" y2="' + BY + '" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
+  over.push('<line class="post" x1="' + (W - 0.5) + '" x2="' + (W - 0.5) + '" y1="' + (PT - 6) + '" y2="' + BY + '"' + strokeOf(INK, 1, OP.post, ns) + '/>')
   if (early) {
-    over.push('<line class="ro mpu" x1="' + xro.toFixed(1) + '" x2="' + xro.toFixed(1) + '" y1="' + (PT + 6) + '" y2="' + BY + '" stroke="' + HEX.warning + '" stroke-width="2" stroke-opacity="0.7"' + ns + '/>')
-    over.push('<circle class="mhalo" cx="' + xro.toFixed(1) + '" cy="' + PT + '" r="9" fill="' + HEX.warning + '" fill-opacity="0.45"/>')
-    over.push('<circle class="mpu" cx="' + xro.toFixed(1) + '" cy="' + PT + '" r="5.5" fill="' + HEX.warning + '" stroke="#1C1C1E" stroke-width="2"/>')
-    // the gap, in a label of its own so it reads over the hatching
+    over.push('<line class="ro mpu" x1="' + xro.toFixed(1) + '" x2="' + xro.toFixed(1) + '" y1="' + (PT + 5) + '" y2="' + BY + '" style="stroke:var(--w)" stroke-width="2"' + ns + '/>')
+    // the gap, in a panel of its own so it reads over the hatching
     const gapText = g.gap ? g.gap + ' without Claude' : ''
     const zone = W - xro
     if (gapText) {
-      const one = gapText.length * 6.8 + 22
-      const two = Math.max(g.gap.length, 14) * 6.8 + 22
+      const one = tw(gapText, 12, 600) + 20
+      const two = tw(g.gap.length > 'without Claude'.length ? g.gap : 'without Claude', 12, 600) + 20
       const lines = zone - 8 >= one ? [gapText] : [g.gap, 'without Claude']
       const w = lines.length === 1 ? one : two
-      const h = lines.length * 17 + 10
+      const h = lines.length * 16 + 10
       // centred on the hatched stretch it names. Where the stretch is narrower than its label (a phone)
       // the label is left out rather than set down far from it: the sentence above says the same
       const fits = zone >= w + 8
       const cx = xro + zone / 2
       const y = BY - h - 14
-      if (fits) over.push('<g><rect x="' + (cx - w / 2).toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '" rx="8" class="gp" fill-opacity="0.94"/>' + lines.map((l, i) => '<text class="gl" x="' + cx.toFixed(1) + '" y="' + (y + 18 + i * 17) + '" font-size="13" font-weight="600" text-anchor="middle"' + FONT + '>' + escapeXml(l) + '</text>').join('') + '</g>')
+      if (fits) over.push('<g><rect class="tp" x="' + (cx - w / 2).toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + h + '" rx="4"/>' + lines.map((l, i) => dtext(cx, y + 17 + i * 16, l, { size: 12, weight: 600, fill: 'w', anchor: 'middle' })).join('') + '</g>')
     }
   }
   // the app's scrub drops the attribute, so a class (whose rule is in the drawing's style) lets the pointer through
   parts.push(...over.map((x) => (/^<\w+[^>]*class="/.test(x) ? x.replace(/^(<\w+[^>]*?class="[^"]*)"/, '$1 po"') : x.replace(/^<(\w+)/, '<$1 class="po"'))))
-  // flags over the plot: run-out, now and reset, each kept inside and dropped when it would run into another
-  const flags = []
-  if (early && g.runLabel) flags.push({ at: xro, text: g.runLabel, fill: HEX.warning, weight: 600, wide: g.runLabel.length * 7.2 })
-  if (hasClock && g.nowLabel) flags.push({ at: xNow, text: g.nowLabel, fill: '#F2F2F7', weight: 600, wide: g.nowLabel.length * 7.2 })
-  if (g.endLabel) flags.push({ at: W, text: g.endLabel, fill: HEX.marker, wide: g.endLabel.length * 7, edge: 'end' })
-  const placed = []
-  for (const f of flags) {
-    let anchor = f.edge || 'middle'
-    let from = anchor === 'end' ? f.at - f.wide : f.at - f.wide / 2
-    if (from < 0) {
-      anchor = 'start'
-      from = Math.max(0, f.at)
-    }
-    if (from + f.wide > W) {
-      anchor = 'end'
-      from = W - f.wide
-    }
-    if (placed.some(([a, z]) => from < z + 8 && from + f.wide > a - 8)) continue
-    placed.push([from, from + f.wide])
-    parts.push(text(anchor === 'start' ? from : anchor === 'end' ? from + f.wide : from + f.wide / 2, PT - 12, 12, f.text, anchor, f.fill, f.weight))
-  }
+  parts.push(flagsAt(flags, W, PT - 12, 11, 8, 2))
   parts.push(...tips)
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" class="mwk" overflow="visible">' + MOTION_CSS + HOVER_CSS + '<style>.po{pointer-events:none}.gp{fill:#1C1C1E;stroke:#48484A}.gl{fill:#FFA424}@media (prefers-color-scheme:light){.gp{fill:#FFFFFF;stroke:#C7C7CC}.gl{fill:#B34C00}}' + css0 + css + '</style>' + parts.join('') + '</svg>'
-  return withLight(svg)
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" class="mwk" overflow="visible">' + MOTION_CSS + HOVER_CSS + '<style>.po{pointer-events:none}' + css + '</style>' + parts.join('') + '</svg>'
+  return withScheme(svg)
 }
 
 // What the ideas would give back, as two bars: the work as it ran, and the work with the ideas
 // applied, which is that less the estimated saving. A bracket spans the difference, named at body size (in
-// green only when the result is good); the part saved is drawn after the shorter bar as an outline. Both bars share one
-// scale (the larger), and a line marks the limit when it falls inside it.
+// green only when the result is good); the part saved is drawn after the shorter bar as a hollow, dashed outline. Both bars
+// share one scale (the larger), and a line marks the limit when it falls inside it.
 // g: { a: { label, value }, b: { label, value }, back (words for the bracket), max?, mark?: value of the limit, isGood?: the result is good }
 export function svgSaving(g, { width = 480 } = {}) {
   const W = Math.max(240, Math.round(width))
@@ -4173,38 +4291,43 @@ export function svgSaving(g, { width = 480 } = {}) {
   const x = (v) => Math.max(0, Math.min(W, (v / max) * W))
   const xa = x(g.a.value)
   const xb = x(g.b.value)
-  const AY = 22
-  const BY = 66
-  const BH = 18
-  const ink = '#F2F2F7'
-  const text = (px, y, size, str, o = {}) => '<text' + (o.cls ? ' class="' + o.cls + '"' : '') + ' x="' + px.toFixed(1) + '" y="' + y + '" font-size="' + size + '" text-anchor="' + (o.anchor || 'start') + '"' + (o.fill ? ' fill="' + o.fill + '"' : '') + (o.weight ? ' font-weight="' + o.weight + '"' : '') + (o.style ? ' style="' + o.style + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
+  const AY = 20
+  const BH = 10
+  const BY = AY + BH + 26
+  const good = g.isGood ? 'var(--k)' : INK
   const parts = []
   // a label longer than the bar is above it shrinks a little (never under 11px) rather than running off the drawing
   const fit = (label) => Math.max(11, Math.min(13, Math.floor(W / (String(label).length * 0.6))))
-  parts.push(text(0, 14, fit(g.a.label), g.a.label, { fill: ink, weight: 600 }))
-  parts.push('<rect x="0" y="' + AY + '" width="' + W + '" height="' + BH + '" rx="4" fill="#8E8E93" fill-opacity="0.2"/>')
-  parts.push('<g class="msw"><rect x="0" y="' + AY + '" width="' + xa.toFixed(1) + '" height="' + BH + '" rx="4" fill="' + HEX.bar + '"/></g>')
-  parts.push(text(0, BY - 8, fit(g.b.label), g.b.label, { fill: ink, weight: 600 }))
-  parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="' + BH + '" rx="4" fill="#8E8E93" fill-opacity="0.2"/>')
-  parts.push('<g class="msw"><rect x="0" y="' + BY + '" width="' + xb.toFixed(1) + '" height="' + BH + '" rx="4" fill="' + HEX.bar + '"/></g>')
-  // the part the ideas would save: an outline where the second bar ends and the first goes on
-  if (xa - xb > 3) parts.push('<rect class="mrise gs" x="' + (xb + 1).toFixed(1) + '" y="' + (BY + 1) + '" width="' + (xa - xb - 2).toFixed(1) + '" height="' + (BH - 2) + '" rx="3" stroke-width="1.5" stroke-dasharray="4 3" fill-opacity="0.2"/>')
+  // the limit, where one is drawn: a bar is ink up to it and amber beyond, so a week that overruns reads as one
+  const lim = g.mark > 0 ? x(g.mark) : null
+  const bar = (y, w) => {
+    if (lim === null || w <= lim + 1) return '<rect x="0" y="' + y + '" width="' + w.toFixed(1) + '" height="' + BH + '" rx="1.5"' + fillOf(INK, OP.ink2) + '/>'
+    return '<rect x="0" y="' + y + '" width="' + lim.toFixed(1) + '" height="' + BH + '" rx="1.5"' + fillOf(INK, OP.ink2) + '/><rect x="' + lim.toFixed(1) + '" y="' + y + '" width="' + (w - lim).toFixed(1) + '" height="' + BH + '"' + fillOf('var(--w)') + '/>'
+  }
+  parts.push(dtext(0, 13, g.a.label, { size: fit(g.a.label), weight: 600, fill: 'ink' }))
+  parts.push('<rect x="0" y="' + AY + '" width="' + W + '" height="' + BH + '" rx="1.5"' + fillOf(INK, OP.track) + '/>')
+  parts.push('<g class="msw">' + bar(AY, xa) + '</g>')
+  parts.push(dtext(0, BY - 6, g.b.label, { size: fit(g.b.label), weight: 600, fill: 'ink' }))
+  parts.push('<rect x="0" y="' + BY + '" width="' + W + '" height="' + BH + '" rx="1.5"' + fillOf(INK, OP.track) + '/>')
+  parts.push('<g class="msw">' + bar(BY, xb) + '</g>')
+  // the part the ideas would save: hollow and dashed where the second bar ends and the first goes on
+  if (xa - xb > 3) parts.push('<rect class="mrise" x="' + (xb + 0.75).toFixed(1) + '" y="' + (BY + 0.75) + '" width="' + (xa - xb - 1.5).toFixed(1) + '" height="' + (BH - 1.5) + '" rx="1.5"' + fillOf(good, 0.12) + strokeOf(good, 1.5, g.isGood ? 1 : 0.7, ' stroke-dasharray="4 3"') + '/>')
   if (g.mark && g.mark > max * 0.2 && g.mark < max * 0.98) {
     const m = x(g.mark)
     // the line stops short of a label it would cross (the second bar's name runs along the gap between the bars), so no text is struck through
-    const dash = (y1, y2) => '<line x1="' + m.toFixed(1) + '" x2="' + m.toFixed(1) + '" y1="' + y1 + '" y2="' + y2 + '" stroke="#AEAEB2" stroke-width="1.5" stroke-dasharray="3 3"/>'
-    if (m < g.b.label.length * 13 * 0.62 + 4) parts.push(dash(AY - 4, BY - 24), dash(BY - 2, BY + BH + 4))
-    else parts.push(dash(AY - 4, BY + BH + 4))
-    if (m > 300) parts.push(text(m, 14, 12, 'the limit', { anchor: 'middle', fill: HEX.marker }))
+    const rule = (y1, y2) => '<line x1="' + m.toFixed(1) + '" x2="' + m.toFixed(1) + '" y1="' + y1 + '" y2="' + y2 + '"' + strokeOf(INK, 1, OP.post) + '/>'
+    if (m < tw(g.b.label, 13, 600) + 8) parts.push(rule(AY - 4, BY - 20), rule(BY - 2, BY + BH + 4))
+    else parts.push(rule(AY - 4, BY + BH + 4))
+    if (m > 300) parts.push(dtext(m, 13, 'the limit', { anchor: 'middle' }))
   }
   // the bracket under both, from where the shorter bar ends to where the longer one does
-  const BR = BY + BH + 10
+  const BR = BY + BH + 8
   const gap = xa - xb
-  if (gap > 3) parts.push('<path class="gs" d="M' + xb.toFixed(1) + ' ' + BR + 'v6h' + gap.toFixed(1) + 'v-6" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')
+  if (gap > 3) parts.push('<path d="M' + xb.toFixed(1) + ' ' + BR + 'v6h' + gap.toFixed(1) + 'v-6" fill="none"' + strokeOf(good, 1.5, g.isGood ? 1 : OP.post, ' stroke-linecap="round" stroke-linejoin="round"') + '/>')
   // what the idea gives back is said at body size: green only when the result is actually good (the week then
   // ends under the limit), else in the ink of the other labels, so a saving that still runs out reads as plain fact
   const size = 13
-  const lw = g.back.length * size * 0.58
+  const lw = tw(g.back, size, 600)
   const mid = xb + gap / 2
   let anchor = 'middle'
   let tx = mid
@@ -4215,127 +4338,118 @@ export function svgSaving(g, { width = 480 } = {}) {
     anchor = 'end'
     tx = W
   }
-  parts.push(text(tx, BR + 6 + size, size, g.back, { anchor, cls: g.isGood ? 'gt' : '', fill: g.isGood ? undefined : ink, weight: 600, style: 'font-variant-numeric:tabular-nums' }))
-  const H = BR + 6 + size + 8
-  const light = toneFor(HEX.success, false)
-  const css = g.isGood
-    ? '<style>.gt{fill:' + HEX.success + '}.gs{stroke:' + HEX.success + ';fill:' + HEX.success + '}path.gs{fill:none}@media (prefers-color-scheme:light){.gt{fill:' + light + '}.gs{stroke:' + light + ';fill:' + light + '}path.gs{fill:none}svg>text[fill="#F2F2F7"]{fill:#1C1C1E}}</style>'
-    : '<style>.gs{stroke:#AEAEB2;fill:#AEAEB2}path.gs{fill:none}@media (prefers-color-scheme:light){.gs{stroke:#636366;fill:#636366}svg>text[fill="#F2F2F7"]{fill:#1C1C1E}}</style>'
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + MOTION_CSS + css + parts.join('') + '</svg>')
+  parts.push(dtext(tx, BR + 4 + size, g.back, { size, weight: 600, fill: g.isGood ? 'k' : 'ink', anchor }))
+  const H = BR + 4 + size + 6
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + MOTION_CSS + parts.join('') + '</svg>')
 }
 
-// A tiny bar for one idea's own saving, in proportion to the largest: the neutral accent on a faint track, because an
-// idea not yet taken up is a size, not a win (green is for a result that is good).
-export function svgMiniBar(fraction, { width = 96, height = 8 } = {}) {
+// A tiny bar for one idea's own saving, in proportion to the largest: ink on the empty track, because an idea not yet
+// taken up is a size, not a win (green is for a result that is good).
+export function svgMiniBar(fraction, { width = 96, height = 6 } = {}) {
   const w = Math.max(2, Math.round(Math.max(0, Math.min(1, fraction)) * width))
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height + '">' + MOTION_CSS + '<style>.gb{fill:' + HEX.bar + '}</style><rect x="0" y="0" width="' + width + '" height="' + height + '" rx="' + height / 2 + '" fill="#8E8E93" fill-opacity="0.24"/><g class="msw"><rect class="gb" x="0" y="0" width="' + w + '" height="' + height + '" rx="' + height / 2 + '"/></g></svg>')
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height + '">' + MOTION_CSS + '<rect x="0" y="0" width="' + width + '" height="' + height + '" rx="1.5"' + fillOf(INK, OP.track) + '/><g class="msw"><rect x="0" y="0" width="' + w + '" height="' + height + '" rx="1.5"' + fillOf(INK, OP.ink2) + '/></g></svg>')
 }
 
 // The context window, laid out like the week is: its runway over a row of bars, one per turn. The
-// track is the window compaction works to; the fill is what is in use, a faint ghost ahead of it is
+// track is the window compaction works to; the fill is what is in use, a hollow ghost ahead of it is
 // where the next few turns at the recent pace take it, and a post marks where Claude Code compacts.
-// Under it, each turn's context size stands as a bar against a dashed line at the compaction point, so
-// whether the conversation will make it reads as bars climbing towards a line, then the ghosts that
-// reach it. Flags over the track say where it is now, where it compacts and how big the window is;
+// Under it, each turn's context size stands as a bar against a line at the compaction point, so
+// whether the conversation will make it reads as bars climbing towards a line, then the hollow bars
+// that reach it. Flags over the track say where it is now, where it compacts and how big the window is;
 // each is dropped, not overlapped, when the drawing is narrow.
 // g: { used, total (tokens), compactAt (tokens | null), warnAt, cheaperAt (percent), hex, early (bool),
-//      per (tokens a turn | null), ahead (turns to draw ahead), turns: [{ context, title }], labels: { now, compact, end } }
+//      per (tokens a turn | null), ahead (turns to draw ahead), turns: [{ context, title, hex }], labels: { now, compact, end } }
 export function svgContext(g, { width = 600 } = {}) {
   const W = Math.max(240, Math.round(width))
   const total = Math.max(1, g.total)
   const x = (t) => Math.max(0, Math.min(W, (t / total) * W))
   const ns = '' // drawn at exactly the width it is made at, and interactive: the scrub strips vector-effect
-  const T = 20
+  const T = 22
+  const TH = 8
   const hasBars = (g.turns || []).length >= 3
   const BH = 56
-  const BASE = T + 10 + 14 + BH
+  const BASE = T + TH + 14 + BH
   const H = hasBars ? BASE + 22 : T + 24
   const u = x(g.used)
-  const label = (tx, ty, str, anchor, fill, weight) => '<text x="' + tx.toFixed(1) + '" y="' + ty + '" font-size="12" fill="' + (fill || HEX.marker) + '" text-anchor="' + anchor + '"' + (weight ? ' font-weight="' + weight + '"' : '') + FONT + '>' + escapeXml(str) + '</text>'
-  const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="10" fill="#8E8E93" fill-opacity="0.24"/>']
-  if (u > 0) parts.push('<g class="msw"><rect x="0" y="' + T + '" width="' + u.toFixed(1) + '" height="10" fill="' + g.hex + '"/></g>', sheen(0, T, u, 10, false))
+  const warn = g.early ? 'var(--w)' : g.hex
+  const parts = ['<rect x="0" y="' + T + '" width="' + W + '" height="' + TH + '" rx="1.5"' + fillOf(INK, OP.track) + '/>']
+  const inner = []
+  if (u > 0) {
+    // ink up to the warning mark, amber from it to where helpers switch, red beyond: the colour is spent on the part that crosses a mark
+    const wx = g.warnAt > 0 ? x((g.warnAt / 100) * total) : u
+    const cx2 = g.cheaperAt > 0 ? x((g.cheaperAt / 100) * total) : u
+    const seg = (from, to, paint, op) => (to - from > 0.1 ? '<rect x="' + from.toFixed(1) + '" y="' + T + '" width="' + (to - from).toFixed(1) + '" height="' + TH + '"' + fillOf(paint, op) + '/>' : '')
+    inner.push('<g class="msw">' + (isStatusPaint(g.hex) ? seg(0, Math.min(u, wx), INK, 0.85) + seg(wx, Math.min(u, cx2), 'var(--w)', 1) + seg(cx2, u, 'var(--c)', 1) : seg(0, u, g.hex, g.hex === INK ? 0.85 : 1)) + '</g>')
+  }
   const stop = g.compactAt || g.total
   if (g.per && g.ahead > 0) {
     const to = x(Math.min(stop, g.used + g.per * g.ahead))
-    if (to > u + 1) parts.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (to - u).toFixed(1) + '" height="10" fill="' + (g.early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>', sheen(u, T, to - u, 10, true))
+    if (to > u + 1) {
+      inner.push('<rect class="ahead" x="' + u.toFixed(1) + '" y="' + T + '" width="' + (to - u).toFixed(1) + '" height="' + TH + '"' + fillOf(warn, 0.16) + '/>')
+      for (const ly of [T + 0.5, T + TH - 0.5]) inner.push('<line x1="' + u.toFixed(1) + '" x2="' + to.toFixed(1) + '" y1="' + ly + '" y2="' + ly + '"' + strokeOf(warn, 1, 0.5, ns) + '/>')
+    }
   }
-  // where Claude Code warns you and switches helpers: short neutral ticks that say so on hover
-  for (const [at, words] of [[g.warnAt, 'Warning at ' + g.warnAt + '%'], [g.cheaperAt, 'Helpers switch at ' + g.cheaperAt + '%']]) {
-    if (at > 0 && at < 100) parts.push('<line x1="' + x((at / 100) * total).toFixed(1) + '" x2="' + x((at / 100) * total).toFixed(1) + '" y1="' + T + '" y2="' + (T + 10) + '" stroke="#8E8E93" stroke-opacity="0.8" stroke-width="1.5"' + ns + '>' + title(words) + '</line>')
+  parts.push('<clipPath id="rt' + Math.round(W) + 'x' + TH + '"><rect x="0" y="' + T + '" width="' + W + '" height="' + TH + '" rx="1.5"/></clipPath><g clip-path="url(#rt' + Math.round(W) + 'x' + TH + ')">' + inner.join('') + '</g>')
+  // where Claude Code warns you and switches helpers: ticks inside the track that say so on hover
+  for (const [at, said] of [[g.warnAt, 'Warning at ' + g.warnAt + '%'], [g.cheaperAt, 'Helpers switch at ' + g.cheaperAt + '%']]) {
+    if (at > 0 && at < 100) {
+      const tx = x((at / 100) * total)
+      parts.push('<g>' + title(said) + '<line x1="' + tx.toFixed(1) + '" x2="' + tx.toFixed(1) + '" y1="' + T + '" y2="' + (T + TH) + '"' + (tx < u ? ' style="stroke:' + KNOCK + ';stroke-opacity:.5" stroke-width="1"' : strokeOf(INK, 1, OP.tick)) + '/><rect x="' + (tx - 4).toFixed(1) + '" y="' + T + '" width="8" height="' + TH + '" fill="transparent"/></g>')
+    }
   }
   const flags = []
   if (g.compactAt && g.compactAt < g.total) {
     const cx = x(g.compactAt)
-    const stroke = g.early ? HEX.warning : '#AEAEB2'
-    parts.push('<line class="cmp" x1="' + cx.toFixed(1) + '" x2="' + cx.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 16) + '" stroke="' + stroke + '" stroke-width="3"' + ns + '/>')
+    parts.push('<line class="cmp" x1="' + cx.toFixed(1) + '" x2="' + cx.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + TH + 6) + '"' + (g.early ? ' style="stroke:var(--w)" stroke-width="2"' : strokeOf(INK, 2, OP.post)) + '/>')
     // the compaction post sits just past "now" more often than not: its words run on to the right of it and
     // now's run back to the left, so the two never need the same room
-    if (g.labels.compact) flags.push({ at: cx, text: g.labels.compact, fill: g.early ? HEX.warning : HEX.marker, weight: g.early ? 600 : 0, wide: g.labels.compact.length * 6.9, rank: 2, anchor: cx >= u ? 'start' : 'end' })
+    if (g.labels.compact) flags.push({ at: cx, text: g.labels.compact, fill: g.early ? 'w' : 'i2', weight: g.early ? 600 : 500, rank: 2, anchor: cx >= u ? 'start' : 'end' })
   }
-  parts.push('<line x1="' + u.toFixed(1) + '" x2="' + u.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 16) + '" stroke="#1C1C1E" stroke-width="4"' + ns + '/>')
-  parts.push('<line class="at" x1="' + u.toFixed(1) + '" x2="' + u.toFixed(1) + '" y1="' + (T - 6) + '" y2="' + (T + 16) + '" stroke="#F2F2F7" stroke-width="2"' + ns + '/>')
-  if (g.labels.now) flags.push({ at: u, text: g.labels.now, fill: '#F2F2F7', weight: 600, wide: g.labels.now.length * 6.9, rank: 3, anchor: g.compactAt && g.compactAt < g.total && x(g.compactAt) >= u && x(g.compactAt) - u < 150 ? 'end' : undefined })
-  parts.push('<line class="post" x1="' + (W - 0.75) + '" x2="' + (W - 0.75) + '" y1="' + (T - 6) + '" y2="' + (T + 16) + '" stroke="#AEAEB2" stroke-width="1.5"' + ns + '/>')
-  if (g.labels.end) flags.push({ at: W, text: g.labels.end, fill: HEX.marker, wide: g.labels.end.length * 6.9, edge: 'end', rank: 1 })
-  const placed = []
-  for (const f of flags.sort((a, z) => z.rank - a.rank)) {
-    let anchor = f.anchor || f.edge || 'middle'
-    let from = anchor === 'end' ? f.at - f.wide : anchor === 'start' ? f.at : f.at - f.wide / 2
-    if (from < 0) {
-      anchor = 'start'
-      from = Math.max(0, f.at)
-    }
-    if (from + f.wide > W) {
-      anchor = 'end'
-      from = W - f.wide
-    }
-    if (placed.some(([a, b]) => from < b + 8 && from + f.wide > a - 8)) continue
-    placed.push([from, from + f.wide])
-    parts.push(label(anchor === 'start' ? from : anchor === 'end' ? from + f.wide : from + f.wide / 2, 13, f.text, anchor, f.fill, f.weight || undefined))
-  }
+  parts.push(meridian(u, T - 6, T + TH + 6, ns, 'at'))
+  if (g.labels.now) flags.push({ at: u, text: g.labels.now, fill: 'ink', weight: 600, rank: 3, anchor: g.compactAt && g.compactAt < g.total && x(g.compactAt) >= u && x(g.compactAt) - u < 150 ? 'end' : undefined })
+  parts.push('<line class="post" x1="' + (W - 0.5) + '" x2="' + (W - 0.5) + '" y1="' + (T - 6) + '" y2="' + (T + TH + 6) + '"' + strokeOf(INK, 1, OP.post, ns) + '/>')
+  if (g.labels.end) flags.push({ at: W, text: g.labels.end, fill: 'i2', weight: 500, edge: 'end', rank: 1 })
+  parts.push(flagsAt(flags, W, 13))
   let css = ''
   if (hasBars) {
-    const top = T + 10 + 14
+    const top = T + TH + 14
     const turns = g.turns
     const ahead = g.per && g.ahead > 0 ? Math.min(g.ahead, Math.max(0, Math.ceil(((g.compactAt || g.total) - g.used) / g.per))) : 0
     const slots = Math.max(turns.length + ahead, 12)
     const slot = W / slots
-    const bw = Math.min(26, Math.max(4, slot * 0.64))
+    const bw = Math.min(22, Math.max(4, slot * 0.64))
     const y = (tokens) => BASE - Math.max(0, Math.min(1, tokens / total)) * BH
-    parts.push('<rect x="0" y="' + BASE + '" width="' + W + '" height="1" fill="#8E8E93" fill-opacity="0.35"/>')
-    if (g.compactAt && g.compactAt < g.total) parts.push('<line x1="0" x2="' + W + '" y1="' + y(g.compactAt).toFixed(1) + '" y2="' + y(g.compactAt).toFixed(1) + '" stroke="' + (g.early ? HEX.warning : HEX.marker) + '" stroke-width="1" stroke-dasharray="4 4"' + ns + '>' + title('Claude Code compacts at ' + fmtTokens(g.compactAt) + ' tokens') + '</line>')
+    parts.push('<rect x="0" y="' + BASE + '" width="' + W + '" height="1"' + fillOf(INK, OP.rule) + '/>')
+    if (g.compactAt && g.compactAt < g.total) parts.push('<line x1="0" x2="' + W + '" y1="' + y(g.compactAt).toFixed(1) + '" y2="' + y(g.compactAt).toFixed(1) + '"' + strokeOf(INK, 1, OP.tick, ns) + '>' + title('Claude Code compacts at ' + fmtTokens(g.compactAt) + ' tokens') + '</line>')
     const tips = []
     turns.forEach((t, i) => {
       const cx = (i + 0.5) * slot
       const top2 = y(t.context)
-      parts.push('<g class="p c' + i + '"><g class="mbar" style="animation-delay:' + Math.min(i, 24) * 35 + 'ms"><rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + top2.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, BASE - top2).toFixed(1) + '" rx="2" fill="' + (t.hex || g.hex) + '"/></g><rect x="' + (cx - slot / 2).toFixed(1) + '" y="' + top + '" width="' + slot.toFixed(1) + '" height="' + (BASE - top) + '" fill="transparent"/></g>')
+      parts.push('<g class="p c' + i + '"><g class="mbar" style="animation-delay:' + Math.min(i, 24) * 35 + 'ms">' + topRound(cx - bw / 2, top2, bw, Math.max(1, BASE - top2), 2, fillOf(t.hex || g.hex, isStatusPaint(t.hex || g.hex) ? 1 : OP.ink2)) + '</g><rect x="' + (cx - slot / 2).toFixed(1) + '" y="' + top + '" width="' + slot.toFixed(1) + '" height="' + (BASE - top) + '" fill="transparent"/></g>')
       if (t.title) {
         tips.push(tipLabel(cx, top2, t.title, W, H, 'tip t' + i))
         css += '.c' + i + ':hover~.t' + i + '{opacity:1;transform:none}'
       }
     })
+    // the turns still to come at this pace are hollow: an outline, dashed, in ink or amber
     for (let j = 0; j < ahead; j++) {
       const cx = (turns.length + j + 0.5) * slot
       const top2 = y(Math.min(g.compactAt || g.total, g.used + g.per * (j + 1)))
-      parts.push('<rect class="ahead" x="' + (cx - bw / 2).toFixed(1) + '" y="' + top2.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, BASE - top2).toFixed(1) + '" rx="2" fill="' + (g.early ? HEX.warning : g.hex) + '" fill-opacity="0.3"/>')
+      parts.push('<rect class="ahead" x="' + (cx - bw / 2 + 0.75).toFixed(1) + '" y="' + (top2 + 0.75).toFixed(1) + '" width="' + (bw - 1.5).toFixed(1) + '" height="' + Math.max(1, BASE - top2 - 0.75).toFixed(1) + '" rx="2" fill="none"' + strokeOf(warn, 1.5, 1, ' stroke-dasharray="3 2"') + '/>')
     }
     parts.push(...tips)
-    parts.push(label(0, H - 5, 'Context after each of the last ' + turns.length + ' turns', 'start'))
-    if (ahead > 0 && W - (turns.length * slot) > 96) parts.push(label(W, H - 5, 'at this pace', 'end'))
+    parts.push(dtext(0, H - 5, 'Context after each of the last ' + turns.length + ' turns'))
+    if (ahead > 0 && W - turns.length * slot > 96) parts.push(dtext(W, H - 5, 'at this pace', { anchor: 'end' }))
   }
-  return withLight('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + MOTION_CSS + SHEEN_DEFS + (hasBars ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>')
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + MOTION_CSS + (hasBars ? HOVER_CSS + '<style>' + css + '</style>' : '') + parts.join('') + '</svg>')
 }
 
 // Something working right now: a dot with a soft ring that widens and fades every 1.6 s, the way the
-// system marks a live activity. With reduced motion set it is a still dot.
-const LIVE_CSS = '<style>.ring{transform-origin:8px 8px;animation:live 1.6s ease-out infinite}@keyframes live{from{transform:scale(1);opacity:.6}to{transform:scale(1.8);opacity:0}}@media (prefers-reduced-motion:reduce){.ring{animation:none;opacity:0}}</style>'
+// system marks a live activity. With reduced motion set it is a still dot. Ink, or amber, red or green for a status.
+const LIVE_CSS = '<style>.ring{transform-origin:8px 8px;animation:live 1.6s ease-out infinite}@keyframes live{from{transform:scale(1);opacity:.5}to{transform:scale(2);opacity:0}}@media (prefers-reduced-motion:reduce){.ring{animation:none;opacity:0}}</style>'
 export function svgLive(hex) {
-  return (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14">' + LIVE_CSS +
-    '<circle class="ring" cx="8" cy="8" r="4.4" fill="' + hex + '"/><circle cx="8" cy="8" r="4.6" fill="' + hex + '"/></svg>'
-  )
+  return withScheme('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14">' + LIVE_CSS + '<circle class="ring" cx="8" cy="8" r="3.6"' + fillOf(hex) + '/><circle cx="8" cy="8" r="3.6"' + fillOf(hex) + '/></svg>')
 }
-
 // The app swaps a drawing whose markup changed (an image is replaced, a frame is rebuilt and blinks),
 // and a forecast moves with the clock. So every forecast is drawn at the quarter hour it is in: a
 // pixel of a week's drawing is about 14 minutes, so nothing visible is lost, and the markup holds
@@ -4400,12 +4514,15 @@ export function textRunway(g, cells = 20) {
   return runs
 }
 
+
+// The week as a limit's own line chart: the use so far, a dashed projection to where the pace lands, and the limit and
+// the alert as rules. The same grammar as the week's drawing, plainer: ink for use, a hollow ring where the pace ends.
 export function svgForecast(f) {
   const W = Math.max(280, Math.min(4000, Math.round(f.width || 600)))
   const H = 168
   const L = 40
-  const R = 4
-  const T = 22
+  const R = 6
+  const T = 24
   const B = 24
   const yMax = 100
   const x = (t) => L + Math.max(0, Math.min(1, (t - f.start) / (f.end - f.start))) * (W - L - R)
@@ -4414,21 +4531,26 @@ export function svgForecast(f) {
   const pts = [[f.start, 0], ...samples.map((s) => [s.at, s.pct]), [f.now, f.pct]]
   const path = pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join(' ')
   const area = path + ' L' + x(f.now).toFixed(1) + ' ' + y(0).toFixed(1) + ' L' + x(f.start).toFixed(1) + ' ' + y(0).toFixed(1) + ' Z'
-  const label = (tx, ty, s, anchor = 'start') => '<text x="' + tx.toFixed(1) + '" y="' + ty.toFixed(1) + '" font-size="12" fill="' + HEX.marker + '" text-anchor="' + anchor + '"' + FONT + '>' + escapeXml(s) + '</text>'
-  const hline = (p, dash, tip) => '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(p).toFixed(1) + '" y2="' + y(p).toFixed(1) + '" stroke="' + HEX.marker + '" stroke-opacity="' + (dash ? 0.9 : 0.4) + '" stroke-width="1"' + (dash ? ' stroke-dasharray="4 4"' : '') + '>' + title(tip) + '</line>'
+  const rule = (p, op, tip) => '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + (y(p) + 0.5).toFixed(1) + '" y2="' + (y(p) + 0.5).toFixed(1) + '"' + strokeOf(INK, 1, op) + '>' + title(tip) + '</line>'
   const runsOut = f.fullAt && f.fullAt < f.end
+  const hasAlert = f.alertAt > 0 && f.alertAt < 100
+  const warn = f.warnHex && paintOf(f.warnHex).v.startsWith('var(') ? f.warnHex : 'var(--w)'
   let proj = ''
+  let ring = ''
   if (f.atReset !== null) {
     const endT = runsOut ? f.fullAt : f.end
     const endP = runsOut ? 100 : Math.min(100, f.atReset)
-    proj = '<line x1="' + x(f.now).toFixed(1) + '" y1="' + y(f.pct).toFixed(1) + '" x2="' + x(endT).toFixed(1) + '" y2="' + y(endP).toFixed(1) + '" stroke="' + (runsOut ? f.warnHex || HEX.warning : HEX.marker) + '" stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round">' + title(f.labels.projection) + '</line>'
+    const c = runsOut ? warn : INK
+    const ex = Math.min(W - R - 4.5, x(endT))
+    proj = '<line x1="' + x(f.now).toFixed(1) + '" y1="' + y(f.pct).toFixed(1) + '" x2="' + ex.toFixed(1) + '" y2="' + y(endP).toFixed(1) + '"' + strokeOf(c, 2, runsOut ? 1 : 0.72, ' stroke-dasharray="5 4" stroke-linecap="round"') + '>' + title(f.labels.projection) + '</line>'
+    ring = '<circle class="d" cx="' + ex.toFixed(1) + '" cy="' + y(endP).toFixed(1) + '" r="4.5" style="fill:' + KNOCK + ';stroke:' + paintOf(c).v + (runsOut ? '' : ';stroke-opacity:.72') + '" stroke-width="2"/>'
   }
-  let dot = ''
+  let said = ''
   const tips = []
   if (runsOut) {
     const dx = x(f.fullAt)
     const anchor = dx > W - R - 70 ? 'end' : dx < L + 70 ? 'start' : 'middle'
-    dot = '<circle class="d" cx="' + dx.toFixed(1) + '" cy="' + y(100).toFixed(1) + '" r="5" fill="' + (f.warnHex || HEX.warning) + '"/>' + label(anchor === 'end' ? dx + 4 : anchor === 'start' ? dx - 4 : dx, y(100) - 9, f.labels.full, anchor)
+    said = dtext(anchor === 'end' ? dx + 4 : anchor === 'start' ? dx - 4 : dx, y(100) - 10, f.labels.full, { weight: 600, fill: 'w', anchor })
     tips.push([dx, y(100), f.labels.fullTitle || f.labels.full])
   }
   // Targets along the line, so each reading says when it was taken.
@@ -4436,24 +4558,23 @@ export function svgForecast(f) {
   for (const s of samples.filter((_, i) => i % step === 0)) tips.push([x(s.at), y(s.pct), (f.labels.sample ? f.labels.sample(s) : '') || pctText(s.pct)])
   const nowX = x(f.now)
   tips.push([nowX, y(f.pct), f.labels.now])
-  return withLight(
+  return withScheme(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">' + HOVER_CSS +
-    hline(0, false) + hline(100, true, 'The limit') + (f.alertAt > 0 && f.alertAt < 100 ? hline(f.alertAt, false, 'Your alert at ' + f.alertAt + '%') : '') +
-    label(L - 6, y(100) + 4, '100%', 'end') + (f.alertAt > 0 && f.alertAt < 100 ? label(L - 6, y(f.alertAt) + 4, f.alertAt + '%', 'end') + (f.labels.alert ? label(L + 4, y(f.alertAt) + 14, f.labels.alert) : '') : '') + label(L - 6, y(0) + 4, '0%', 'end') +
-    '<path d="' + area + '" fill="' + f.hex + '" fill-opacity="0.16">' + title(f.labels.area) + '</path>' +
-    '<path d="' + path + '" fill="none" stroke="' + f.hex + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>' +
-    proj +
-    '<line x1="' + nowX.toFixed(1) + '" x2="' + nowX.toFixed(1) + '" y1="' + T + '" y2="' + y(0).toFixed(1) + '" stroke="' + HEX.marker + '" stroke-opacity="0.5" stroke-width="1"/>' +
-    '<circle class="d" cx="' + nowX.toFixed(1) + '" cy="' + y(f.pct).toFixed(1) + '" r="5" fill="' + f.hex + '"/>' +
-    dot +
-    label(L, H - 6, f.labels.start) + (nowX - L > f.labels.start.length * 6.7 + 24 && W - R - nowX > f.labels.end.length * 6.7 + 24 ? label(nowX, H - 6, 'now', 'middle') : '') + label(W - R, H - 6, f.labels.end, 'end') +
+    rule(0, OP.rule) + rule(100, OP.tick, 'The limit') + (hasAlert ? rule(f.alertAt, OP.rule, 'Your alert at ' + f.alertAt + '%') : '') +
+    dtext(L - 6, y(100) + 4, '100%', { anchor: 'end' }) + (hasAlert ? dtext(L - 6, y(f.alertAt) + 4, f.alertAt + '%', { anchor: 'end' }) + (f.labels.alert ? dtext(L + 4, y(f.alertAt) + 14, f.labels.alert) : '') : '') + dtext(L - 6, y(0) + 4, '0%', { anchor: 'end' }) +
+    '<path d="' + area + '"' + fillOf(INK, 0.06) + '>' + title(f.labels.area) + '</path>' +
+    '<path d="' + path + '" fill="none" style="stroke:' + KNOCK + '" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>' +
+    '<path d="' + path + '" fill="none"' + strokeOf(f.hex, 2, 1, ' stroke-linejoin="round" stroke-linecap="round"') + '/>' +
+    proj + ring +
+    meridian(nowX, T, y(0), '') +
+    '<circle class="d" cx="' + nowX.toFixed(1) + '" cy="' + y(f.pct).toFixed(1) + '" r="4.5"' + fillOf(f.hex) + ' style="stroke:' + KNOCK + '" stroke-width="2"/>' +
+    said +
+    dtext(L, H - 6, f.labels.start) + (nowX - L > tw(f.labels.start) + 24 && W - R - nowX > tw(f.labels.end) + 24 ? dtext(nowX, H - 6, 'now', { anchor: 'middle', weight: 600, fill: 'ink' }) : '') + dtext(W - R, H - 6, f.labels.end, { anchor: 'end' }) +
     tips.map(([tx, ty, text]) => svgTip(tx, ty, text, W, H)).join('') +
-    '</svg>'
+    '</svg>',
   )
 }
 
-// The colours of the sections and categories. Each colour names one thing and nothing else.
-export const TINT = { blue: '#0A84FF', green: '#30D158', orange: '#FF9F0A', purple: '#BF5AF2', gray: '#8E8E93', yellow: '#FFD60A', teal: '#40C8E0', indigo: '#5E5CE6', pink: '#FF375F', red: '#FF453A', brown: '#AC8E68', mint: '#00C7BE', slate: '#7C8DB5' }
 
 export function sparkline(values, slots) {
   const max = Math.max(...values, 0.0001)

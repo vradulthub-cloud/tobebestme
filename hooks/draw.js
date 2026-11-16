@@ -16,12 +16,13 @@
 //   the band              the line above the prompt
 //   calm                  what runs on its own, the right model and long runs (Settings cards)
 //
-// Layout rules: the answer first (one headline and its one best action). Every section is a
-// card with an icon in its colour, a title and, where it helps, a line saying what it is for.
-// Figures explain themselves on hover; the controls sit beside the figures they change;
-// sections show only when they have something to show. Plain words throughout; colour for
-// status and identity only, always with words beside it. Spacing comes from the parent
-// (gap), in the surface's own steps, so the desktop breathes and the terminal stays compact.
+// Layout rules (Meridian): the answer first (one headline and its one best action). A section is flat:
+// a heading and its body, set apart by space alone; only an object (a chat waiting for you, a run, the
+// change card, the tour) is a panel. Figures explain themselves on hover; the controls sit beside the
+// figures they change; sections show only when they have something to show. Plain words throughout;
+// nominal data is ink, colour is for status (amber, red, green) and identity (a project's hue) and always
+// has words beside it. Spacing comes from the parent (gap), in the surface's own steps, so the desktop
+// breathes and the terminal stays compact.
 
 import {
   cleanText,
@@ -30,7 +31,6 @@ import {
   HANDOFF_PATH,
   HEX,
   CATEGORY_HEX,
-  TINT,
   RING_HEX,
   WINDOW_MS,
   kindOfLabel,
@@ -103,7 +103,7 @@ import {
   paceWords,
   midHex,
   svgFigure,
-  figureHues,
+  svgSwatch,
   settleMotion,
   FLUID_PX,
   dayClip,
@@ -152,18 +152,19 @@ const CHART_SLOTS = 24
 // concerns beside it. Narrower, it is one column in the order a day goes.
 const SPLIT_AT = 116
 // Under this many columns a gauge in the line above the prompt is too short for the run-out drawing (the
-// hatched stretch, the strand and the stop pile into a clump): it keeps the fill and the playhead alone.
+// stripes and the stop pile into a clump): it keeps the track, the fill and the meridian alone.
 const COMPACT_GAUGE_BELOW = 100
-// Hover cards are dark in either theme, like the system's own tooltips, so they read the same
-// over light and dark panes; rows under the pointer take a faint tint that suits both.
-const TIP = { bg: '#2C2C2E', border: '#545458', text: '#F2F2F7', dim: '#D1D1D6', good: '#30D158' }
-const ROW_HOVER = '#8E8E931F'
-// A section's body sits on a faint grey fill, the system grey at 12%, which reads on a dark and on a
-// light pane alike: the page has depth without every section boxed in its own colour.
-const GROUP_BG = '#8E8E931F'
-// A segmented control's track inside a section: half that fill, since it is drawn over the section's own, so
-// the dim names of the choices not picked keep 4.5:1 against it in a dark pane (12% over 12% falls to 4.3:1).
-const SEGMENT_BG = '#8E8E9310'
+// Hover cards use the person's own theme (default text, dim text, the success key): the app lifts one into its
+// own popover, and a card drawn in raw light colours would be unreadable on a light pane. Rows under the pointer
+// take a faint warm-neutral tint that reads on both panes.
+const ROW_HOVER = '#8987811F'
+// An object (a chat waiting for you, a run, the change card) sits on a faint warm-neutral fill, the muted ink at
+// 10%, which reads on a dark and on a light pane alike. A section is not an object: it has no fill.
+const GROUP_BG = '#8987811A'
+// A segmented control's track (and the tab bar's): a firmer fill than a panel's, so the open choice, which is drawn in the
+// host's own 10% button fill, stands out from the track on a light pane as on a dark one, and the dim names of the choices
+// not picked keep 4.5:1 against it.
+const SEGMENT_BG = '#8987812E'
 
 // Drops undefined props: a drawn tree carries only what it sets.
 function clean(props) {
@@ -180,6 +181,12 @@ function quiet(level) {
 // past its alert, red when it is nearly out, so the colour that says trouble is the same everywhere.
 function tint(hex, level) {
   return level === 'warning' || level === 'error' ? HEX[level] : hex
+}
+
+// The colour host text takes for a hue: a hex is kept (the project hues and the context ramp hold 3:1 on both panes), and
+// ink, or a step of it, is no colour at all, which is the pane's own text colour.
+function hueColor(hex) {
+  return /^#[0-9a-f]{6}$/i.test(String(hex || '')) ? hex : undefined
 }
 
 // What each drawing was last handed in a tab visit (the visit's token is `e.motionVisit`), by place in
@@ -241,6 +248,8 @@ export function kit(el, e, primary = { isTaken: false }) {
   }
   // apostrophes inside a word are drawn curly everywhere
   const text = (s, props = {}) => Text(clean({ ...props, children: [typeof s === 'string' ? s.replace(/(\w)'(\w)/g, '$1’$2') : s] }))
+  // the name of one item inside a section (a tip, an idea): medium, a step under the section's own semibold heading
+  const subhead = (s, props = {}) => text(s, { weight: isTerminal ? 'semibold' : 'medium', wrap: 'wrap', ...props })
   const footnote = (s, props = {}) => text(s, { size: 'footnote', dimColor: true, wrap: 'wrap', ...props })
   // guidance a person acts on is body size in a quiet colour; the small footnote size is for captions and labels
   const guide = (s, props = {}) => text(s, { dimColor: true, wrap: 'wrap', ...props })
@@ -252,9 +261,9 @@ export function kit(el, e, primary = { isTaken: false }) {
   // `scope` ties it to a hover group instead (see k.tile), so it can sit outside its owner.
   const tipCard = (t, scope) => {
     const lines = [
-      ...(t.title ? [Text({ color: TIP.text, weight: 'semibold', wrap: 'wrap', children: [t.title] })] : []),
-      ...(t.lines || []).filter(Boolean).map((l) => Text({ color: TIP.dim, size: 'footnote', wrap: 'wrap', children: [l] })),
-      ...(t.good ? [Text({ color: TIP.good, size: 'footnote', wrap: 'wrap', children: ['↓ ' + t.good] })] : []),
+      ...(t.title ? [Text({ weight: 'semibold', wrap: 'wrap', children: [t.title] })] : []),
+      ...(t.lines || []).filter(Boolean).map((l) => Text({ dimColor: true, size: 'footnote', wrap: 'wrap', children: [l] })),
+      ...(t.good ? [Text({ color: 'success', size: 'footnote', wrap: 'wrap', children: ['↓ ' + t.good] })] : []),
       ...(t.el ? [Box({ paddingY: 'xs', children: [t.el] })] : []),
     ]
     return Box(clean({
@@ -266,9 +275,10 @@ export function kit(el, e, primary = { isTaken: false }) {
       display: 'none',
       hover: scope ? { scope, display: 'flex' } : { display: 'flex' },
       flexDirection: 'column',
-      backgroundColor: TIP.bg,
+      // a card with no scope is lifted into the app's own popover, which supplies its ground, ring and shadow
+      backgroundColor: 'userMessageBackgroundHover',
       borderStyle: 'round',
-      borderColor: TIP.border,
+      borderColor: 'promptBorder',
       paddingX: 1,
       children: lines,
     }))
@@ -283,10 +293,19 @@ export function kit(el, e, primary = { isTaken: false }) {
   }
 
   const k = {
-    Box, Text, Button, Markdown, Code, Input, Link, Svg, isTerminal, hasSvg, columns, px, text, footnote, guide,
+    primary, Box, Text, Button, Markdown, Code, Input, Link, Svg, isTerminal, hasSvg, columns, px, text, footnote, guide, subhead,
     isRoomy: columns >= 90,
-    // the look of a grouped body, for a row of tiles that is one group
+    // the look of an object: a panel on the warm-neutral fill, for a row of tiles that is one group
     groupProps: isTerminal ? {} : { paddingX: 'md', paddingY: 'md', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true },
+    // what a thing that is working is drawn in: ink on the desktop, the accent on the terminal
+    workColor: isTerminal ? 'suggestion' : undefined,
+    // the air above and below a row of a list on the desktop (none on the terminal)
+    rowPad: isTerminal ? undefined : 'xs',
+    // the gap between the rows of a list: none on the desktop, where each row carries its own padding, and the page's own step on the terminal
+    tight: isTerminal ? 'xs' : 0,
+    // the rows of a table inside a section whose own gap is wider: on the desktop one box with no gap between rows (each
+    // carries its own padding); on the terminal the rows as they were, straight into the section
+    table: (items) => (isTerminal ? items : [Box({ flexDirection: 'column', width: '100%', children: items })]),
     // Keyboard shortcuts show as chips on desktop buttons; there they're noise, so only the terminal gets them.
     hotkey: (key) => (isTerminal ? key : undefined),
     // Words that tell a pointer user to point: left out on the terminal, and with Show details on, where what
@@ -313,8 +332,9 @@ export function kit(el, e, primary = { isTaken: false }) {
     }),
     tileRow: (items, props = {}) => Box({ flexDirection: 'row', flexWrap: 'wrap', width: '100%', ...props, children: [...items.map((x) => x.tile), ...items.map((x) => x.card).filter(Boolean)] }),
     // A section: a heading (with an optional line saying what it is for, and an `accessory` at its
-    // trailing end) above its body, which sits on a faint fill. `extra.isPlain` leaves the fill off
-    // for a body that is only words. The terminal draws it flat and compact.
+    // trailing end) above its body, flat: no fill and no border, set apart from the next section by space.
+    // `extra.isPanel` is for a section that is itself one object (a waiting chat, a run, the change card, the
+    // tour): its body sits on the warm-neutral fill in a rounded panel. The terminal draws it flat and compact.
     card: (title, subtitleIn, children, extra = {}) => {
       // a heading says what a section is; the line under it is for Show details, so the page stays quiet
       const subtitle = extra.keepCaption || k.showDetails ? subtitleIn : null
@@ -340,7 +360,7 @@ export function kit(el, e, primary = { isTaken: false }) {
             }),
           ]
         : []
-      const body = Box({ flexDirection: 'column', rowGap: extra.gap || 'sm', children })
+      const body = Box({ flexDirection: 'column', rowGap: extra.gap !== undefined ? extra.gap : 'sm', children })
       if (isTerminal) return Box({ flexDirection: 'column', width: '100%', paddingX: 1, rowGap: 'md', children: [...head, body] })
       return Box({
         flexDirection: 'column',
@@ -348,7 +368,7 @@ export function kit(el, e, primary = { isTaken: false }) {
         rowGap: 'sm',
         children: [
           ...head,
-          extra.isPlain ? Box({ paddingX: 'xs', flexDirection: 'column', children: [body] }) : Box({ flexDirection: 'column', paddingX: 'md', paddingY: 'md', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true, children: [body] }),
+          extra.isPanel ? Box({ flexDirection: 'column', paddingX: 'md', paddingY: 'md', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true, children: [body] }) : Box({ paddingX: 'xs', flexDirection: 'column', children: [body] }),
         ],
       })
     },
@@ -364,7 +384,7 @@ export function kit(el, e, primary = { isTaken: false }) {
       // from 160 columns the two are even, so a label stays near its value instead of a hand's breadth from it
       const share = k.columns >= 160 ? 0.5 : 0.58
       const main = Math.floor(px * share)
-      const parts = [k.sub(main), k.sub(px - main - 16)]
+      const parts = [k.sub(main), k.sub(px - main - 32)]
       for (const kk of parts) kk.mainShare = share
       return parts
     },
@@ -374,15 +394,15 @@ export function kit(el, e, primary = { isTaken: false }) {
     layout: (main, aside) => {
       const left = main.filter(Boolean)
       const right = aside.filter(Boolean)
-      if (!left.length) return Box({ flexDirection: 'column', rowGap: 'lg', width: '100%', children: right })
+      if (!left.length) return Box({ flexDirection: 'column', rowGap: 'xl', width: '100%', children: right })
       return Box({
         flexDirection: 'row',
-        columnGap: 'lg',
+        columnGap: 'xl',
         alignItems: 'flex-start',
         width: '100%',
         children: [
-          Box({ flexDirection: 'column', rowGap: 'lg', width: Math.round((k.mainShare || 0.58) * 100) + '%', flexShrink: 0, children: left }),
-          Box({ flexDirection: 'column', rowGap: 'lg', flexGrow: 1, flexShrink: 1, children: right }),
+          Box({ flexDirection: 'column', rowGap: 'xl', width: Math.round((k.mainShare || 0.58) * 100) + '%', flexShrink: 0, children: left }),
+          Box({ flexDirection: 'column', rowGap: 'xl', flexGrow: 1, flexShrink: 1, children: right }),
         ],
       })
     },
@@ -402,7 +422,8 @@ export function kit(el, e, primary = { isTaken: false }) {
           children: [c.el || Text(clean({ tabular: true, wrap: 'truncate-end', color: c.color, ...props, ...(c.props || {}), children: c.parts || [c.text] }))],
         })),
       )
-      const box = { flexDirection: 'row', width: '100%', alignItems: 'center' }
+      // a little air above and below each row on the desktop, so a list reads as rows and not as a block of text
+      const box = clean({ flexDirection: 'row', width: '100%', alignItems: extra.align || 'center', paddingY: isTerminal || extra.isFlat ? undefined : 'xs' })
       if (extra.key && k.showDetails && extra.tip) return Box({ key: extra.key, flexDirection: 'column', width: '100%', children: [Box({ ...box, children }), ...inlineDetails(extra.tip)] })
       return extra.key ? k.hoverBox(extra.key, box, children, extra.tip) : Box({ ...box, children })
     },
@@ -438,7 +459,7 @@ export function kit(el, e, primary = { isTaken: false }) {
     // A table's column headings, in the same widths as its rows. A heading over two of a row's
     // columns (a bar and its figure) is as wide as both and the gutter between them, so the columns a
     // narrow pane drops are the same in the headings as in the rows.
-    heads: (cells) => k.row(cells, { size: 'footnote', dimColor: true }),
+    heads: (cells) => k.row(cells, { size: 'footnote', dimColor: true }, { isFlat: true }),
     // Something working right now: a softly pulsing dot on desktop (still with reduced motion), a
     // coloured dot on the terminal. `words` names it for a reader that cannot see it.
     live: (hex, color, words) => (hasSvg ? Box({ flexShrink: 0, width: 2, alignItems: 'center', children: [Svg({ source: svgLive(hex), alt: words, width: 14, height: 14 })] }) : text('●', { color })),
@@ -475,12 +496,14 @@ export function kit(el, e, primary = { isTaken: false }) {
       const named = name || (about ? label.replace(/[…›]$/, '') + ': ' + String(about).slice(0, 80) : '')
       return Button(clean(named && named !== label ? { key, label: named, onPress, children: [label], ...rest } : { key, label, onPress, ...rest }))
     },
-    buttons: (children) => Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', children }),
-    // The track a segmented control sits in: one rounded group, the open choice filled and the others quiet text. The
+    // A row of buttons. One that starts with a plain button (just words, with 6px of its own air) is drawn flush: its words start
+    // where the row's other words do, instead of a button's padding in.
+    buttons: (children) => Box(clean({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', marginLeft: !isTerminal && children[0] && children[0].props && children[0].props.plain ? -0.7 : undefined, children })),
+    // The track a segmented control sits in: one borderless group on the warm-neutral fill, the open choice filled and the others quiet text. The
     // tab bar and every choice in the pane (On and Off, a preset, a view of a list) are drawn in it, so a choice
     // looks the same wherever it is made.
     track: (children, props = {}) =>
-      Box(clean({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'xs', paddingX: 'xs', paddingY: 'xs', backgroundColor: GROUP_BG, borderStyle: 'round', borderDimColor: true, ...props, children })),
+      Box(clean({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'xs', paddingX: 'xs', paddingY: 'xs', backgroundColor: SEGMENT_BG, ...props, children })),
     // A segmented control: one Button per option. On desktop the one in force is the filled one; the terminal has no
     // fill, so it checks it and dims the others until the pointer or the focus is on them.
     // `group` names what the choice is for ("Send notifications"): on desktop the drawn words stay "On" and
@@ -505,13 +528,18 @@ export function kit(el, e, primary = { isTaken: false }) {
       return Box({ flexDirection: 'row', children: [k.track(buttons, { backgroundColor: SEGMENT_BG })] })
     },
     dot: (level) => text('● ', level === 'info' || level === 'success' ? { dimColor: true } : { color: level }),
+    // A key for a model: ink at its family's step (the fainter, the cheaper), a 10px picture, since host text cannot be
+    // drawn in a step of ink. Null where nothing draws (the terminal's legends have no dots).
+    swatch: (model, alt) => (hasSvg ? Box({ flexShrink: 0, children: [Svg({ source: svgSwatch('model', model), alt: alt || 'Key for ' + model, width: 10, height: 10 })] }) : null),
+    // A word with its key beside it, in one cell of a table or one item of a legend.
+    tagged: (mark, node) => Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', minWidth: 0, flexShrink: 1, children: [mark, node] }),
     // A line with a hanging glyph: the glyph in its own column, the words wrapping beside it.
     hang: (glyph, words, trailing) =>
       Box({
         flexDirection: 'row',
         alignItems: 'flex-start',
         columnGap: 1,
-        children: [Box({ width: 2, flexShrink: 0, children: [glyph] }), Box({ flexGrow: 1, flexShrink: 1, children: [words] }), ...(trailing ? [Box({ flexShrink: 0, children: [trailing] })] : [])],
+        children: [Box({ width: isTerminal ? 2 : 1, flexShrink: 0, children: [glyph] }), Box({ flexGrow: 1, flexShrink: 1, children: [words] }), ...(trailing ? [Box({ flexShrink: 0, children: [trailing] })] : [])],
       }),
   }
   return k
@@ -566,7 +594,7 @@ export function drawDashboard(k, d, act) {
     flexDirection: 'column',
     paddingX: k.isTerminal ? 0 : 'md',
     paddingY: k.isTerminal ? 0 : 'sm',
-    rowGap: k.isTerminal ? 'md' : 'lg',
+    rowGap: k.isTerminal ? 'md' : 'xl',
     children: [
       isPhone ? k.Box({ flexDirection: 'column', rowGap: 'sm', children: [track, k.Box({ flexDirection: 'row', justifyContent: 'flex-end', children: [details] })] }) : k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'sm', rowGap: 'sm', alignItems: 'center', children: [track, k.Box({ flexGrow: 1 }), details] }),
       // the terminal marks the open tab by its look alone, so the keys that move between them are said once
@@ -597,24 +625,25 @@ function changeCard(k, d, act, tab) {
   // the working state has its Cancel too, so a slow answer never holds the pane
   if (c.status === 'working') body.push(k.buttons([k.button('change-cancel', 'Cancel', act.cancelChange, { dimColor: true })]))
   // the file it changes is always said, not left to Show details
-  return k.card(c.title, c.shown, body, { gap: 'md', keepCaption: true })
+  return k.card(c.title, c.shown, body, { gap: 'md', keepCaption: true, isPanel: true })
 }
 
 // A runway for one item: an SVG on desktop, block characters on the terminal. Its words say the
 // same thing, so it never rests on colour alone.
 
-// The big figure of a head, drawn on desktop in a gradient, with a glow under the digits while it is live. Its colours are its status's
-// (figureHues): amber once what it measures is past its alert, red when it is nearly out, green when all is well,
-// the neutral accent when it is information and no status. It is bold and it says something; a colour is never
-// chosen for the look of it. Null on the terminal, which stays plain, and where the value would not fit its half of
-// the row (the plain text figure truncates there instead).
-function heroFigure(k, value, { size = 34, level, align, isLive } = {}) {
+// The big figure of a head, drawn on desktop in the custom numerals (hooks/glyphs.js): ink, or amber once what it
+// measures is past its alert and red when it is nearly out. Nothing else is coloured: a good or neutral figure is
+// ink too, and a colour is never chosen for the look of it. Null on the terminal, which stays plain, and where the
+// value would not fit its half of the row (the plain text figure truncates there instead).
+function heroFigure(k, value, { size = 34, level, align } = {}) {
   if (!k.hasSvg) return null
   const room = Math.floor(k.px * (k.columns >= 90 ? 0.5 : 0.9))
-  const fit = Math.min(size, Math.floor(room / Math.max(1, String(value).length * 0.62)))
+  // the words after the numerals ("weeks’ worth") are set small beside them, so they take a third of a numeral's room
+  const split = /^([^A-Za-z]*)(.*)$/.exec(String(value))
+  const reckoned = split[1].length * 0.62 + split[2].length * 0.36 * 0.55
+  const fit = Math.min(size, Math.floor(room / Math.max(0.62, reckoned)))
   if (fit < 20) return null
-  // the glow marks what is live now: something working, or a limit at its critical level; a settled value has the gradient alone
-  const src = svgFigure(value, { size: fit, align: align || 'start', hexes: figureHues(level), isGlowing: !!isLive || level === 'error' })
+  const src = svgFigure(value, { size: fit, align: align || 'start', level })
   return k.drawing(src, String(value))
 }
 
@@ -664,11 +693,11 @@ function lead(k, o) {
   const f = o.figure
   // a status colours the plain text figure and its caption too (the terminal's); good and information leave them as they are
   const figureLevel = f && f.level && f.level !== 'success' && f.level !== 'info' ? f.level : undefined
-  const big = f ? heroFigure(k, f.value, { size: 36, level: f.level, isLive: f.isLive || o.isLive }) : null
+  const big = f ? heroFigure(k, f.value, { size: 76, level: f.level }) : null // one hero size on every tab: digits about 55px tall
   const figureBody = f
     ? [
         big || k.text(f.value, { size: 'title', weight: 'semibold', tabular: true, color: figureLevel, wrap: 'truncate-end' }),
-        k.footnote(f.caption, { wrap: 'truncate-end', ...(figureLevel ? { color: figureLevel, dimColor: undefined } : {}) }),
+        k.text(f.caption, { wrap: k.isTerminal ? 'truncate-end' : 'wrap', ...(figureLevel ? { color: figureLevel } : { dimColor: true }) }),
         ...(f.sub ? [k.footnote(f.sub, { wrap: 'wrap', tabular: true })] : []),
       ]
     : []
@@ -676,7 +705,8 @@ function lead(k, o) {
     ? k.Box({
         flexDirection: 'column',
         alignItems: isWide ? 'flex-end' : 'flex-start',
-        ...(isWide ? { flexShrink: 0, paddingLeft: 'lg' } : { flexShrink: 1, width: '100%', paddingTop: 'xs' }), // a long line under a figure wraps in the pane's width
+        rowGap: 'xs',
+        ...(isWide ? { flexShrink: 0, paddingLeft: 'lg' } : { flexShrink: 1, width: '100%', paddingY: 'sm' }), // a long line under a figure wraps in the pane's width
         // its card opens on the side the figure sits on: toward the pane's edge on a wide one, from the left under the words on a narrow one
         children: f.tip ? [k.hoverBox('lead-figure', { flexDirection: 'column', alignItems: isWide ? 'flex-end' : 'flex-start' }, figureBody, { ...f.tip, align: isWide ? 'right' : 'left' })] : figureBody,
       })
@@ -723,11 +753,13 @@ function confirmRows(k, d, act, kinds) {
   const c = d.view.confirm
   if (!c || !kinds.includes(c) || !CONFIRMS[c]) return []
   const cancel = k.button('confirm-cancel', 'Cancel', () => act.setView({ confirm: '' }), { autoFocus: true })
+  // a question waiting for an answer is an object: a panel on the desktop, set apart from the buttons above it
+  const ask = (children) => k.Box(clean({ flexDirection: 'column', rowGap: 'sm', paddingX: k.isTerminal ? undefined : 'md', paddingY: k.isTerminal ? undefined : 'md', backgroundColor: k.isTerminal ? undefined : GROUP_BG, borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, children }))
   if ((c === 'compact' || c === 'fresh') && d.isTurnRunning) {
-    return [k.Box({ flexDirection: 'column', rowGap: 'sm', children: [k.text('Claude is working. Try again once the turn finishes.', { color: 'warning', wrap: 'wrap' }), k.buttons([cancel])] })]
+    return [ask([k.text('Claude is working. Try again once the turn finishes.', { color: 'warning', wrap: 'wrap' }), k.buttons([cancel])])]
   }
   const [question, label, action] = CONFIRMS[c]
-  return [k.Box({ flexDirection: 'column', rowGap: 'sm', children: [k.text(question, { weight: 'medium', wrap: 'wrap' }), k.buttons([k.button('confirm-go', label, (ev) => act[action](ev && ev.surface)), cancel])] })]
+  return [ask([k.text(question, { weight: 'medium', wrap: 'wrap' }), k.buttons([k.button('confirm-go', label, (ev) => act[action](ev && ev.surface)), cancel])])]
 }
 
 function noteStatus(d) {
@@ -752,7 +784,7 @@ function shrinkBody(k, d, act, primary) {
       ...(d.note.text ? [k.button('note', d.view.showNote ? 'Hide note' : 'Show note', act.toggleNote, { hotkey: k.hotkey('s'), dimColor: true })] : []),
     ]),
     ...confirmRows(k, d, act, ['compact', 'fresh']),
-    ...(d.note.text && d.view.showNote ? [k.Box({ borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, paddingX: k.isTerminal ? 0 : 'md', children: [k.Markdown({ key: 'note-text', text: d.note.text })] })] : []),
+    ...(d.note.text && d.view.showNote ? [k.Box(clean({ backgroundColor: k.isTerminal ? undefined : GROUP_BG, borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, paddingX: k.isTerminal ? 0 : 'md', children: [k.Markdown({ key: 'note-text', text: d.note.text })] }))] : []),
     ...(d.note.text && d.view.showNote && d.note.isCut ? [k.footnote('Preview only. The full note is at ' + HANDOFF_PATH + '.')] : []),
   ]
 }
@@ -924,15 +956,16 @@ function overviewTab(k, d, act) {
       d.outlook.some((r) => r.isFirst) ? 'The first thing to run out is in bold.' : null,
       d.outlook.length
         ? d.outlook.map((r, i) =>
-            kk.hoverBox('outlook-' + i, { flexDirection: 'column', width: '100%' }, kk.columns < 60
+            kk.hoverBox('outlook-' + i, { flexDirection: 'column', width: '100%', paddingY: kk.rowPad }, kk.columns < 60
               // a narrow pane stacks the value under its label, in words, instead of cutting it short
               ? [kk.text(r.label, { weight: r.isFirst ? 'semibold' : 'medium', wrap: 'wrap' }), kk.text(r.value, { wrap: 'wrap', color: quiet(r.level), weight: r.isFirst ? 'semibold' : undefined }), ...(r.sub ? [kk.footnote(r.sub)] : [])]
               : [
-              kk.row([{ text: r.label }, { text: r.value, width: 34, color: quiet(r.level) }], r.isFirst ? { weight: 'semibold' } : {}),
-              ...(r.sub ? [kk.row([{ text: '' }, { text: r.sub, width: Math.min(46, kk.columns - 22) }], { size: 'footnote', dimColor: true })] : []),
+              kk.row([{ text: r.label }, { text: r.value, width: 34, color: quiet(r.level) }], r.isFirst ? { weight: 'semibold' } : {}, { isFlat: true }),
+              ...(r.sub ? [kk.row([{ text: '' }, { text: r.sub, width: Math.min(46, kk.columns - 22) }], { size: 'footnote', dimColor: true }, { isFlat: true })] : []),
             ], r.tip),
           )
         : [kk.footnote('Shows once Claude Code reports how full the context is.')],
+      { gap: kk.tight },
     )
   const winsCard = (kk) => {
     const won = wins(d)
@@ -1032,7 +1065,7 @@ function contextBlocks(k, d, act) {
   const share = (n) => (parts.total > 0 ? pctText((n / parts.total) * 100) : '')
   const b = d.breakdown
   const cAt = compactAt(d)
-  const swatch = (hex, color) => k.text(hex ? '■ ' : '□ ', hex ? { color: k.isTerminal ? color : midHex(hex) } : { dimColor: true })
+  const swatch = (hex, color) => k.text(hex ? '■ ' : '□ ', hex ? { color: k.isTerminal ? color : hueColor(hex) } : { dimColor: true })
   const biggest = Math.max(1, ...parts.rows.map((r) => r.tokens))
   const barW = k.columns >= 72 ? 18 : 10
   const legend = [k.heads([{ text: 'What fills it' }, { text: '', width: barW }, { text: 'Tokens', width: 9 }, { text: 'Share', width: 7 }])]
@@ -1052,7 +1085,7 @@ function contextBlocks(k, d, act) {
   put('context',
     k.card('What fills the context', 'Everything Claude re-reads on each turn. The fuller it is, the more each turn costs.', [
       k.meter(
-        [...parts.rows.map((r) => ({ value: r.tokens, hex: r.hex, color: r.color, title: r.name + ': ' + fmtTokens(r.tokens) + ' tokens (' + share(r.tokens) + ')' })), ...(parts.buffer ? [{ value: parts.buffer, hex: HEX.buffer, color: 'inactive', glyph: '▒', dim: true, title: 'Kept free for compaction: ' + fmtTokens(parts.buffer) }] : [])],
+        [...parts.rows.map((r) => ({ value: r.tokens, hex: r.hex, color: r.color, title: r.name + ': ' + fmtTokens(r.tokens) + ' tokens (' + share(r.tokens) + ')' })), ...(parts.buffer ? [{ value: parts.buffer, hex: HEX.buffer, color: 'inactive', glyph: '▒', dim: k.isTerminal ? true : undefined, title: 'Kept free for compaction: ' + fmtTokens(parts.buffer) }] : [])],
         parts.total,
         markers,
         'Context ' + pctText(d.pct) + ' full: ' + parts.rows.map((r) => r.name + ' ' + fmtTokens(r.tokens)).join(', '),
@@ -1110,7 +1143,7 @@ function contextBlocks(k, d, act) {
 
 // A titled group of rows inside a card, with its own buttons.
 function group(k, title, rows, buttons = []) {
-  return k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text(title, { size: 'footnote', weight: 'semibold', dimColor: true }), ...rows, ...(buttons.length ? [k.Box({ marginTop: 'xs', children: [k.buttons(buttons)] })] : [])] })
+  return k.Box({ flexDirection: 'column', rowGap: k.tight, children: [k.text(title, { size: 'footnote', weight: 'semibold', dimColor: true }), ...rows, ...(buttons.length ? [k.Box({ marginTop: 'sm', children: [k.buttons(buttons)] })] : [])] })
 }
 
 // ---- Usage: what can run out, then what this session spent ----------------------------------
@@ -1155,8 +1188,13 @@ function splitBar(k, title, parts) {
     rowGap: 'xs',
     children: [
       k.footnote(title),
-      k.meter(parts.map((p, i) => ({ value: p.value, hex: p.hex, color: 'suggestion', glyph: glyphs[i % glyphs.length], dim: i > 0 ? true : undefined, title: p.name + ': ' + pct(p.value) })), total, [], alt),
-      k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', rowGap: 'xs', children: parts.map((p) => k.Text({ children: [k.text(k.isTerminal ? '' : '● ', k.isTerminal ? {} : { color: midHex(p.hex) }), k.text(p.name + ' ' + pct(p.value), { size: 'footnote', dimColor: true, tabular: true })] })) }),
+      k.meter(parts.map((p, i) => ({ value: p.value, hex: p.hex, color: 'suggestion', glyph: glyphs[i % glyphs.length], dim: k.isTerminal && i > 0 ? true : undefined, title: p.name + ': ' + pct(p.value) })), total, [], alt),
+      // a project is a dot in its hue; a model is a swatch of ink at its family's step, drawn, with its words beside it
+      k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', rowGap: 'xs', children: parts.map((p) => {
+        const words = k.text(p.name + ' ' + pct(p.value), { size: 'footnote', dimColor: true, tabular: true })
+        if (k.isTerminal) return k.Text({ children: [k.text('', {}), words] })
+        return hueColor(p.hex) ? k.Text({ children: [k.text('● ', { color: p.hex }), words] }) : k.tagged(k.swatch(p.model || p.name, p.name + ' key'), words)
+      }) }),
     ],
   })
 }
@@ -1188,9 +1226,9 @@ function usageWhere(k, d, h, hasWindow = false) {
         flexDirection: 'column',
         rowGap: 'xs',
         children: [
-          // the days are a rolling week ending today, not the limit's own window (which begins when it last reset); the dashed line is the mean
-          k.footnote('Each of the past 7 days, by project: a rolling week ending today' + (hasWindow ? ', not the limit’s window above' : '') + '. The dashed line is the average, ' + cost(mean) + ' a day.', { wrap: 'wrap' }),
-          k.bars(days, 7, 'Use each day over the past 7 days: ' + keys.map((key, i) => dayWords(key, now) + ' ' + cost(days[i])).join(', ') + '.', 64, { stacks, titles: keys.map((key, i) => dayWords(key, now) + ': ' + cost(days[i])), average: true, averageTitle: 'Average: ' + cost(mean) + ' a day' }),
+          // the days are a rolling week ending today, not the limit's own window (which begins when it last reset); the line is the mean
+          k.footnote('Each of the past 7 days, by project: a rolling week ending today' + (hasWindow ? ', not the limit’s window above' : '') + '. The line is the average, ' + cost(mean) + ' a day.', { wrap: 'wrap' }),
+          k.bars(days, 7, 'Use each day over the past 7 days: ' + keys.map((key, i) => dayWords(key, now) + ' ' + cost(days[i])).join(', ') + '.', 112, { stacks, titles: keys.map((key, i) => dayWords(key, now) + ': ' + cost(days[i])), average: true, averageTitle: 'Average: ' + cost(mean) + ' a day' }),
           k.Box({
             flexDirection: 'row',
             width: '100%',
@@ -1207,7 +1245,7 @@ function usageWhere(k, d, h, hasWindow = false) {
   const families = {}
   for (const [m, usd] of u.models) {
     const name = modelName(m).replace(/ [\d.]+$/, '')
-    families[name] = families[name] || { name, value: 0, hex: modelHex(m) }
+    families[name] = families[name] || { name, value: 0, hex: modelHex(m), model: m }
     families[name].value += usd
   }
   const helped = u.kinds.helpers + u.kinds.workflows
@@ -1317,12 +1355,15 @@ export function drawLobby(k, d, act) {
     k.Box({
       flexDirection: 'column',
       rowGap: 'xs',
+      paddingX: 'xs',
       children: [k.footnote('ToBeBestMe'), k.hang(k.Box({ paddingTop: 'xs', children: [k.text(glyph[0], glyph[1])] }), k.text(head, { size: 'title', weight: 'semibold', wrap: 'wrap' })), ...(notes.length ? [k.text(notes.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : [])],
     }),
   ]
+  // the panels of what waits sit close together: one group, set apart from the rest by the page's own gap
+  const panels = []
   // a workflow asking for its go-ahead in this chat: asked in the chat's own dialog, so it says where to answer
   if (L.approval) {
-    out.push(
+    panels.push(
       card('lobby-approval', [
         k.Text({ wrap: 'wrap', children: [k.text('●  ', { color: 'warning' }), k.text('Waiting for your go-ahead', { size: 'footnote', weight: 'semibold', color: 'warning' })] }),
         k.text('Claude wants to run ' + (L.approval.preview.name ? '“' + L.approval.preview.name + '”' : 'a workflow'), { weight: 'semibold', wrap: 'wrap' }),
@@ -1343,7 +1384,7 @@ export function drawLobby(k, d, act) {
     // as on the desktop, any of them can be set aside; it comes back if that chat asks again
     if (asking < 0) buttons.push(k.button('lobby-' + i + '-later', 'Set aside', () => act.dismissNeed(x), { plain: true, dimColor: true, about: x.title }))
     const how = needHow(w, x, canSend)
-    out.push(
+    panels.push(
       card('lobby-need-' + i, [
         k.Text({ wrap: 'wrap', children: [k.text('●  ', { color: level === 'success' ? 'success' : level === 'info' ? undefined : level, dimColor: level === 'info' ? true : undefined }), k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) })] }),
         k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
@@ -1358,40 +1399,34 @@ export function drawLobby(k, d, act) {
       ]),
     )
   })
+  if (panels.length) out.push(k.Box({ flexDirection: 'column', rowGap: 'md', children: panels }))
   // as the card on Home counts them: this many shown of all the chats and pull requests waiting
-  if (L.more) out.push(k.footnote('Showing ' + L.needs.length + ' of ' + w.needs.length + '. The rest are in ToBeBestMe on your computer.', { wrap: 'wrap' }))
+  if (L.more) out.push(k.Box({ paddingX: 'xs', children: [k.footnote('Showing ' + L.needs.length + ' of ' + w.needs.length + '. The rest are in ToBeBestMe on your computer.', { wrap: 'wrap' })] }))
   const t = L.tight
   if (t) {
     const level = shownPct(t.pct) >= Math.max(90, d.opts.limitAlertAt) ? 'error' : shownPct(t.pct) >= d.opts.limitAlertAt || t.early ? 'warning' : 'success'
     const hex = level === 'success' ? planHex(t.label) : HEX[level]
+    const figureText = pctText(t.pct)
+    // the tightest limit is the phone's one big figure, as on Home: ink, amber once past its alert, red when nearly out
+    const big = heroFigure(k, figureText, { size: 56, level })
     out.push(
-      k.Box({
-        key: 'lobby-limit',
-        flexDirection: 'column',
-        rowGap: 'xs',
-        children: [
-          k.Box({ flexDirection: 'row', columnGap: 'sm', alignItems: 'center', children: [k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(t.label, { weight: 'semibold', wrap: 'truncate-end' })] }), k.text(pctText(t.pct), { tabular: true, weight: 'semibold', color: quiet(level) })] }),
-          k.bar(t.pct, 100, hex, t.label + ' ' + pctText(t.pct) + ' used'),
-          k.footnote(t.pct >= 100 && t.resetsAt ? 'Used up until it resets ' + fmtClock(t.resetsAt, d.now) + ', in ' + fmtSpan(t.resetsAt - d.now) + '.' : t.early ? 'Runs out ' + fmtClock(t.fullAt, d.now) + ', ' + roughSpan(t.resetsAt - t.fullAt) + ' before it resets.' : t.resetsAt ? 'Resets ' + fmtClock(t.resetsAt, d.now) + ', in ' + fmtSpan(t.resetsAt - d.now) + '.' : '', { wrap: 'wrap', ...(t.early ? { color: 'warning' } : {}) }),
-        ],
-      }),
+      k.card(t.label, null, [
+        k.Box({ key: 'lobby-limit', flexDirection: 'column', rowGap: 'sm', children: [
+          big || k.text(figureText, { size: 'title', weight: 'semibold', tabular: true, color: quiet(level) }),
+          k.bar(t.pct, 100, hex, t.label + ' ' + figureText + ' used'),
+          k.footnote(t.pct >= 100 && t.resetsAt ? 'Used up until it resets ' + fmtClock(t.resetsAt, d.now) + ', in ' + fmtSpan(t.resetsAt - d.now) + '.' : t.early ? 'Runs out ' + fmtClock(t.fullAt, d.now) + ', ' + roughSpan(t.resetsAt - t.fullAt) + ' before it resets.' : t.resetsAt ? 'Resets ' + fmtClock(t.resetsAt, d.now) + ', in ' + fmtSpan(t.resetsAt - d.now) + '.' : '', { wrap: 'wrap', ...(t.early ? { color: 'warning', dimColor: undefined } : {}) }),
+        ] }),
+      ], { gap: 0, isPanel: true }),
     )
   }
   if (L.runs.length) {
+    // as Home's Running now: its heading, then each run's live dot, its name and how far it got
     out.push(
-      k.Box({
-        flexDirection: 'column',
-        rowGap: 'xs',
-        children: [
-          k.text('Running now', { weight: 'semibold' }),
-          // the dot is the desktop's: blue and pulsing while it works, an amber pause when held
-          ...L.runs.map((r) => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', children: [r.paused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running'), k.Box({ flexShrink: 1, children: [k.Text({ wrap: 'wrap', children: [k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  ' + r.progress.done + ' of ' + plural(r.progress.total, 'agent', 'agents') + (r.paused ? ', paused' : ''), { size: 'footnote', dimColor: true })] })] })] }), k.bar(r.progress.done, Math.max(1, r.progress.total), r.paused ? HEX.warning : HEX.bar, (r.name || 'Workflow') + ': ' + r.progress.done + ' of ' + r.progress.total + ' agents done')] })),
-        ],
-      }),
+      k.card('Running now', null, L.runs.map((r) => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', children: [r.paused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running'), k.Box({ flexShrink: 1, children: [k.Text({ wrap: 'wrap', children: [k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  ' + r.progress.done + ' of ' + plural(r.progress.total, 'agent', 'agents') + (r.paused ? ', paused' : ''), { dimColor: true, tabular: true })] })] })] }), k.bar(r.progress.done, Math.max(1, r.progress.total), r.paused ? HEX.warning : HEX.bar, (r.name || 'Workflow') + ': ' + r.progress.done + ' of ' + r.progress.total + ' agents done')] })), { gap: 'md' }),
     )
   }
-  out.push(k.footnote('Context in this chat: ' + pctText(d.pct) + '. The full dashboard is in ToBeBestMe on your computer.', { wrap: 'wrap' }))
-  return k.Box({ flexDirection: 'column', rowGap: 'lg', width: '100%', paddingX: 'xs', paddingY: 'sm', children: out })
+  out.push(k.Box({ paddingX: 'xs', children: [k.footnote('Context in this chat: ' + pctText(d.pct) + '. The full dashboard is in ToBeBestMe on your computer.', { wrap: 'wrap' })] }))
+  return k.Box({ flexDirection: 'column', rowGap: 'xl', width: '100%', paddingX: 'xs', paddingY: 'sm', children: out })
 }
 
 function usageTab(k, d, act) {
@@ -1475,7 +1510,8 @@ function spendingTab(k, d, act, h) {
       k.card('Turns', t.length > recentRows.length ? 'The last ' + recentRows.length + ' of ' + t.length + ', newest first.' : 'Newest first.', [
         ...(values.length >= 8
           ? [
-              k.bars(values, Math.max(16, values.length), 'Cost of the last ' + plural(values.length, 'turn', 'turns') + ', up to ' + cost(Math.max(...values)) + '; the latest ' + cost(last.usd || 0) + '.', 56, {
+              k.bars(values, Math.max(16, values.length), 'Cost of the last ' + plural(values.length, 'turn', 'turns') + ', up to ' + cost(Math.max(...values)) + '; the latest ' + cost(last.usd || 0) + '.', 40, {
+                maxBar: 20,
                 colors: shown.map((x) => modelHex(x.model)),
                 titles: shown.map((x) => fmtClock(x.at, d.now) + ' · ' + cost(x.usd || 0) + ' · ' + fmtTurnTime(x.ms) + ' · ' + modelName(x.model)),
                 average: true,
@@ -1485,7 +1521,7 @@ function spendingTab(k, d, act, h) {
           : []),
         k.Box({
           flexDirection: 'column',
-          rowGap: 'xs',
+          rowGap: k.tight,
           children: [
             k.heads([{ text: 'Ended' }, { text: '', width: barW }, { text: 'Cost', width: 9 }, { text: 'Took', width: 9 }, { text: 'Output', width: 8 }]),
             ...recentRows.map((x, i) => k.row([{ text: fmtClock(x.at, d.now) }, { el: k.bar(x.usd || 0, most, modelHex(x.model), 'Turn ' + (t.length - i) + ': ' + cost(x.usd || 0)), width: barW }, { text: cost(x.usd || 0), width: 9 }, { text: fmtTurnTime(x.ms), width: 9 }, { text: fmtTokens(x.output || 0), width: 8 }], {}, { key: 'turn-' + i, tip: turnTip(x, d.now) })),
@@ -1495,8 +1531,9 @@ function spendingTab(k, d, act, h) {
           flexDirection: 'row',
           flexWrap: 'wrap',
           columnGap: 'md',
-          children: [...families.map((f) => k.Text({ children: [k.text('● ', { color: k.isTerminal ? 'suggestion' : midHex(modelHex(f)) }), k.text(f, { size: 'footnote', dimColor: true })] })), ...(k.isTerminal ? [] : [k.footnote((k.hint('Point at a turn for its tokens and cache.') + (values.length >= 8 ? ' The dashed line is the average turn, ' + cost(avg(values)) + '.' : '')).trim())])],
+          children: families.map((f) => (k.isTerminal ? k.Text({ children: [k.text('● ', { color: 'suggestion' }), k.text(f, { size: 'footnote', dimColor: true })] }) : k.tagged(k.swatch(f, f + ' key'), k.text(f, { size: 'footnote', dimColor: true })))),
         }),
+        ...(k.isTerminal ? [] : [k.footnote((k.hint('Point at a turn for its tokens and cache.') + (values.length >= 8 ? ' The line is the average turn, ' + cost(avg(values)) + '.' : '')).trim())]),
         k.facts(facts, 46),
       ], { gap: 'md' }),
     )
@@ -1526,14 +1563,14 @@ function spendingTab(k, d, act, h) {
       all += r.requests
       byHelpers += r.subagent || 0
       const input = r.input + r.cacheRead + r.cacheWrite
-      return k.row([{ parts: [k.text('● ', { color: k.isTerminal ? 'suggestion' : midHex(modelHex(m)) }), modelName(m)] }, { text: String(r.requests), width: 10 }, { text: fmtTokens(input), width: 9 }, { text: fmtTokens(r.output), width: 9 }, { text: input ? pctText((r.cacheRead / input) * 100) : '–', width: 11 }], {}, { key: 'model-' + i, tip: { title: modelName(m), lines: [plural(r.requests, 'request', 'requests') + (r.subagent ? ', ' + r.subagent + ' from helpers' : '') + '.', fmtTokens(input) + ' tokens in, ' + fmtTokens(r.cacheRead) + ' of them from the cache.', fmtTokens(r.output) + ' tokens out.'] } })
+      return k.row([k.isTerminal ? { parts: [k.text('● ', { color: 'suggestion' }), modelName(m)] } : { el: k.tagged(k.swatch(m, modelName(m) + ' key'), k.text(modelName(m), { wrap: 'truncate-end' })) }, { text: String(r.requests), width: 10 }, { text: fmtTokens(input), width: 9 }, { text: fmtTokens(r.output), width: 9 }, { text: input ? pctText((r.cacheRead / input) * 100) : '–', width: 11 }], {}, { key: 'model-' + i, tip: { title: modelName(m), lines: [plural(r.requests, 'request', 'requests') + (r.subagent ? ', ' + r.subagent + ' from helpers' : '') + '.', fmtTokens(input) + ' tokens in, ' + fmtTokens(r.cacheRead) + ' of them from the cache.', fmtTokens(r.output) + ' tokens out.'] } })
     })
     put('models',
       k.card('By model', null, [
         k.heads([{ text: 'Model' }, { text: 'Requests', width: 10 }, { text: 'Input', width: 9 }, { text: 'Output', width: 9 }, { text: 'From cache', width: 11 }]),
         ...rows,
         k.footnote((byHelpers ? byHelpers + ' of ' + all + ' requests came from helpers. ' : '') + 'Input from the cache costs a tenth as much or less.'),
-      ], { gap: 'xs' }),
+      ], { gap: k.tight }),
     )
   }
 
@@ -1545,7 +1582,7 @@ function spendingTab(k, d, act, h) {
       sections.push(
         k.Box({
           flexDirection: 'column',
-          rowGap: 'xs',
+          rowGap: k.tight,
           children: [
             k.heads([{ text: 'Helpers (subagents)' }, { text: 'Model', width: 14 }, { text: 'Requests', width: 10 }, { text: 'Output', width: 9 }]),
             ...helpers.slice(0, 8).map((a, i) => k.row([{ text: a.label || a.type || 'Helper' }, { text: modelName(a.model), width: 14 }, { text: String(a.requests), width: 10 }, { text: fmtTokens(a.output), width: 9 }], {}, { key: 'helper-' + i, tip: { title: a.label || a.type || 'Helper', lines: [(a.type ? 'A ' + a.type + ' helper on ' : 'On ') + modelName(a.model) + '.', fmtTokens(a.input) + ' tokens in, ' + fmtTokens(a.output) + ' out.'] } })),
@@ -1557,12 +1594,12 @@ function spendingTab(k, d, act, h) {
       sections.push(
         k.Box({
           flexDirection: 'column',
-          rowGap: 'xs',
+          rowGap: k.tight,
           children: [
             k.heads([{ text: 'Tools' }, { text: '', width: k.columns >= 72 ? 14 : 8 }, { text: 'Calls', width: 14 }, { text: 'Time', width: 9 }, { text: 'Output', width: 9 }]),
             ...toolNames.slice(0, 10).map((n, i) => {
               const r = d.tools[n]
-              return k.row([{ text: toolName(n) }, { el: k.bar(r.chars, d.tools[toolNames[0]].chars, TINT.gray, toolName(n) + ' output'), width: k.columns >= 72 ? 14 : 8 }, { text: r.calls + (r.errors ? ' (' + r.errors + ' failed)' : ''), width: 14 }, { text: fmtTurnTime(r.ms), width: 9 }, { text: '~' + fmtTokens(r.chars / 4), width: 9 }], {}, { key: 'tool-' + i, tip: { title: toolName(n), lines: [plural(r.calls, 'call', 'calls') + (r.errors ? ', ' + r.errors + ' failed' : '') + ', ' + fmtTurnTime(r.calls ? r.ms / r.calls : 0) + ' each on average.', 'About ' + fmtTokens(r.chars / 4) + ' tokens of output, which stays in the chat.'] } })
+              return k.row([{ text: toolName(n) }, { el: k.bar(r.chars, d.tools[toolNames[0]].chars, RING_HEX.context, toolName(n) + ' output'), width: k.columns >= 72 ? 14 : 8 }, { text: r.calls + (r.errors ? ' (' + r.errors + ' failed)' : ''), width: 14 }, { text: fmtTurnTime(r.ms), width: 9 }, { text: '~' + fmtTokens(r.chars / 4), width: 9 }], {}, { key: 'tool-' + i, tip: { title: toolName(n), lines: [plural(r.calls, 'call', 'calls') + (r.errors ? ', ' + r.errors + ' failed' : '') + ', ' + fmtTurnTime(r.calls ? r.ms / r.calls : 0) + ' each on average.', 'About ' + fmtTokens(r.chars / 4) + ' tokens of output, which stays in the chat.'] } })
             }),
             k.footnote('Tool output stays in the chat and is re-read every turn. Sizes are estimates.'),
           ],
@@ -1578,8 +1615,8 @@ function spendingTab(k, d, act, h) {
     put('week',
       k.card('Past 7 days', 'All chats on this machine that run ToBeBestMe.', [
         k.bars(days.map((x) => x.usd), 7, 'Spending over the past 7 days: ' + days.map((x) => x.label + ' ' + cost(x.usd)).join(', ') + '.', 40, { colors: days.map(() => RING_HEX.spending), titles: days.map((x) => x.label + ': ' + cost(x.usd)) }),
-        k.Box({ flexDirection: 'column', rowGap: 'xs', children: days.filter((x) => x.usd > 0).reverse().map((x) => k.row([{ text: x.label }, { text: cost(x.usd), width: 10 }], x.label === 'Today' ? { weight: 'semibold' } : {})) }),
-        ...(d.ledger.projects.length > 1 ? [k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Today by project', { size: 'footnote', weight: 'semibold', dimColor: true }), ...d.ledger.projects.map((p) => k.row([{ text: p.project }, { text: cost(p.usd), width: 10 }]))] })] : []),
+        k.Box({ flexDirection: 'column', rowGap: k.tight, children: days.filter((x) => x.usd > 0).reverse().map((x) => k.row([{ text: x.label }, { text: cost(x.usd), width: 10 }], x.label === 'Today' ? { weight: 'semibold' } : {})) }),
+        ...(d.ledger.projects.length > 1 ? [k.Box({ flexDirection: 'column', rowGap: k.tight, children: [k.text('Today by project', { size: 'footnote', weight: 'semibold', dimColor: true }), ...d.ledger.projects.map((p) => k.row([{ text: p.project }, { text: cost(p.usd), width: 10 }]))] })] : []),
       ]),
     )
   }
@@ -1628,7 +1665,7 @@ function limitChart(k, d, l) {
   if (k.hasSvg && o.resetAt !== null && span) {
     return k.drawing(
       svgForecast({
-        width: k.px - 4,
+        width: k.px - 10,
         start: o.resetAt - span,
         end: o.resetAt,
         now: drawTime(d.now),
@@ -1638,7 +1675,7 @@ function limitChart(k, d, l) {
         samples: (d.limitHistory && d.limitHistory[r.kind]) || [],
         alertAt: d.opts.limitAlertAt,
         hex: tint(hex, l.level),
-        warnHex: early ? HEX.warning : HEX.marker,
+        warnHex: HEX.warning,
         labels: {
           start: day(o.resetAt - span),
           end: 'resets ' + day(o.resetAt),
@@ -1734,7 +1771,7 @@ function ownSkillCount(sk) {
 // their place, which of mine are written so they'll run when they should, and what is worth
 // turning into a skill next. Changes to settings go through Claude, as a request you read and
 // send; nothing is changed behind your back.
-function skillsTab(k, d, act) {
+function skillsSections(k, d, act) {
   const s = d.skill
   const busy = d.view.busy
   const sk = d.skills || { runs: {}, listing: null, own: [], checkup: [], overrides: {}, promptIdeas: [] }
@@ -1785,7 +1822,7 @@ function skillsTab(k, d, act) {
     else if (isOwnSkill(x, mine)) bySource.yours += 1
     else bySource.builtin += 1
   }
-  const listingItem = L ? { label: 'Skill listing', valueText: pctText(fill), hex: tint(TINT.slate, isFull ? 'warning' : 'success'), runway: { used: fill, elapsed: null, runOut: null, ticks: [] } } : null
+  const listingItem = L ? { label: 'Skill listing', valueText: pctText(fill), hex: tint(RING_HEX.context, isFull ? 'warning' : 'success'), runway: { used: fill, elapsed: null, runOut: null, ticks: [] } } : null
   const sources = [bySource.yours ? bySource.yours + ' yours' : '', bySource.plugins ? bySource.plugins + ' from plugins' : '', bySource.builtin ? bySource.builtin + ' built in' : ''].filter(Boolean).join(' · ')
   const idle = isCounting ? 0 : neverRun.length
   put(
@@ -1882,7 +1919,7 @@ function skillsTab(k, d, act) {
               k.row(
                 [
                   { parts: [k.text('/' + x.name, { weight: 'medium' })] },
-                  { el: k.bar(x.runs, most, TINT.purple, x.name + ': ' + x.runs + ' runs'), width: barW },
+                  { el: k.bar(x.runs, most, RING_HEX.context, x.name + ': ' + x.runs + ' runs'), width: barW },
                   { text: String(x.runs), width: 6 },
                   { text: x.typed ? String(x.typed) : '–', width: 8, props: { dimColor: true } },
                   { text: x.byClaude ? String(x.byClaude) : '–', width: 10, props: { dimColor: true } },
@@ -1896,7 +1933,7 @@ function skillsTab(k, d, act) {
           ]
         : isCounting
           ? [k.text('Counting runs in every project…', { weight: 'medium' }), k.footnote('A one-time read of the last ' + SCAN_DAYS + ' days of transcripts, newest first. ' + plural(sk.pending, 'transcript', 'transcripts') + ' to go.')]
-          : [k.text('No skill ran in the last ' + SCAN_DAYS + ' days.', { weight: 'medium' }), k.footnote('A skill runs when you type /name, or when Claude picks one whose description fits what you asked.')], { gap: 'xs' }),
+          : [k.text('No skill ran in the last ' + SCAN_DAYS + ' days.', { weight: 'medium' }), k.footnote('A skill runs when you type /name, or when Claude picks one whose description fits what you asked.')], { gap: k.tight }),
     )
   }
 
@@ -1953,7 +1990,7 @@ function skillsTab(k, d, act) {
             [
               { parts: [k.text(g.name, { weight: 'medium' })] },
               { text: String(g.skills), width: 8, props: { dimColor: true } },
-              { el: k.bar(g.tokens, most, TINT.slate, g.name + ': ' + fmtTokens(g.tokens) + ' tokens'), width: barW },
+              { el: k.bar(g.tokens, most, RING_HEX.context, g.name + ': ' + fmtTokens(g.tokens) + ' tokens'), width: barW },
               { text: fmtTokens(g.tokens), width: 8 },
               { text: g.runs ? String(g.runs) : '–', width: 7, props: g.runs ? {} : { dimColor: true } },
               { text: g.cut ? String(g.cut) : '–', width: 10, props: { dimColor: true } },
@@ -1977,7 +2014,7 @@ function skillsTab(k, d, act) {
                 [
                   { parts: [k.text(x.name), ...(L.cut.includes(x.name) ? [k.text('  name only', { size: 'footnote', dimColor: true })] : [])] },
                   { text: x.pluginName || sourceWords(x.source), width: 16, props: { dimColor: true } },
-                  { el: k.bar(x.tokens, most, TINT.slate, x.name), width: barW },
+                  { el: k.bar(x.tokens, most, RING_HEX.context, x.name), width: barW },
                   { text: fmtTokens(x.tokens), width: 7 },
                   { text: runs[x.name] ? String(runs[x.name].runs) : '–', width: 6, props: runs[x.name] ? {} : { dimColor: true } },
                 ],
@@ -1993,7 +2030,7 @@ function skillsTab(k, d, act) {
       k.card('Where the listing goes', 'Every skill Claude is told about, what it costs on every request, and how often it ran. ' + k.hint('Point at a row for where it comes from and how to turn it off.'), [
         k.segmented('skill-show', [{ value: 'plugins', label: 'By source' }, { value: 'all', label: 'Every skill' }, { value: 'unused', label: 'Never ran' }, { value: 'cut', label: 'Name only' }], show, act.setSkillShow, 'Show'),
         ...(k.Input ? [k.Box({ width: '100%', children: [k.Input({ key: 'skill-filter', label: 'Find', placeholder: 'Find a skill or plugin', value: d.view.skillFilter || '', submitLabel: 'Find', onInput: (value) => act.setSkillFilter(value), onSubmit: (value) => act.setSkillFilter(value) })] })] : []),
-        k.Box({ flexDirection: 'column', rowGap: 'xs', children: rows }),
+        k.Box({ flexDirection: 'column', rowGap: k.tight, children: rows }),
         k.buttons([k.button('manage-skills', 'Manage skills', () => act.run('skills-screen')), k.button('manage-plugins', 'Manage plugins', () => act.run('plugins'))]),
         k.footnote('Manage skills opens Claude Code’s own /skills screen, where each skill can be on, manual-only or off.'),
       ], { gap: 'md' }),
@@ -2013,7 +2050,7 @@ function skillsTab(k, d, act) {
       ...(ideas.length
         ? shownIdeas.map((idea, i) =>
             k.hang(
-              k.text('✦', { color: k.isTerminal ? 'suggestion' : TINT.purple }),
+              k.text('✦', { color: k.workColor }),
               k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text(idea.title, { weight: 'semibold', wrap: 'wrap' }), k.footnote(idea.detail), ...(idea.where ? [k.footnote(idea.where)] : []), k.Box({ marginTop: 'xs', children: [k.buttons([k.button('idea-' + i, 'Draft this skill', () => act.draftIdea(idea), { about: idea.title })])] })] }),
             ),
           )
@@ -2057,7 +2094,7 @@ function skillsTab(k, d, act) {
         children: [
           k.Box({ flexDirection: 'column', children: [k.text('Draft: /' + s.draft.name, { weight: 'semibold' }), ...(s.draft.description ? [k.footnote(cleanText(s.draft.description, 300))] : [])] }),
           k.Box({ flexDirection: 'column', rowGap: 'xs', children: checks.map(([ok, words]) => k.Box({ flexDirection: 'row', columnGap: 'sm', children: [k.text(ok ? '✓' : '●', ok ? { color: 'success' } : { color: 'warning' }), k.text(words, { size: 'footnote', wrap: 'wrap' })] })) }),
-          k.Box({ borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, paddingX: k.isTerminal ? 0 : 'md', children: [k.Code ? k.Code({ key: 'skill-draft', source: s.draft.text, language: 'markdown' }) : k.Markdown({ key: 'skill-draft', text: s.draft.text })] }),
+          k.Box(clean({ backgroundColor: k.isTerminal ? undefined : GROUP_BG, borderStyle: k.isTerminal ? undefined : 'round', borderDimColor: k.isTerminal ? undefined : true, paddingX: k.isTerminal ? 0 : 'md', children: [k.Code ? k.Code({ key: 'skill-draft', source: s.draft.text, language: 'markdown' }) : k.Markdown({ key: 'skill-draft', text: s.draft.text })] })),
           k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Save it for', { size: 'footnote', weight: 'semibold', dimColor: true }), k.segmented('skill-scope', [{ value: 'project', label: 'This project' }, { value: 'user', label: 'All my projects' }], s.scope, act.setSkillScope, 'Save it for'), k.footnote('Saves to ' + d.skillPath)] }),
           k.buttons([k.button('skill-save', 'Save skill', act.saveSkill, { variant: 'primary' }), ...(s.previous ? [k.button('skill-undo', 'Undo improvement', act.undoImprove, { dimColor: true })] : []), k.button('skill-improve', 'Improve it', act.improveDraft), k.button('skill-discard', 'Discard draft', act.discardSkill, { dimColor: true })]),
         ],
@@ -2066,7 +2103,28 @@ function skillsTab(k, d, act) {
   }
   put('build', k.card('Build a skill', 'Describe what it should do. You see the draft, checked, before anything is saved.', builder, { gap: 'md' }))
   // what needs a look comes first, then what ran, what the listing holds, and what to make next
-  return [sec.lead, sec.room, sec.check, sec.used, sec.where, sec.ideas, sec.build].filter(Boolean)
+  return sec
+}
+
+function skillsTab(k, d, act) {
+  const order = ['lead', 'room', 'check', 'used', 'where', 'ideas', 'build']
+  if (k.isTerminal || k.columns < SPLIT_AT) {
+    const sec = skillsSections(k, d, act)
+    return order.map((n) => sec[n]).filter(Boolean)
+  }
+  // wide: the table and the builder on the left, where it has room to keep its figures near their names; the fixes,
+  // the check-up and the ideas beside it. Each column is drawn for its own width, from the same state, so the view's
+  // one primary button is still the first one asked for in reading order.
+  const taken = k.primary.isTaken
+  const head = skillsSections(k, d, act).lead
+  const [km, ka] = k.split()
+  k.primary.isTaken = taken
+  const main = skillsSections(km, d, act)
+  k.primary.isTaken = taken
+  const side = skillsSections(ka, d, act)
+  k.primary.isTaken = taken
+  skillsSections(k, d, act)
+  return [head, km.layout(['where', 'build'].map((n) => main[n]), ['room', 'check', 'used', 'ideas'].map((n) => side[n]))].filter(Boolean)
 }
 
 // What a draft gets right, against what makes a skill run when it should.
@@ -2138,16 +2196,47 @@ function control(k, d, act, s) {
   return k.Box({ flexDirection: 'column', rowGap: 'sm', children: [options, k.Box({ width: 36, children: [field] })] })
 }
 
-function settingRow(k, d, act, s) {
-  const words = [k.text(s.label, { weight: 'medium', wrap: 'wrap' }), k.footnote(s.help)]
-  if (k.isRoomy) {
+// A setting as a pair: its name and its control share the first line, the control at the trailing end, and the one-line
+// description sits under them, quiet. Where the pair would not fit the room (a phone, a long name, a row of presets) the
+// control goes under the name instead, so neither is ever cut.
+function pairedSetting(k, name, help, ctl, ctlCh, isEditing, legacy) {
+  // the terminal is drawn as it always was
+  if (k.isTerminal) return legacy()
+  const nameCh = String(name).length * 0.92
+  const room = k.columns - 9
+  // on a phone every control goes under its name, so the rows all read the same way
+  const isPair = k.columns >= 60 && !isEditing && nameCh + ctlCh + 3 <= room
+  const words = k.text(name, { weight: 'medium', wrap: 'wrap' })
+  const help1 = help ? k.footnote(help) : null
+  if (isPair) {
     return k.Box({
-      flexDirection: 'row',
-      columnGap: 'lg',
-      children: [k.Box({ flexDirection: 'column', flexGrow: 1, flexShrink: 1, width: '38%', children: words }), k.Box({ flexDirection: 'column', flexGrow: 0, flexShrink: 0, width: '62%', children: [control(k, d, act, s)] })],
+      flexDirection: 'column',
+      rowGap: 'xs',
+      children: [k.Box({ flexDirection: 'row', alignItems: 'center', columnGap: 'md', children: [k.Box({ flexGrow: 1, flexShrink: 1, children: [words] }), k.Box({ flexShrink: 0, children: [ctl] })] }), ...(help1 ? [help1] : [])],
     })
   }
-  return k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'column', children: words }), control(k, d, act, s)] })
+  return k.Box({ flexDirection: 'column', rowGap: 'xs', children: [words, ...(help1 ? [help1] : []), k.Box({ paddingTop: 'xs', children: [ctl] })] })
+}
+
+// About how many characters wide a row of choices draws: each button its words and 3 of air, the track a little more.
+function choiceCh(labels, hasOther) {
+  const all = hasOther ? [...labels, 'Other…'] : labels
+  return all.reduce((n, l) => n + String(l).length * 0.86 + 4.3, 0) + 1.5
+}
+
+function settingRow(k, d, act, s) {
+  const v = d.opts[s.field]
+  const labels = s.kind === 'boolean' ? ['On', 'Off'] : s.kind === 'choice' ? s.options.map((o) => o.label) : (() => {
+    const l = s.presets.map((p) => (s.kind === 'model' ? titleCase(p) : settingWords(s, p)))
+    if (!s.presets.includes(v)) l.push(s.kind === 'model' ? titleCase(v) : settingWords(s, v))
+    return l
+  })()
+  const isOther = s.kind !== 'boolean' && s.kind !== 'choice' && !!k.Input
+  return pairedSetting(k, s.label, s.help, control(k, d, act, s), choiceCh(labels, isOther), d.view.editing === s.field, () => {
+    const words = [k.text(s.label, { weight: 'medium', wrap: 'wrap' }), k.footnote(s.help)]
+    if (k.isRoomy) return k.Box({ flexDirection: 'row', columnGap: 'lg', children: [k.Box({ flexDirection: 'column', flexGrow: 1, flexShrink: 1, width: '38%', children: words }), k.Box({ flexDirection: 'column', flexGrow: 0, flexShrink: 0, width: '62%', children: [control(k, d, act, s)] })] })
+    return k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'column', children: words }), control(k, d, act, s)] })
+  })
 }
 
 
@@ -2204,14 +2293,14 @@ function sourcesCard(k, d) {
     // a source read with nothing in it says so in words, not as a count of zero; what is not here goes on after its colon in lowercase
     const detail = isZero && /^0 /.test(String(x.detail || '')) ? 'None found' : word === 'Not here' && x.detail && !/^No /.test(x.detail) ? x.detail.charAt(0).toLowerCase() + x.detail.slice(1) : x.detail || ''
     const words = x.ok === false ? sourceNote(key, x) : (word && !/^No /.test(detail) ? word + (detail ? ': ' : '') : '') + detail
-    return k.hoverBox('source-' + i, { flexDirection: 'column', width: '100%' }, [
+    return k.hoverBox('source-' + i, { flexDirection: 'column', width: '100%', paddingY: k.rowPad }, [
       k.Text({ wrap: 'wrap', children: [k.text(glyph + ' ', color ? { color } : { dimColor: true }), k.text(label, { weight: 'medium' }), k.text('  ' + words, { dimColor: x.ok !== false ? true : undefined, color: x.ok === false ? 'error' : undefined })] }),
     ], { title: label, lines: [what + '.', 'Checked ' + ago(d.now - x.at) + '.', x.ok === false && x.detail && sourceNote(key, x) !== x.detail ? 'Technical detail, for a bug report: ' + x.detail : ''] })
   })
   if (!rows.length) return null
   const bad = SOURCE_WORDS.filter(([key]) => (d.sources || {})[key] && d.sources[key].ok === false).length
   const none = SOURCE_WORDS.filter(([key]) => isNothingFound(sourceOf(d, key))).length
-  return k.card('What ToBeBestMe reads', (d.version ? 'Claude Code ' + d.version + '. ' : '') + (bad ? 'Something couldn’t be read; an update to Claude Code may have changed it. The sections that use it say less until it can.' : none ? 'A hollow dot means a source was read and had nothing in it, which is not an error. If an update changes these files, it shows here.' : 'Nothing failed. If an update changes these files, it shows here.'), rows)
+  return k.card('What ToBeBestMe reads', (d.version ? 'Claude Code ' + d.version + '. ' : '') + (bad ? 'Something couldn’t be read; an update to Claude Code may have changed it. The sections that use it say less until it can.' : none ? 'A hollow dot means a source was read and had nothing in it, which is not an error. If an update changes these files, it shows here.' : 'Nothing failed. If an update changes these files, it shows here.'), rows, { gap: k.tight })
 }
 
 // Settings drawn on another tab, beside what they change: here they are only linked to.
@@ -2226,7 +2315,7 @@ function settingsTab(k, d, act) {
     // The settings that sit beside the figures they change (budgets and how costs show on Usage, the workflow check on
     // Workflows) are drawn there and nowhere else: one home each, linked from here
     const fields = g.fields.filter((s) => (showAll || !s.advanced) && !s.inCard && !SET_ELSEWHERE.includes(s.field))
-    if (fields.length) blocks.push({ weight: fields.length * 2 + 1, draw: (kk) => kk.card(g.group, null, fields.map((s) => settingRow(kk, d, act, s)), { gap: 'lg' }) })
+    if (fields.length) blocks.push({ weight: fields.length * 2 + 1, draw: (kk) => kk.card(g.group, null, fields.map((s) => settingRow(kk, d, act, s)), { gap: 'lg', isPanel: true }) })
   }
   blocks.push({
     weight: 4,
@@ -2236,7 +2325,7 @@ function settingsTab(k, d, act) {
         kk.Box({ flexDirection: 'column', rowGap: 'xs', children: [kk.text('Check each workflow before it runs', { weight: 'medium', wrap: 'wrap' }), kk.footnote('Set on Workflows, beside the runs it checks.'), kk.buttons([kk.button('settings-workflows', 'Open Workflows', () => act.setView({ tab: 'workflows', confirm: '', editing: '' }), { dimColor: true })])] }),
       ], { gap: 'md' }),
   })
-  blocks.push({ weight: 1, draw: (kk) => kk.Box({ paddingX: kk.isTerminal ? 1 : 'lg', children: [kk.buttons([kk.button('advanced', showAll ? 'Hide advanced settings' : 'Show ' + hidden + ' advanced settings', act.toggleAdvanced)])] }) })
+  blocks.push({ weight: 1, draw: (kk) => kk.Box({ paddingX: kk.isTerminal ? 1 : 'xs', children: [kk.buttons([kk.button('advanced', showAll ? 'Hide advanced settings' : 'Show ' + hidden + ' advanced settings', act.toggleAdvanced)])] }) })
   blocks.push({
     weight: 4,
     draw: (kk) =>
@@ -2277,10 +2366,10 @@ function notifyCard(k, d, act) {
     'Notifications',
     'How ToBeBestMe tells you something needs you, here and on your phone.',
     [
-      k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Send notifications', { weight: 'medium' }), k.footnote('When a chat waits for you, a workflow needs your go-ahead or ends, or a limit gets close.'), k.segmented('opt-notifications', [{ value: true, label: 'On' }, { value: false, label: 'Off' }], o.notifications, (v) => act.setOption('notifications', v), 'Send notifications')] }),
+      pairedSetting(k, 'Send notifications', 'When a chat waits for you, a workflow needs your go-ahead or ends, or a limit gets close.', k.segmented('opt-notifications', [{ value: true, label: 'On' }, { value: false, label: 'Off' }], o.notifications, (v) => act.setOption('notifications', v), 'Send notifications'), choiceCh(['On', 'Off']), false, () => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Send notifications', { weight: 'medium' }), k.footnote('When a chat waits for you, a workflow needs your go-ahead or ends, or a limit gets close.'), k.segmented('opt-notifications', [{ value: true, label: 'On' }, { value: false, label: 'Off' }], o.notifications, (v) => act.setOption('notifications', v), 'Send notifications')] })),
       ...(o.notifications
         ? [
-            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Notify through', { weight: 'medium' }), k.footnote(specOf('notifyVia').help), k.segmented('opt-notifyVia', specOf('notifyVia').options, o.notifyVia, (v) => act.setOption('notifyVia', v), 'Notify through')] }),
+            pairedSetting(k, 'Notify through', specOf('notifyVia').help, k.segmented('opt-notifyVia', specOf('notifyVia').options, o.notifyVia, (v) => act.setOption('notifyVia', v), 'Notify through'), choiceCh(specOf('notifyVia').options.map((x) => x.label)), false, () => k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Notify through', { weight: 'medium' }), k.footnote(specOf('notifyVia').help), k.segmented('opt-notifyVia', specOf('notifyVia').options, o.notifyVia, (v) => act.setOption('notifyVia', v), 'Notify through')] })),
             k.Box({ flexDirection: 'column', rowGap: 'xs', children: [
               k.text('Also send to your phone', { weight: 'medium' }),
               k.footnote(n.url && n.url !== 'invalid' ? 'Also sent to ' + n.url + ' (address hidden).' : 'Paste the web address of a phone notification service. The easiest is ntfy: install its app, subscribe to a topic name only you would guess, and paste https://ntfy.sh/that-topic here. What each notification says goes there, so keep the topic secret.'),
@@ -2289,12 +2378,18 @@ function notifyCard(k, d, act) {
                 : [k.buttons([k.button('notify-url-edit', n.url ? 'Change address…' : 'Add an address…', () => act.setView({ editing: 'notifyUrl', focus: 'notify-url' }), { dimColor: true }), ...(n.url ? [k.button('notify-url-clear', 'Remove address', () => act.saveNotifyUrl(''), { dimColor: true })] : [])])]),
             ] }),
             k.buttons([k.button('notify-test', 'Send a test notification', act.testNotify)]),
-            ...(rows.length ? [k.footnote('The last one, ' + ago(d.now - n.at) + ':'), ...rows] : []),
-            ...(n.results && n.results.system === 'sent' && /mac|darwin/i.test(String(d.platform || 'mac')) ? [k.footnote('On a Mac, system notifications come from Script Editor; if none appears, allow Script Editor in System Settings › Notifications.')] : []),
+            ...(k.isTerminal
+              ? [
+                  ...(rows.length ? [k.footnote('The last one, ' + ago(d.now - n.at) + ':'), ...rows] : []),
+                  ...(n.results && n.results.system === 'sent' && /mac|darwin/i.test(String(d.platform || 'mac')) ? [k.footnote('On a Mac, system notifications come from Script Editor; if none appears, allow Script Editor in System Settings › Notifications.')] : []),
+                ]
+              : rows.length
+                ? [k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('The last one, ' + ago(d.now - n.at) + ':'), ...rows, ...(n.results && n.results.system === 'sent' && /mac|darwin/i.test(String(d.platform || 'mac')) ? [k.Box({ paddingTop: 'xs', children: [k.footnote('On a Mac, system notifications come from Script Editor; if none appears, allow Script Editor in System Settings › Notifications.')] })] : [])] })]
+                : []),
           ]
         : []),
     ],
-    { gap: 'md' },
+    { gap: k.isTerminal ? 'md' : 'lg', isPanel: true },
   )
 }
 
@@ -2303,13 +2398,10 @@ function notifyCard(k, d, act) {
 // week, the last 14 days, the plan limits they share, and what stands out. It works on every surface
 // and covers sessions that never ran tobebestme; in the desktop app the open sessions follow.
 
-function planHex(label) {
-  if (/all models|^weekly( limit)?$/i.test(label)) return RING_HEX.seven_day
-  // a model's own weekly limit keeps that model's colour, so slate stays the project colour it also is
-  if (/opus/i.test(label)) return RING_HEX.seven_day_opus
-  if (/sonnet/i.test(label)) return FAMILY_HEX.Sonnet
-  if (/haiku/i.test(label)) return FAMILY_HEX.Haiku
-  return RING_HEX.seven_day_opus
+// A plan window is drawn in ink, whichever it is: a limit has no colour of its own (a model's colour is for a model,
+// a project's for a project), and amber or red take over only when it runs low.
+function planHex() {
+  return RING_HEX.seven_day
 }
 
 // How long ago, as a table says it: "just now", "12 min ago", "3 h ago", "yesterday", "4 days ago".
@@ -2498,10 +2590,9 @@ function homeHero(k, d, h, act) {
   const legendItem = ([key, x]) =>
     k.Box({
       flexDirection: 'row',
-      columnGap: 'xs',
       alignItems: 'center',
       children: [
-        k.text('●', { color: midHex(x.hex) }),
+        k.text('●', { color: midHex(x.hex) }), // the name's own padding is the space between
         // other projects together are not one project to pick
         key ? k.button('legend-' + key, (key === picked ? '✓ ' : '') + x.name, () => act.setView({ project: key === picked ? '' : key }), { name: key === picked ? 'Show every project, not only ' + x.name : 'Show only ' + x.name, ...(key === picked ? {} : { plain: true, dimColor: true }) }) : k.footnote(x.name),
       ],
@@ -2510,6 +2601,9 @@ function homeHero(k, d, h, act) {
   const kind = tightest ? kindOfLabel(tightest.label) : 'seven_day'
   const pace = item ? paceWords(kind, item.runway, tightest.resetsAt, d.now) : ''
   const isWide = k.columns >= 90
+  // where the week is drawn whole, the figure is under the headline and "today, in every chat" is a footnote under the chart, so the answer is first
+  const isFactsLow = !!(k.hasSvg && item && item.days)
+  const factsNode = facts.length ? (factsTip ? k.hoverBox('all-facts', { flexDirection: 'column' }, [k.text(facts.join(' · ') + '.', { dimColor: !isFactsLow, ...(isFactsLow ? { size: 'footnote', dimColor: true } : {}), wrap: 'wrap' })], { ...factsTip, align: 'left' }) : k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })) : null
   // what needs you, and beside it (under it, on a narrow pane) where you stand: one big figure
   const words = k.Box({
     flexDirection: 'column',
@@ -2521,7 +2615,7 @@ function homeHero(k, d, h, act) {
       // the status glyph sits beside the headline's first line, however many lines it takes
       k.hang(k.Box({ paddingTop: k.isTerminal ? undefined : 'xs', children: [k.text(glyph[0], glyph[1])] }), k.text(headline, { size: 'title', weight: 'semibold', wrap: 'wrap' })),
       ...(waits.length ? [k.text(waits.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
-      ...(facts.length ? [factsTip ? k.hoverBox('all-facts', { flexDirection: 'column' }, [k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })], { ...factsTip, align: 'left' }) : k.text(facts.join(' · ') + '.', { dimColor: true, wrap: 'wrap' })] : []),
+      ...(facts.length && !isFactsLow ? [factsNode] : []),
     ],
   })
   // where the week is drawn whole, the figure and the forecast are in that drawing and not repeated
@@ -2558,7 +2652,7 @@ function homeHero(k, d, h, act) {
                   'all-limit-name',
                   { flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', rowGap: 'xs', alignItems: 'center' },
                   [
-                    k.Button({ key: 'all-limits', plain: true, onPress: () => act.setView({ tab: 'usage', confirm: '' }), children: [tightest.label + ' ›'] }),
+                    k.Box(clean({ marginLeft: k.isTerminal ? undefined : -0.7, children: [k.Button({ key: 'all-limits', plain: true, onPress: () => act.setView({ tab: 'usage', confirm: '' }), children: [tightest.label + ' ›'] })] })),
                     ...(pace && !weekDrawn ? [k.Box({ flexShrink: 1, children: [k.text(pace, { size: 'footnote', wrap: 'wrap', ...(early ? { color: 'warning' } : { dimColor: true }) })] })] : []),
                     k.Box({ flexGrow: 1 }),
                     ...(k.hasSvg && item.window ? [] : [k.footnote(tightest.resetsAt ? 'resets in ' + fmtSpan(tightest.resetsAt - d.now) : '', { tabular: true, wrap: 'truncate-end' })]),
@@ -2567,6 +2661,7 @@ function homeHero(k, d, h, act) {
                   { title: tightest.label, lines: [tightest.resetsAt ? 'Resets ' + fmtClock(tightest.resetsAt, d.now) + '.' : '', (h.plan.source === 'app' ? (h.plan.plan ? h.plan.plan + ' plan. ' : '') : h.plan.source === 'session' ? 'From this chat’s latest reading. ' : 'As read ' + ago(d.now - h.plan.at) + ' by another chat. ') + 'Every project draws on the same limits.', legend.length ? 'The bars under it are each day’s work, by project.' : '', 'Press its name for every limit on Usage.'], align: 'left' },
                 ),
                 ...heroDetail(k, d, h, act),
+                ...(isFactsLow && factsNode ? [factsNode] : []),
                 // the other limits get their own space under the legend, so they never run into its line
                 ...h.windows.filter((x) => x !== tightest).map((x, i) => k.Box({ width: '100%', marginTop: i === 0 ? 'md' : undefined, children: [limitRow(k, d, h, x, i)] })),
                 ...(h.plan.source === 'app' && h.f.plan && h.f.plan.extraUsage ? [k.footnote('Extra usage is ' + (h.f.plan.extraUsage.enabled ? 'on, so work carries on past a limit and is billed.' : 'off, so work pauses at a limit until it resets.'))] : []),
@@ -2600,7 +2695,7 @@ function heroCalendar(k, d, h, act, say) {
   const picked = it.days.findIndex((x) => x.key === d.view.day)
   const { level, pace, early, tightest } = say
   const label = 'of your ' + limitPhrase(tightest.label) + (level === 'error' ? (tightest.pct >= 100 ? ' · used up' : ' · nearly out') : level === 'warning' ? ' · past your alert' : '')
-  const src = svgWeek({ ...r, hex: it.hex, ...it.window, days: it.days, picked, label, sentence: pace, level, early, figHexes: figureHues(level) }, { width: W })
+  const src = svgWeek({ ...r, hex: it.hex, ...it.window, days: it.days, picked, label, sentence: pace, level, early }, { width: W })
   const H = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(src)[1])
   const words = 'The week: ' + it.valueText + ' ' + label + '. ' + (pace || '') + ' ' + it.window.endLabel + '.' + (it.daysAlt || '') + ' The line is what has been used so far, the dashed line where this pace leads' + (r.runOut !== null && r.runOut !== undefined ? ', and the hatched stretch is the time without Claude' : '') + '.'
   const span = Math.max(1, it.window.endMs - it.window.startMs)
@@ -2612,7 +2707,7 @@ function heroCalendar(k, d, h, act, say) {
     const label = x.isToday && room >= (isPicked ? 56 : 42) ? 'Today' : x.short
     const kid =
       room < 34 ? []
-      : x.total > 0 ? [k.button('day-' + x.key, label, () => act.setView({ day: isPicked ? '' : x.key }), { name: isPicked ? 'Show the whole week, not only ' + new Date(dayKeyMs(x.key)).toLocaleDateString([], { weekday: 'long' }) : 'Show ' + (x.isToday ? 'today' : new Date(dayKeyMs(x.key)).toLocaleDateString([], { weekday: 'long' })) + '’s work', ...(isPicked ? {} : { plain: true, dimColor: x.isToday ? undefined : true }) })]
+      : x.total > 0 ? [k.button('day-' + x.key, label, () => act.setView({ day: isPicked ? '' : x.key }), { name: isPicked ? 'Show the whole week, not only ' + new Date(dayKeyMs(x.key)).toLocaleDateString([], { weekday: 'long' }) : 'Show ' + (x.isToday ? 'today' : new Date(dayKeyMs(x.key)).toLocaleDateString([], { weekday: 'long' })) + '’s work', ...(isPicked && room >= 60 ? {} : { plain: true, dimColor: isPicked || x.isToday ? undefined : true }) })]
       : [k.footnote(label, { wrap: 'truncate-end' })]
     // from no width, each column grows by its day's share of the window: exactly its share of the row
     return k.Box({ width: 0, flexGrow: Math.round(frac * 100000) / 1000, flexShrink: 0, justifyContent: 'center', alignItems: 'center', children: kid })
@@ -2667,10 +2762,17 @@ function limitRow(k, d, h, x, i) {
   const isRoomy = k.columns >= 64
   // where it runs out when that is early enough to matter, else when it resets
   const runOutAt = x.resetsAt && WINDOW_MS[kind] && runway.runOut !== null && runway.runOut !== undefined ? x.resetsAt - WINDOW_MS[kind] + (runway.runOut / 100) * WINDOW_MS[kind] : 0
-  return k.hoverBox('plan-' + i, { flexDirection: 'row', columnGap: 'md', alignItems: 'center', width: '100%' }, [
-    k.Box({ width: isRoomy ? 24 : 16, flexShrink: 0, children: [k.Text({ wrap: 'truncate-end', children: [k.text('● ', { color: k.isTerminal ? (level === 'success' ? 'suggestion' : level) : quiet(level) || midHex(hex) }), k.text(x.label)] })] }),
-    k.Box({ flexGrow: 1, flexShrink: 1, children: [runwayBar(k, { runway, hex, label: x.label, valueText: pctText(x.pct) }, 'tile')] }),
-    k.Box({ width: 5, flexShrink: 0, justifyContent: 'flex-end', children: [k.text(pctText(x.pct), { tabular: true, weight: 'semibold', color: quiet(level) })] }),
+  const nameCell = k.Box({ width: isRoomy ? 24 : undefined, flexGrow: isRoomy || k.isTerminal ? 0 : 1, flexShrink: isRoomy || k.isTerminal ? 0 : 1, children: [k.Text({ wrap: 'truncate-end', children: k.isTerminal ? [k.text('● ', { color: level === 'success' ? 'suggestion' : level }), k.text(x.label)] : [k.text(x.label), ...(quiet(level) ? [k.text(' ●', { color: level })] : [])] })] })
+  const figure = k.Box({ width: 5, flexShrink: 0, justifyContent: 'flex-end', children: [k.text(pctText(x.pct), { tabular: true, weight: 'semibold', color: quiet(level) })] })
+  const runwayCell = k.Box({ flexGrow: 1, flexShrink: 1, children: [runwayBar(k, { runway, hex, label: x.label, valueText: pctText(x.pct) }, 'tile')] })
+  // a phone gives the name and its figure a line, and the runway the full width under them, so it is never a stub
+  if (!k.isTerminal && !isRoomy) {
+    return k.hoverBox('plan-' + i, { flexDirection: 'column', rowGap: 'xs', width: '100%', paddingY: k.rowPad }, [k.Box({ flexDirection: 'row', alignItems: 'center', columnGap: 'md', children: [nameCell, figure] }), k.Box({ width: '100%', children: [runwayBar(k, { runway, hex, label: x.label, valueText: pctText(x.pct) }, 'tile')] })], { title: x.label + ', ' + pctText(x.pct) + ' used', lines: [x.resetsAt ? 'Resets ' + fmtClock(x.resetsAt, now) + '.' : '', where + 'Every project draws on the same limits.'] })
+  }
+  return k.hoverBox('plan-' + i, { flexDirection: 'row', columnGap: 'md', alignItems: 'center', width: '100%', paddingY: k.rowPad }, [
+    k.isTerminal ? k.Box({ width: isRoomy ? 24 : 16, flexShrink: 0, children: [k.Text({ wrap: 'truncate-end', children: [k.text('● ', { color: level === 'success' ? 'suggestion' : level }), k.text(x.label)] })] }) : nameCell,
+    runwayCell,
+    k.isTerminal ? k.Box({ width: 5, flexShrink: 0, children: [k.text(pctText(x.pct), { tabular: true, weight: 'semibold', color: quiet(level) })] }) : figure,
     ...(isRoomy ? [k.Box({ width: 22, flexShrink: 0, justifyContent: 'flex-end', children: [k.footnote(runOutAt ? 'runs out ' + fmtClock(runOutAt, now) : x.resetsAt ? 'resets in ' + fmtSpan(x.resetsAt - now) : '', { tabular: true, wrap: 'truncate-end', ...(runOutAt ? { color: 'warning', dimColor: undefined } : {}) })] })] : []),
   ], { title: x.label + ', ' + pctText(x.pct) + ' used', lines: [x.resetsAt ? 'Resets ' + fmtClock(x.resetsAt, now) + '.' : '', where + 'Every project draws on the same limits.'] })
 }
@@ -2743,7 +2845,8 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
       flexDirection: 'row',
       columnGap: 'md',
       alignItems: 'center',
-      children: [k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(x.title, { weight: 'semibold', wrap: 'truncate-end' })] }), ...(isWide && meta ? [k.Box({ flexShrink: 1, children: [k.footnote(meta, { wrap: 'truncate-end' })] })] : [])],
+      // where and when sit straight after the name, quiet, so the eye ties them to their chat
+      children: [k.Box({ flexShrink: 1, children: [k.text(x.title, { weight: 'semibold', wrap: 'truncate-end' })] }), ...(isWide && meta ? [k.Box({ flexShrink: 1, children: [k.footnote(meta, { wrap: 'truncate-end' })] })] : [])],
     }),
     ...(!isWide && meta ? [k.footnote(meta, { wrap: 'truncate-end' })] : []),
     // what it is waiting for, the kind first and in its colour
@@ -2784,11 +2887,10 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
       : []),
     ...(buttons.length ? [k.Box({ marginTop: 'xs', children: [k.buttons(buttons)] })] : []),
   ]
-  // the most urgent chat is one large card: a flat tint of its status colour (about a tenth of it, over the
-  // group's own grey), its title at heading size, what it asks set apart, and its own answers under it
+  // the most urgent chat is one large panel: neutral (its status line carries the colour), its title at title size,
+  // what it asks set apart, and its own answers under it
   if (isLead && !k.isTerminal) {
     const tip = { title: x.title, lines: [folder, canResume ? 'To carry it on in any terminal, from its own folder, press Copy resume command.' : ''] }
-    const tintHex = level === 'error' ? HEX.error : level === 'warning' ? HEX.warning : HEX.marker
     return k.hoverBox(
       'need-' + i,
       { flexDirection: 'column', width: '100%' },
@@ -2798,7 +2900,7 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
           rowGap: 'sm',
           paddingX: 'md',
           paddingY: 'md',
-          backgroundColor: tintHex + '0F', // about 6%: red and grey words on it still hold 4.5:1
+          backgroundColor: GROUP_BG, // a neutral panel: the status line inside it carries the colour
           borderStyle: 'round',
           borderDimColor: true,
           children: [
@@ -2819,7 +2921,7 @@ function needRow(k, d, act, w, x, i, isFirst, isOpen = true, isLead = false) {
   // the most pressing chat is drawn whole; the others are one line each until opened
   if (!isOpen && asking < 0 && !isTyping) {
     const brief = [column[0], ...(!isWide && meta ? [column[1]] : []), k.Text({ wrap: isWide ? 'truncate-end' : 'wrap', children: [k.text(label, { size: 'footnote', weight: 'semibold', ...(level === 'info' ? { dimColor: true } : { color: level }) }), ...(needText ? [k.text('   ' + needText, { dimColor: true })] : [])] })]
-    return k.hoverBox('need-' + i, { flexDirection: 'column', width: '100%' }, [k.hang(k.text('●', dotLevel), k.Box({ flexDirection: 'column', rowGap: 'xs', flexGrow: 1, flexShrink: 1, children: [...brief, k.Box({ children: [k.button('need-' + i + '-open', 'Show options', () => act.setView({ openNeed: x.key }), { plain: true, dimColor: true, about: x.title })] })] }))], { title: x.title, lines: [folder] })
+    return k.hoverBox('need-' + i, { flexDirection: 'column', width: '100%' }, [k.hang(k.text('●', dotLevel), k.Box({ flexDirection: 'column', rowGap: 'xs', flexGrow: 1, flexShrink: 1, children: [...brief, k.buttons([k.button('need-' + i + '-open', 'Show options', () => act.setView({ openNeed: x.key }), { plain: true, dimColor: true, about: x.title })])] }))], { title: x.title, lines: [folder] })
   }
   return k.hoverBox(
     'need-' + i,
@@ -2886,7 +2988,7 @@ function pickupCard(k, d, act, w, h) {
             alignItems: 'center',
             children: [
               k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Text({ wrap: 'truncate-end', children: [...(k.isTerminal || !h ? [] : [k.text('● ', { color: midHex(hueOf(h, byName[x.project])) })]), k.text(x.project, { weight: 'semibold' }), ...(x.title ? [k.text('  ' + x.title, { dimColor: true })] : [])] })] }),
-              x.isRunning ? k.footnote('working now', { color: 'success', dimColor: undefined, wrap: 'truncate-end' }) : k.footnote(ago(d.now - x.at), { wrap: 'truncate-end' }),
+              x.isRunning ? k.footnote('working now', { color: k.isTerminal ? 'success' : undefined, dimColor: undefined, wrap: 'truncate-end' }) : k.footnote(ago(d.now - x.at), { wrap: 'truncate-end' }),
               k.button('pick-' + i + '-open', 'Show details', () => act.setView({ openPick: x.key }), { plain: true, dimColor: true, about: x.title }),
             ],
           }),
@@ -2913,7 +3015,7 @@ function pickupCard(k, d, act, w, h) {
           children: [
             k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Text({ wrap: 'truncate-end', children: [...(k.isTerminal || !h ? [] : [k.text('● ', { color: midHex(hueOf(h, byName[x.project])) })]), k.text(x.project, { weight: 'semibold' })] })] }),
             x.isRunning
-              ? k.Box({ flexDirection: 'row', columnGap: 'xs', alignItems: 'center', flexShrink: 0, children: [k.live(HEX.success, 'success', 'Working now'), k.footnote('working now', { color: 'success', dimColor: undefined })] })
+              ? k.Box({ flexDirection: 'row', columnGap: 'xs', alignItems: 'center', flexShrink: 0, children: [k.live(HEX.bar, 'success', 'Working now'), k.footnote('working now', { color: k.isTerminal ? 'success' : undefined, dimColor: undefined })] })
               : k.footnote(ago(d.now - x.at), { wrap: 'truncate-end' }),
           ],
         }),
@@ -2967,7 +3069,7 @@ function stageLine(k, p) {
     const isNow = !isDone && (ph.running > 0 || (p.current && p.current.title === ph.title))
     const glyph = isDone ? '✓ ' : isNow ? '● ' : '○ '
     if (i) parts.push(k.text('  →  ', { dimColor: true }))
-    parts.push(k.text(glyph, isDone ? { color: 'success' } : isNow ? { color: 'suggestion' } : { dimColor: true }))
+    parts.push(k.text(glyph, isDone ? { color: 'success' } : isNow ? { color: k.workColor } : { dimColor: true }))
     parts.push(k.text(ph.title, { weight: isNow ? 'semibold' : undefined, dimColor: !isDone && !isNow ? true : undefined }))
     if (ph.total) parts.push(k.text(' ' + ph.done + '/' + ph.total, { tabular: true, dimColor: true }))
   })
@@ -2975,7 +3077,7 @@ function stageLine(k, p) {
 }
 
 // One agent: what state it is in and why, what it is doing this moment, its model, time and cost.
-function agentRow(k, d, a, key) {
+function agentRow(k, d, a, key, hasCost = true) {
   const [glyph, color, word] = AGENT_STATE[a.state] || AGENT_STATE.queued
   const why = a.state === 'held' ? (a.heldFor === 'paused' ? 'waiting: the run is paused' : a.heldFor === 'budget' ? 'waiting: the run reached its budget' : 'waiting: at the run’s budget') : a.state === 'failed' && a.error ? a.error : a.doing || ''
   const since = a.state === 'running' && a.startedAt ? fmtSpan(d.now - a.startedAt) : a.ms ? fmtSpan(a.ms) : ''
@@ -2989,10 +3091,10 @@ function agentRow(k, d, a, key) {
   }
   return k.row(
     [
-      { parts: [k.text(glyph + ' ', color ? { color } : { dimColor: true }), k.text(a.label, { weight: a.state === 'running' ? 'medium' : undefined }), ...(why ? [k.text('  ' + why, { dimColor: true, color: a.state === 'held' ? 'warning' : a.state === 'failed' ? 'error' : undefined })] : [])] },
+      { parts: [k.text(glyph + ' ', color ? { color: color === 'suggestion' ? k.workColor : color } : { dimColor: true }), k.text(a.label, { weight: a.state === 'running' ? 'medium' : undefined }), ...(why ? [k.text('  ' + why, { dimColor: true, color: a.state === 'held' ? 'warning' : a.state === 'failed' ? 'error' : undefined })] : [])] },
       ...(k.columns >= 70 ? [{ text: a.model ? modelWords(a.model) : '', width: 12, props: { dimColor: true } }] : []),
       { text: since, width: 15, props: { dimColor: true } },
-      { text: a.usd ? cost(a.usd) : '', width: 9 },
+      ...(hasCost || k.isTerminal ? [{ text: a.usd ? cost(a.usd) : '', width: 9 }] : []),
     ],
     {},
     { key, tip },
@@ -3025,6 +3127,7 @@ function approvalCard(k, d, act, isHome = false) {
       // the question is the chat's own dialog, which the pane cannot answer: its one action hands the keys back to it
       k.buttons([k.button('flow-answer', 'Go to the chat to answer', act.answerInChat, { variant: 'primary' }), ...(isHome ? [k.button('flow-see', 'Open Workflows', act.openWorkflows, { plain: true, dimColor: true })] : [])]),
     ],
+    { isPanel: true },
   )
 }
 
@@ -3079,11 +3182,14 @@ function liveRunCard(k, d, act, r, i) {
                 ]),
               ]
             : []),
-          k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'lg', rowGap: 'sm', alignItems: 'center', children: [
-            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Agents at once'), k.segmented('flow-cap-' + i, caps, r.cap || 0, (v) => act.setRunCap(r.runId, v), 'Agents at once')] }),
-            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Model for new agents'), k.segmented('flow-model-' + i, models, r.model || '', (v) => act.setRunModel(r.runId, v), 'Model for new agents')] }),
-            k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote('Run budget'), k.segmented('flow-budget-' + i, budgets, r.budget || 0, (v) => act.setRunBudget(r.runId, v), 'Run budget')] }),
-          ] }),
+          // the three choices on one grid: each name in a column of its own, its choice beside it (under it on a phone)
+          k.Box({ flexDirection: k.isTerminal ? 'row' : 'column', flexWrap: k.isTerminal ? 'wrap' : undefined, columnGap: 'lg', rowGap: 'sm', alignItems: k.isTerminal ? 'center' : 'stretch', children: [
+            ['Agents at once', k.segmented('flow-cap-' + i, caps, r.cap || 0, (v) => act.setRunCap(r.runId, v), 'Agents at once')],
+            ['Model for new agents', k.segmented('flow-model-' + i, models, r.model || '', (v) => act.setRunModel(r.runId, v), 'Model for new agents')],
+            ['Run budget', k.segmented('flow-budget-' + i, budgets, r.budget || 0, (v) => act.setRunBudget(r.runId, v), 'Run budget')],
+          ].map(([name, seg]) => k.isTerminal || k.columns < 64
+            ? k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.footnote(name), seg] })
+            : k.Box({ flexDirection: 'row', columnGap: 'md', alignItems: 'center', children: [k.Box({ width: 21, flexShrink: 0, children: [k.footnote(name, { wrap: 'truncate-end' })] }), seg] })) }),
           k.buttons([
             ...(atLimit ? [] : [k.button('flow-pause-' + i, r.paused ? 'Resume' : 'Pause new agents', () => act.pauseRun(r.runId, !r.paused), { variant: i === 0 ? 'primary' : undefined, about: r.name || 'this run' })]),
             // the pane stops a run through its task; with no task known it says so and hands over the request that stops it
@@ -3097,11 +3203,23 @@ function liveRunCard(k, d, act, r, i) {
           // what the budget does, said where it is set: the run is not stopped, new agents wait
           k.footnote(r.budget ? 'New agents wait once this run has cost ' + fmtUsd(r.budget) + '.' : 'A run budget holds new agents once the run has cost that much.'),
         ]
+  // The card reads as three zones on the desktop: what is running and its stages, its agents, its controls. Each is a
+  // box of its own with tight rows; the card's gap sets them apart. The terminal gets the one flat list it always had.
+  const ZONE = Symbol('zone')
+  const zoned = (items) => {
+    if (k.isTerminal) return items.filter((x) => x !== ZONE)
+    const zones = [[]]
+    for (const x of items) {
+      if (x === ZONE) zones.push([])
+      else if (x) zones[zones.length - 1].push(x)
+    }
+    return zones.filter((z) => z.length).map((z) => k.Box({ flexDirection: 'column', rowGap: 'sm', children: z }))
+  }
   return k.card(
     r.name || 'Workflow',
     r.description || r.summary || '',
-    [
-      k.Text({ wrap: 'wrap', children: [k.text(state[0], { color: state[1] }), k.text(state[2], { weight: 'semibold', color: state[1] === 'suggestion' ? undefined : state[1] }), k.text('  ' + facts.join(' · '), { dimColor: true, tabular: true })] }),
+    zoned([
+      k.Text({ wrap: 'wrap', children: [k.text(state[0], { color: state[1] === 'suggestion' ? k.workColor : state[1] }), k.text(state[2], { weight: 'semibold', color: state[1] === 'suggestion' ? undefined : state[1] }), k.text('  ' + facts.join(' · '), { dimColor: true, tabular: true })] }),
       ...(k.hasSvg && p.phases.some((ph) => ph.total > 0) ? [k.Svg({ source: svgStages(p.phases), alt: 'Stages: ' + p.phases.map((ph) => ph.title + ' ' + ph.done + ' of ' + ph.total).join(', '), height: 14, isInteractive: true })] : []),
       stageLine(k, p),
       // a timeline of agents that have only just started is two specks: it waits for a minute of history
@@ -3119,11 +3237,13 @@ function liveRunCard(k, d, act, r, i) {
         : []),
       ...(r.estimate && r.estimate.high > 0 ? [k.footnote('Expected ' + holdRange(fmtUsdRange(r.estimate.low, r.estimate.high, cost)) + ' before it started' + (p.usd > r.estimate.high ? '; it has gone past that.' : '.'), p.usd > r.estimate.high ? { color: 'warning', dimColor: undefined } : {})] : []),
       ...(r.tips || []).map((t) => k.hang(k.text('●', { color: 'warning' }), k.footnote(t))),
-      ...(shown.length ? [k.Box({ flexDirection: 'column', rowGap: k.isTerminal ? 0 : 'xs', children: shown.map((a, j) => agentRow(k, d, a, 'flow-' + i + '-a' + j)) })] : [k.footnote('No agents have started yet.')]),
+      ZONE,
+      ...(shown.length ? [k.Box({ flexDirection: 'column', rowGap: k.isTerminal ? 0 : 'xs', children: shown.map((a, j) => agentRow(k, d, a, 'flow-' + i + '-a' + j, shown.some((x) => x.usd))) })] : [k.footnote('No agents have started yet.')]),
       ...(agents.length > 6 && p.total > 8 ? [k.buttons([k.button('flow-more-' + i, isOpen ? 'Show fewer' : 'Show all ' + agents.length + ' agents', () => act.setView({ openRun: isOpen ? '' : r.runId }), { dimColor: true, about: r.name || 'this run' })])] : []),
+      ZONE,
       ...controls,
-    ],
-    { gap: 'md' },
+    ]),
+    { gap: k.isTerminal ? 'md' : 'lg', isPanel: true },
   )
 }
 
@@ -3162,19 +3282,22 @@ function savingRow(k, act, f, key, runId, share, isLead = false, maxHigh = 0) {
     children: [
       // on a narrow pane the saving goes under the title: beside it, the title would be squeezed under the words
       k.Box({ flexDirection: isNarrow ? 'column' : 'row', columnGap: 'sm', rowGap: 'xs', alignItems: 'flex-start', children: [
-        k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(f.title, { weight: 'semibold', wrap: 'wrap' })] }),
+        k.Box({ flexGrow: 1, flexShrink: 1, children: [k.text(f.title, { weight: k.isTerminal ? 'semibold' : 'medium', wrap: 'wrap' })] }),
         ...(value ? [k.Box({ flexShrink: 0, flexDirection: 'column', alignItems: isNarrow ? 'flex-start' : 'flex-end', rowGap: 'xs', children: [k.text(value, { tabular: true, size: 'footnote', weight: 'medium' }), ...(k.hasSvg && range && maxHigh > 0 ? [k.drawing(svgMiniBar(f.high / maxHigh), 'This idea’s share of the largest saving: up to ' + range + ' of up to ' + cost(maxHigh) + ', an estimate')] : [])] })] : []),
       ] }),
-      k.text(detail, { wrap: 'wrap' }),
+      k.isTerminal ? k.text(detail, { wrap: 'wrap' }) : k.guide(detail),
       ...(since ? [k.hang(k.text(since.level === 'good' ? '✓' : since.level === 'warn' ? '●' : '○', since.level === 'good' ? { color: 'success' } : since.level === 'warn' ? { color: 'warning' } : { dimColor: true }), k.text(since.text, { size: 'footnote', wrap: 'wrap', weight: 'medium' }))] : []),
-      k.buttons([
-        k.button(key + '-rule', f.adoptedAt ? 'Add the rule again…' : 'Make it a rule…', () => act.adoptSaving(f.key, runId), f.adoptedAt ? { plain: true, dimColor: true } : isLead ? { variant: 'primary' } : { plain: true }, { about: f.title }),
-        ...(runId
+      ...(() => {
+        const rule = k.button(key + '-rule', f.adoptedAt ? 'Add the rule again…' : 'Make it a rule…', () => act.adoptSaving(f.key, runId), f.adoptedAt ? (k.isTerminal ? { plain: true, dimColor: true } : { dimColor: true }) : isLead ? { variant: 'primary' } : k.isTerminal ? { plain: true } : {}, { about: f.title })
+        const quiet = k.isTerminal || isNarrow ? { plain: true, dimColor: true, about: f.title } : { dimColor: true, about: f.title }
+        const others = runId
           ? []
           : f.isHidden
             ? [k.button(key + '-hide', 'Show again', () => act.hideSaving(f.key, false), { dimColor: true, about: f.title })]
-            : [k.button(key + '-hide', 'Set aside', () => act.hideSaving(f.key, true), { plain: true, dimColor: true, about: f.title }), k.button(key + '-wrong', 'Not useful', () => act.hideSaving(f.key, true, true), { plain: true, dimColor: true, about: f.title })]),
-      ]),
+            : [k.button(key + '-hide', 'Set aside', () => act.hideSaving(f.key, true), quiet), k.button(key + '-wrong', 'Not useful', () => act.hideSaving(f.key, true, true), quiet)]
+        // a phone has the rule on a line and the quiet choices flush under it, so no button wraps alone
+        return isNarrow && !k.isTerminal && others.length ? [k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.buttons([rule]), k.buttons(others)] })] : [k.buttons([rule, ...others])]
+      })(),
     ],
   })
 }
@@ -3256,7 +3379,7 @@ function otherRunRow(k, d, act, r, i, canAsk) {
     'flow-other-' + i,
     { flexDirection: 'column', rowGap: 'xs', width: '100%' },
     [
-      k.Text({ wrap: 'truncate-end', children: [k.text('● ', active ? { color: 'suggestion' } : { dimColor: true }), k.text(r.name, { weight: 'semibold' }), k.text('  ' + [r.project, r.title].filter(Boolean).join(' · '), { dimColor: true })] }),
+      k.Text({ wrap: 'truncate-end', children: [k.text('● ', active ? { color: k.workColor } : { dimColor: true }), k.text(r.name, { weight: 'semibold' }), k.text('  ' + [r.project, r.title].filter(Boolean).join(' · '), { dimColor: true })] }),
       k.footnote(facts),
       ...(phases.length ? [k.footnote('Stages so far: ' + phases.join(' → '))] : []),
       ...(now.length ? [k.footnote('Working on ' + now.join(', '))] : []),
@@ -3295,7 +3418,7 @@ function suggestionsCard(k, d, act, hasPrimary) {
           k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
           k.guide(x.why),
           k.text(x.what, { wrap: 'wrap' }),
-          k.Text({ wrap: 'wrap', children: x.stages.flatMap(([title, model, how], j) => [...(j ? [k.text('  →  ', { dimColor: true })] : []), k.text(title, { weight: 'medium' }), k.text(' on ' + model, { color: midHex(FAMILY_HEX[model]) }), k.text(' · ' + how, { size: 'footnote', dimColor: true })]) }),
+          k.Text({ wrap: 'wrap', children: x.stages.flatMap(([title, model, how], j) => [...(j ? [k.text('  →  ', { dimColor: true })] : []), k.text(title, { weight: 'medium' }), k.text(' on ' + model, k.isTerminal ? { color: midHex(FAMILY_HEX[model]) } : { weight: 'medium' }), k.text(' · ' + how, { size: 'footnote', dimColor: true })]) }),
           ...(x.past ? [k.footnote('Similar runs of yours cost ' + holdRange(x.past.high - x.past.low >= 1 ? cost(x.past.low) + '–' + cost(x.past.high) : cost(x.past.high)) + ' (' + plural(x.past.runs, 'run', 'runs') + ')' + (d.flows.share && !SHARE ? ', ' + shareWords(x.past.high, d.flows.share) + ' at most' : '') + '.')] : []),
           k.buttons([
             k.button('suggest-' + i, 'Start this workflow…', () => act.startSuggested(x.key), { variant: i === 0 && !hasPrimary ? 'primary' : undefined, about: x.title }),
@@ -3309,7 +3432,7 @@ function suggestionsCard(k, d, act, hasPrimary) {
 }
 
 // One running workflow as a runway: the fill is what it has cost against its spending limit (or what it
-// was expected to cost), the strand under it is how much of the work is done, and when the cost is ahead
+// was expected to cost), the meridian across it is how much of the work is done, and when the cost is ahead
 // of the work enough to pass the limit before it finishes, the run-out shows as a stop, as a limit's does.
 function runLine(k, d, r, i) {
   const p = r.progress
@@ -3326,14 +3449,21 @@ function runLine(k, d, r, i) {
   const hex = isPaused ? HEX.warning : RING_HEX.spending
   const draws = k.hasSvg ? k.Box({ width: '100%', children: [k.Svg({ source: svgRunway({ ...runway, hex }, { width: 4000, height: 14, isFluid: true }), alt: words, height: 14 })] }) : k.Text({ children: textRunway(runway, 20).map(([t, c]) => k.text(t, c ? { color: c } : {})) })
   const isRoomy = k.columns >= 64
-  return k.hoverBox('flow-lead-' + i, { flexDirection: 'row', columnGap: 'md', alignItems: 'center', width: '100%' }, [
-    k.Box({ width: isRoomy ? 24 : 16, flexShrink: 0, flexDirection: 'row', columnGap: 'xs', alignItems: 'center', children: [isPaused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running'), k.Box({ flexShrink: 1, children: [k.text(name, { wrap: 'truncate-end' })] })] }),
+  const nameCell = k.Box({ width: isRoomy ? 24 : undefined, flexGrow: isRoomy ? 0 : 1, flexShrink: isRoomy ? 0 : 1, flexDirection: 'row', columnGap: 'xs', alignItems: 'center', children: [isPaused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running'), k.Box({ flexShrink: 1, children: [k.text(name, { wrap: 'truncate-end' })] })] })
+  const doneCell = k.Box({ width: 12, flexShrink: 0, justifyContent: 'flex-end', children: [k.text(p.done + ' of ' + p.total, { tabular: true, weight: 'semibold', wrap: 'truncate-end' })] })
+  // a phone gives the run's name and its count a line, and the runway the full width under them, so it is never a stub
+  const rowProps = !k.isTerminal && !isRoomy ? { flexDirection: 'column', rowGap: 'xs', width: '100%', paddingY: k.rowPad } : { flexDirection: 'row', columnGap: 'md', alignItems: 'center', width: '100%', paddingY: k.rowPad }
+  return k.hoverBox('flow-lead-' + i, rowProps, !k.isTerminal && !isRoomy ? [
+    k.Box({ flexDirection: 'row', alignItems: 'center', columnGap: 'md', children: [nameCell, doneCell] }),
+    k.Box({ width: '100%', children: [draws] }),
+  ] : [
+    k.isTerminal ? k.Box({ width: isRoomy ? 24 : 16, flexShrink: 0, flexDirection: 'row', columnGap: 'xs', alignItems: 'center', children: [isPaused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running'), k.Box({ flexShrink: 1, children: [k.text(name, { wrap: 'truncate-end' })] })] }) : nameCell,
     k.Box({ flexGrow: 1, flexShrink: 1, children: [draws] }),
-    k.Box({ width: 12, flexShrink: 0, justifyContent: 'flex-end', children: [k.text(p.done + ' of ' + p.total, { tabular: true, weight: 'semibold', wrap: 'truncate-end' })] }),
+    doneCell,
     ...(isRoomy ? [k.Box({ width: 22, flexShrink: 0, justifyContent: 'flex-end', children: [k.footnote(cost(p.usd) + (limit ? ' of ' + cost(limit) : ''), { tabular: true, wrap: 'truncate-end', ...(runOut !== null ? { color: 'warning', dimColor: undefined } : {}) })] })] : []),
   ], {
     title: name + (isPaused ? ', paused' : ', running'),
-    lines: [p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done, ' + p.running + ' working' + (p.held ? ', ' + p.held + ' waiting' : '') + '.' : 'Starting.', limit ? 'Cost ' + cost(p.usd) + ' against ' + cost(limit) + (r.budget ? ', its budget.' : ', the most it was expected to cost.') : 'Cost so far ' + cost(p.usd) + '.', runOut !== null ? 'The cost is ahead of the work: at this rate it passes ' + cost(limit) + ' before it finishes.' : 'The strand under the bar is how much of the work is done.'],
+    lines: [p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done, ' + p.running + ' working' + (p.held ? ', ' + p.held + ' waiting' : '') + '.' : 'Starting.', limit ? 'Cost ' + cost(p.usd) + ' against ' + cost(limit) + (r.budget ? ', its budget.' : ', the most it was expected to cost.') : 'Cost so far ' + cost(p.usd) + '.', runOut !== null ? 'The cost is ahead of the work: at this rate it passes ' + cost(limit) + ' before it finishes.' : 'The line across the bar is how much of the work is done.'],
   })
 }
 
@@ -3384,9 +3514,10 @@ function workflowsLead(k, d, act, { fl, mine, others, sv }) {
     const save = Math.min(topIdea.high, sv.usd)
     visual.push(
       k.hoverBox('flow-lead-month', { flexDirection: 'column', rowGap: 'xs', width: '100%' }, [
-        k.meter([{ value: sv.usd - save, hex: HEX.marker, color: 'inactive', title: 'Everything else: ' + cost(sv.usd - save) }, { value: save, hex: HEX.success, color: 'success', title: 'Could have saved up to ' + cost(save) }], sv.usd, [], 'The last ' + sv.days + ' days of workflows cost ' + cost(sv.usd) + '; up to ' + cost(save) + ' of it could have been saved.'),
-        k.Text({ wrap: 'wrap', children: [k.text('● ', { color: 'success' }), k.text('Could have saved up to ' + cost(save) + ': ' + topIdea.title.toLowerCase(), { size: 'footnote', dimColor: true, tabular: true })] }),
-      ], { title: 'The last ' + sv.days + ' days', lines: [cost(sv.usd) + ' on ' + plural(sv.runs, 'run', 'runs') + ', in every project.', 'The green part is the most the top idea would have saved on those runs: an estimate.', 'Its details are under Ways to spend less.'], align: 'left' }),
+        k.meter([{ value: sv.usd - save, hex: k.isTerminal ? HEX.marker : RING_HEX.spending, color: 'inactive', title: 'Everything else: ' + cost(sv.usd - save) }, { value: save, hex: k.isTerminal ? HEX.success : 'ink:0.32', color: 'success', title: 'Could have saved up to ' + cost(save) }], sv.usd, [], 'The last ' + sv.days + ' days of workflows cost ' + cost(sv.usd) + '; up to ' + cost(save) + ' of it could have been saved.'),
+        // an estimate of what could have been saved is not a result: a hollow mark and no green
+        k.Text({ wrap: 'wrap', children: [k.isTerminal ? k.text('● ', { color: 'success' }) : k.text('○ ', { dimColor: true }), k.text('Could have saved up to ' + cost(save) + ': ' + topIdea.title.toLowerCase(), { size: 'footnote', dimColor: true, tabular: true })] }),
+      ], { title: 'The last ' + sv.days + ' days', lines: [cost(sv.usd) + ' on ' + plural(sv.runs, 'run', 'runs') + ', in every project.', 'The ' + (k.isTerminal ? 'green' : 'lighter') + ' part is the most the top idea would have saved on those runs: an estimate.', 'Its details are under Ways to spend less.'], align: 'left' }),
     )
   }
   return lead(k, {
@@ -3409,7 +3540,9 @@ function workflowsTab(k, d, act) {
   const setAside = sv.findings.filter((f) => f.isHidden).length
   const running = mine.length + others.length
 
-  const head = [workflowsLead(k, d, act, { fl, mine, others, sv }), approvalCard(k, d, act)]
+  const isWide = !k.isTerminal && k.columns >= SPLIT_AT
+  // wide, the go-ahead is drawn in the left column with the rest, so its sentences keep a readable length
+  const head = [workflowsLead(k, d, act, { fl, mine, others, sv }), ...(isWide && fl.approval ? [] : [approvalCard(k, d, act)])]
 
   // each block is drawn by a function of the kit, so a wide pane can draw it for its own column
   const live = (k) => {
@@ -3434,7 +3567,7 @@ function workflowsTab(k, d, act) {
         {},
         { key: 'flow-fin-' + i, tip: { title: r.name, lines: [r.summary, r.title ? 'In “' + r.title + '”' : '', r.durationMs ? 'Took ' + fmtSpan(r.durationMs) + ', ' + ago(d.now - r.endedAt) + '.' : ''] } },
       )
-    })))
+    }), { gap: k.tight }))
   }
 
   return out
@@ -3483,9 +3616,10 @@ function workflowsTab(k, d, act) {
           return k.isTerminal && stages.length ? k.Box({ flexDirection: 'column', children: [row, k.footnote('  ' + stages.slice(0, 2).map(stageWords).join(' · '), { wrap: 'truncate-end' })] }) : row
         }),
         ...(k.hasSvg && k.isRoomy
-          ? [k.Text({ wrap: 'wrap', children: [k.text('Bars show each stage’s cost, colored by the model that did most of it: ', { size: 'footnote', dimColor: true }), ...['Opus', 'Sonnet', 'Fable'].flatMap((m, j) => [k.text((j ? '   ' : '') + '● ', { color: midHex(FAMILY_HEX[m]) }), k.text(m, { size: 'footnote' })])] })]
+          ? [k.Box({ flexDirection: 'row', flexWrap: 'wrap', columnGap: 'md', rowGap: 'xs', alignItems: 'center', marginTop: 'sm', children: [k.footnote('Bars show each stage’s cost, shaded by the model that did most of it:', { wrap: 'wrap' }), ...['Opus', 'Sonnet', 'Fable'].map((m) => k.tagged(k.swatch(m, m + ' key'), k.text(m, { size: 'footnote' })))] })]
           : []),
       ],
+      { gap: k.tight },
     ))
   }
 
@@ -3538,14 +3672,21 @@ function workflowsTab(k, d, act) {
   const isEmpty = !fl.approval && !running && !sv.runs && !done.length && !(((fl.other && fl.other.finished) || []).length) && !((fl.suggestions || []).length)
   if (isEmpty) {
     const start = k.buttons([k.button('flow-start', 'Start a workflow', () => act.run('workflow-start'), { variant: 'primary' })])
+    if (isWide) {
+      const [km] = k.split()
+      return [...head, km.layout(how(km, start), [])]
+    }
     return [...head, ...how(k, start)]
   }
   const oneColumn = () => [...head, ...live(k), ...costliest(k), ...savings(k), ...how(k)]
   if (k.isTerminal || k.columns < SPLIT_AT) return oneColumn()
   const [km, ka] = k.split()
+  // with a run going, the run and how workflows work share the left; the costliest runs and the ideas the right, so the two
+  // halves come out about as tall. With none going, the ideas are the left and the table and the explanation the right.
+  if (mine.length) return [...head, km.layout([...live(km), ...how(km)], [...costliest(ka), ...savings(ka)])]
   const record = [...live(km), ...savings(km)]
   // with no run to show (a go-ahead waiting above, nothing run yet) the rest takes the full width instead of the right half
-  if (!record.some(Boolean)) return oneColumn()
+  if (!record.some(Boolean)) return fl.approval ? [...head, km.layout([approvalCard(km, d, act)], [...costliest(ka), ...how(ka)])] : oneColumn()
   return [...head, km.layout(record, [...costliest(ka), ...how(ka)])]
 }
 
@@ -3576,9 +3717,13 @@ function runningNowCard(k, d, act) {
   // the figures at the right edge: the agents (with their unit), and the cost only where some run has one,
   // so no empty column is held open and every row ends at the same edge
   const hasCost = mine.some((r) => r.progress.usd) || others.some((r) => r.usd)
+  // a phone gives each run two lines, its name and under it how far it got, so neither is wrapped or cut
+  const isStacked = !k.isTerminal && k.columns < 60
+  const stack = (key, el, said, tip) => k.hoverBox(key, { flexDirection: 'column', rowGap: 0, width: '100%', paddingY: k.rowPad }, [el, k.Box({ paddingLeft: 'lg', children: [k.footnote(said, { tabular: true })] })], tip)
   const rows = [
     ...mine.map((r, i) => {
       const p = r.progress
+      if (isStacked) return stack('home-run-' + i, liveName(k, r.paused ? null : HEX.bar, [k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  this chat', { dimColor: true })]), [p.current ? p.current.title : '', p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') : '', p.usd ? cost(p.usd) : ''].filter(Boolean).join(' · '), { title: r.name, lines: [r.paused ? 'Paused.' : 'Running.', plural(p.done, 'agent', 'agents') + ' done of ' + p.total + '.'] })
       return k.row(
         [
           { el: liveName(k, r.paused ? null : HEX.bar, [k.text(r.name || 'Workflow', { weight: 'medium' }), k.text('  this chat' + (p.current ? ' · ' + p.current.title : ''), { dimColor: true })]) },
@@ -3589,7 +3734,7 @@ function runningNowCard(k, d, act) {
         { key: 'home-run-' + i, tip: { title: r.name, lines: [r.paused ? 'Paused.' : 'Running.', plural(p.done, 'agent', 'agents') + ' done of ' + p.total + '.'] } },
       )
     }),
-    ...others.map((r, i) => k.row(
+    ...others.map((r, i) => isStacked ? stack('home-other-' + i, liveName(k, HEX.bar, [k.text(r.name, { weight: 'medium' })]), [[r.project, r.title].filter(Boolean).join(' · '), plural(r.agents.length, 'agent', 'agents'), r.usd ? cost(r.usd) : ''].filter(Boolean).join(' · '), { title: r.name, lines: [plural(r.agents.filter((a) => a.isActive).length, 'agent', 'agents') + ' working now.'] }) : k.row(
       [
         { el: liveName(k, HEX.bar, [k.text(r.name, { weight: 'medium' }), k.text('  ' + [r.project, r.title].filter(Boolean).join(' · '), { dimColor: true })]) },
         { text: plural(r.agents.length, 'agent', 'agents'), width: 14, props: { dimColor: true } },
@@ -3599,7 +3744,7 @@ function runningNowCard(k, d, act) {
       { key: 'home-other-' + i, tip: { title: r.name, lines: [plural(r.agents.filter((a) => a.isActive).length, 'agent', 'agents') + ' working now.'] } },
     )),
   ]
-  return k.card('Running now', 'Workflows working through a job, with their agents done so far.', [...rows, k.buttons([k.button('home-flows', 'Open Workflows', act.openWorkflows)])])
+  return k.card('Running now', 'Workflows working through a job, with their agents done so far.', [...rows, k.Box({ marginTop: k.isTerminal ? undefined : 'sm', children: [k.buttons([k.button('home-flows', 'Open Workflows', act.openWorkflows)])] })], { gap: k.tight })
 }
 
 // ---- Home: the week, the projects, the chats and the tour (and the tab that holds them) -------
@@ -3807,14 +3952,14 @@ function homeInsights(k, d, act, h) {
       k.card('What stands out', null, ideas.map((x, i) => {
         const w = whatIfItem(k, d, h, x.whatIf)
         const body = [
-          k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
+          k.subhead(x.title),
           k.guide(x.detail),
           // what the saving would do to the week, in a line; point at it for the runway it would have
           ...(w ? (w.picture ? [w.picture, k.guide(w.then)] : [k.text(w.line, { size: 'footnote', weight: 'medium', wrap: 'wrap' })]) : []),
           ...(x.action ? [k.Box({ marginTop: 'xs', children: [k.buttons([k.button('insight-' + i, x.action.label, () => act.run(x.action.key), { about: x.title })])] })] : []),
         ]
         return w ? k.hoverBox('insight-' + i + '-row', { flexDirection: 'column', rowGap: 'xs' }, body, w.tip) : k.Box({ flexDirection: 'column', rowGap: 'xs', children: body })
-      }), { gap: 'md' }),
+      }), { gap: k.isTerminal ? 'md' : 'lg' }),
     )
   }
 
@@ -3846,7 +3991,7 @@ function homeProjects(k, d, act, h) {
       k.card('Projects', 'Most used first, with worktrees counted in their repository.' + (SHARE ? ' Figures are shares of your weekly limit.' : '') + k.hint(' Point at one for its chats, models and folder.'), [
         k.segmented('proj', [{ value: 'week', label: 'Past 7 days' }, { value: 'today', label: 'Today' }, ...(isDay ? [{ value: 'day', label: dayName }] : [])], by, (value) => act.setView({ projectsBy: value === 'day' ? d.view.projectsBy : value, day: value === 'day' ? d.view.day : '' }), 'Projects by'),
         ...(rows.length
-          ? [
+          ? k.table([
               // a day's figures are its own: sessions and last answers are counted over a week, so a picked day leaves them out
               k.heads([{ text: 'Project' }, { text: '', width: barW }, { text: SHARE ? 'Of the limit' : by === 'today' ? 'Today' : by === 'day' ? dayName : 'Past 7 days', width: 12 }, ...(by === 'day' ? [] : [{ text: 'Chats', width: 10 }, { text: 'Last answer', width: 14 }])]),
               ...rows.map((p, i) =>
@@ -3861,7 +4006,7 @@ function homeProjects(k, d, act, h) {
                   { key: 'proj-' + i, tip: projectTip(p, now) },
                 ),
               ),
-            ]
+            ])
           : [k.footnote('Nothing yet today. Past 7 days shows the week.')]),
         ...(SHARE && rows.length ? [k.footnote('Shares are estimated from your chat records at list prices, so together they can differ a little from the weekly figure above.')] : []),
         ...(list.length > 8 ? [k.buttons([k.button('proj-more', d.view.showAllProjects ? 'Show fewer' : 'Show all ' + list.length + ' projects', act.toggleProjects, { dimColor: true })])] : []),
@@ -3894,7 +4039,7 @@ function homeChart(k, d, act, h) {
       if (v > u.days[peak]) peak = i
     })
     out.push(
-      k.card('Last ' + SCAN_DAYS + ' days', 'Every project, each day, in its own color. The dashed line is the average.', [
+      k.card('Last ' + SCAN_DAYS + ' days', 'Every project, each day, in its own color. The line is the average.', [
         k.bars(u.days, SCAN_DAYS, 'Use each day over the last ' + SCAN_DAYS + ' days: today ' + cost(d.today) + ', on average ' + cost(mean) + ' a day', 64, { stacks, titles: u.keys.map((key, i) => dayWords(key, now) + ': ' + cost(u.days[i])), average: true, averageTitle: 'Average: ' + cost(mean) + ' a day' }),
         k.row([{ text: dayWords(u.keys[0], now) }, { text: 'Today', width: 8 }], { size: 'footnote', dimColor: true }),
         k.footnote('On average ' + cost(mean) + ' a day. Busiest: ' + dayWords(u.keys[peak], now) + ', ' + cost(u.days[peak]) + '.'),
@@ -3918,6 +4063,8 @@ function homeSessions(k, d, act, h) {
     // This session first, then the others by recent activity.
     const rows = [{ sessionId: me.desk || 'self', title: me.title || me.project || 'This session', cwd: me.cwd, isRunning: false, lastActivityAt: null, isSelf: true }, ...others]
     const ctxW = k.columns >= 90 ? 8 : 0
+    // a mark in front of a chat means something: only one that is working has one (and the others keep its column, so the names line up)
+    const anyRunning = rows.some((x) => x.isRunning)
     const sessionRow = (x, i) => {
       const ctx = x.isSelf ? { percentUsed: d.pct, tokensUsed: d.tokens } : f.ctx && f.ctx[x.sessionId]
       const pct = ctx && Number.isFinite(Number(ctx.percentUsed)) ? Number(ctx.percentUsed) : null
@@ -3930,20 +4077,20 @@ function homeSessions(k, d, act, h) {
       const when = x.isSelf ? 'open here' : x.isRunning ? 'working now' : x.lastActivityAt ? ago(now - Date.parse(x.lastActivityAt)) : ''
       const ctxHex = pct === null ? null : pct >= d.opts.cheaperModelAt ? HEX.error : pct >= d.opts.contextWarnAt ? HEX.warning : RING_HEX.context
       const cells = [
-          { el: k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', minWidth: 0, flexShrink: 1, children: [x.isRunning ? k.live(HEX.success, 'success', 'Working now') : k.hasSvg ? k.Box({ flexShrink: 0, width: 2, alignItems: 'center', children: [k.text('●', { dimColor: true })] }) : k.text('●', { dimColor: true }), k.Box({ flexShrink: 1, minWidth: 0, children: [k.text(x.title || 'Untitled chat', { wrap: 'wrap', ...(x.isSelf ? { weight: 'semibold' } : {}) })] })] }) }, // a long title wraps beside the figures, as it does in Ready to archive, so no chat is cut short
+          { el: k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'flex-start', minWidth: 0, flexShrink: 1, children: [x.isRunning ? k.live(HEX.bar, 'success', 'Working now') : k.hasSvg ? (anyRunning ? k.Box({ flexShrink: 0, width: 2 }) : null) : k.text('●', { dimColor: true }), k.Box({ flexShrink: 1, minWidth: 0, children: [k.text(x.title || 'Untitled chat', { wrap: 'wrap', ...(x.isSelf ? { weight: 'semibold' } : {}) })] })].filter(Boolean) }) }, // a long title wraps beside the figures, as it does in Ready to archive, so no chat is cut short
           ...(ctxW ? [{ el: pct !== null ? k.bar(pct, 100, ctxHex, 'Context ' + pctText(pct)) : k.text(' ', {}), width: ctxW }] : []),
           { text: pct !== null ? pctText(pct) : '–', width: 7, props: pct === null ? { dimColor: true } : ctxHex !== RING_HEX.context && ctxW === 0 ? { color: pct >= d.opts.cheaperModelAt ? 'error' : 'warning' } : {} },
           { text: hasUsd ? cost(usd) : '–', width: 8, props: hasUsd ? {} : { dimColor: true } },
-          { text: when, width: 12, props: x.isRunning ? { color: 'success' } : { dimColor: true } },
+          { text: when, width: 12, props: x.isRunning ? { color: k.isTerminal ? 'success' : undefined, weight: k.isTerminal ? undefined : 'medium' } : { dimColor: true } },
       ]
       // a phone's width gives the title the whole line and sets the figures under it, so the title is never squeezed
       const stacked = [
-        k.row([cells[0]]),
-        k.row([{ text: '   ' + [sub, pct !== null ? pctText(pct) + ' context' : '', hasUsd ? cost(usd) + ' today' : '', when].filter(Boolean).join(' · '), props: { size: 'footnote', dimColor: true, wrap: 'wrap' } }]),
+        k.row([cells[0]], {}, { isFlat: true }),
+        k.row([{ text: (k.hasSvg ? (anyRunning ? '       ' : '') : '   ') + [sub, pct !== null ? pctText(pct) + ' context' : '', hasUsd ? cost(usd) + ' today' : '', when].filter(Boolean).join(' · '), props: { size: 'footnote', dimColor: true, wrap: 'wrap' } }], {}, { isFlat: true }),
       ]
-      return k.hoverBox('sess-' + i, { flexDirection: 'column', width: '100%' }, k.columns < 60 ? stacked : [
-        k.row(cells),
-        k.row([{ text: '   ' + sub, props: { size: 'footnote', dimColor: true, wrap: 'wrap' } }]),
+      return k.hoverBox('sess-' + i, { flexDirection: 'column', width: '100%', paddingY: k.rowPad }, k.columns < 60 ? stacked : [
+        k.row(cells, {}, { isFlat: true, align: 'flex-start' }),
+        k.row([{ text: (k.hasSvg ? (anyRunning ? '       ' : '') : '   ') + sub, props: { size: 'footnote', dimColor: true, wrap: 'wrap' } }], {}, { isFlat: true }),
       ], {
         title: x.title || 'Untitled chat',
         lines: [
@@ -3958,8 +4105,7 @@ function homeSessions(k, d, act, h) {
     }
     out.push(
       k.card('Open chats', 'In the desktop app, newest activity first.' + k.hint(' Point at one for its folder, context and spending.'), [
-        ...(k.columns < 60 ? [] : [k.heads([{ text: 'Chat' }, ...(ctxW ? [{ text: '', width: ctxW }] : []), { text: 'Context', width: 7 }, { text: 'Today', width: 8 }, { text: 'Active', width: 12 }])]),
-        ...rows.map(sessionRow),
+        ...k.table([...(k.columns < 60 ? [] : [k.heads([{ text: 'Chat' }, ...(ctxW ? [{ text: '', width: ctxW }] : []), { text: 'Context', width: 7 }, { text: 'Today', width: 8 }, { text: 'Active', width: 12 }])]), ...rows.map(sessionRow)]),
       ], { gap: 'sm' }),
     )
 
@@ -4037,7 +4183,7 @@ function homeNext(k, d, act) {
         flexDirection: 'column',
         rowGap: 'xs',
         children: [
-          k.text(x.title, { weight: 'semibold', wrap: 'wrap' }),
+          k.subhead(x.title),
           k.guide(x.detail),
           k.Box({ marginTop: 'xs', children: [k.buttons([k.button('next-' + x.key, x.button, run(x.todo), { about: x.title }), k.button('next-' + x.key + '-later', 'Not now', () => act.dismissHabit(x.key), { dimColor: true, about: x.title })])] }),
         ],
@@ -4071,7 +4217,7 @@ function homeTour(k, d, act, h) {
     words = 'When another chat stops for a permission, a question or a decision, it shows on Home, and you can answer it from here without switching.' + (h.read === 'off' ? ' Turn on Read every project in Settings to see them.' : h.read === 'read' ? ' Nothing is waiting for you now.' : '')
   } else if (step === 2) {
     title = 'Your limits, on a calendar'
-    words = 'The bar is your plan’s window. The fill is what you have used, the thin line under it is how much of the window has passed, and the white mark is now. When the fill is ahead of the mark, you are on pace to run out early: it turns amber and says when.'
+    words = 'The bar is your plan’s window. The fill is what you have used, and the line across it is now: how much of the window has passed. When the fill is ahead of the line, you are on pace to run out early: the part past it turns amber and says when.'
     if (h.tightest) preview = k.Box({ flexDirection: 'column', paddingY: 'sm', children: [runwayBar(k, h.item, 'hero', Math.max(280, k.px - 56))] })
   } else {
     const { have, total } = habitIdeas(d)
@@ -4088,7 +4234,7 @@ function homeTour(k, d, act, h) {
         step < last ? k.button('tour-next', 'Next', set(step + 1), lead) : k.button('tour-done', 'Done', act.finishTour, lead),
         ...(step < last ? [k.button('tour-skip', 'Skip tour', act.finishTour, { dimColor: true })] : []),
       ]),
-    ], { gap: 'md', accessory: k.footnote('Step ' + (step + 1) + ' of ' + (last + 1), { tabular: true }), keepCaption: true }),
+    ], { gap: 'md', accessory: k.footnote('Step ' + (step + 1) + ' of ' + (last + 1), { tabular: true }), keepCaption: true, isPanel: true }),
   ]
 }
 
@@ -4102,7 +4248,8 @@ function allTab(k, d, act) {
   const status = (kk) => (failed ? [] : homeStatus(kk, d, act, h))
   const hero = [homeHero(k, d, h, act), ...first, ...homeTour(k, d, act, h)]
   // one column, in the order a day goes: what to do, what is worth doing next, then where things are
-  const oneColumn = () => [...hero, needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w, h), ...status(k), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homeProjects(k, d, act, h), ...homeChart(k, d, act, h), ...homeSessions(k, d, act, h), ...homeFooter(k, d, act, h)]
+  // on a phone the data comes before the tips: where the work went and the open chats, then what stands out, then what to do next
+  const oneColumn = () => k.isTerminal ? [...hero, needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w, h), ...status(k), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homeProjects(k, d, act, h), ...homeChart(k, d, act, h), ...homeSessions(k, d, act, h), ...homeFooter(k, d, act, h)] : [...hero, needsCard(k, d, act, w), runningNowCard(k, d, act), pickupCard(k, d, act, w, h), ...status(k), ...homeProjects(k, d, act, h), ...homeChart(k, d, act, h), ...homeSessions(k, d, act, h), ...homeInsights(k, d, act, h), ...homeNext(k, d, act), ...homeFooter(k, d, act, h)]
   if (k.isTerminal || k.columns < SPLIT_AT) return oneColumn()
   // the hero holds the limits and the week; the left column is what to do, the right where things
   // are. When either would be empty (no records read, no desktop sessions, nothing waiting) the other
@@ -4146,13 +4293,13 @@ export function drawBand(k, d, act) {
     detail = [fl.approval.preview.name || '', waits ? waitingParts({ ...tally, flows: 0 }) + ' waiting too' : ''].filter(Boolean).join(' · ')
   } else if (isCalm && !chats.length && !mine.length && (fl.suggestions || []).some((x) => x.isFresh)) {
     const x = fl.suggestions.find((y) => y.isFresh)
-    glyph = ['● ', { color: 'suggestion' }]
+    glyph = ['● ', { color: k.workColor }]
     title = 'This could be a workflow: ' + x.title.toLowerCase()
     detail = x.stages.map(([t, m]) => t + ' on ' + m).join(' → ')
   } else if (mine.length && isCalm && !chats.length) {
     const r = mine[0]
     const p = r.progress
-    glyph = ['● ', { color: r.paused || r.status === 'stopping' ? 'warning' : 'suggestion' }, !r.paused && r.status !== 'stopping']
+    glyph = ['● ', { color: r.paused || r.status === 'stopping' ? 'warning' : k.workColor }, !r.paused && r.status !== 'stopping']
     title = (r.name || 'A workflow') + (r.status === 'stopping' ? ' is stopping' : r.paused ? ' is paused' : ' is running')
     detail = [p.total ? p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done' : '', p.current ? p.current.title : '', p.usd ? cost(p.usd) + ' so far' : ''].filter(Boolean).join(' · ')
   } else if (waits && isCalm) {
@@ -4180,18 +4327,30 @@ export function drawBand(k, d, act) {
   // name and its percentage, so pace reads at a glance; on a phone-width band, two to a row.
   const isNarrow = k.columns < 72
   const cellProps = isNarrow ? { width: '50%', paddingRight: 'md' } : { width: 0, flexGrow: 1 }
+  // Where a cell is wide, the names share one column width, so every runway starts at the same place in its cell and the
+  // figures end at its edge; where it is not, each name has the room it needs and the runway takes the rest. On a phone
+  // the name and its figure share a line and the runway has the cell's whole width under them.
+  const isAligned = k.columns >= 120
+  const isStackedCell = k.columns < 120
+  const labelW = Math.ceil(Math.max(...gauges.map((g) => g.label.length)) * 0.87)
   const wideGauge = (g) => {
     const shown = pctText(g.pct)
     const item = { runway: g.runway || { used: g.pct, elapsed: null, runOut: null, ticks: g.key === 'context' ? [d.opts.contextWarnAt] : [] }, hex: tint(g.hex, g.level), label: g.label, valueText: shown }
+    // the figure is the name's size and sits on its line: one baseline
+    const name = k.text(g.label, { size: 'footnote', dimColor: true, wrap: 'truncate-end' })
+    const figure = k.text(shown, { size: 'footnote', tabular: true, weight: 'semibold', color: g.level === 'success' ? undefined : g.level, wrap: 'truncate-end' })
+    if (isStackedCell) {
+      return k.Box({ ...cellProps, flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', children: [name, figure] }), runwayBar(k, item, 'band')] })
+    }
     return k.Box({
       ...cellProps,
       flexDirection: 'row',
       columnGap: 'sm',
       alignItems: 'center',
       children: [
-        k.Box({ flexShrink: 0, children: [k.text(g.label, { size: 'footnote', dimColor: true })] }),
+        k.Box({ width: isAligned ? labelW : undefined, flexShrink: 0, children: [name] }),
         k.Box({ flexGrow: 1, flexShrink: 1, children: [runwayBar(k, item, 'band')] }),
-        k.Box({ flexShrink: 0, children: [k.text(shown, { tabular: true, weight: 'semibold', color: g.level === 'success' ? undefined : g.level })] }),
+        k.Box({ width: isAligned ? 5 : undefined, flexShrink: 0, justifyContent: 'flex-end', children: [figure] }),
       ],
     })
   }
@@ -4209,21 +4368,30 @@ export function drawBand(k, d, act) {
         const r = mine[0]
         const p = r.progress
         const pct = p.total ? (p.done / p.total) * 100 : 0
-        if (k.hasSvg)
+        if (k.hasSvg) {
+          const alt = (r.name || 'Workflow') + ' ' + p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done'
+          const bar = k.Svg({ source: svgMeter([{ value: pct, hex: r.paused ? HEX.warning : HEX.bar }], 100, []), alt, height: 14 })
+          const count = k.text(p.done + ' of ' + p.total, { size: 'footnote', tabular: true, weight: 'semibold' })
+          const dot = r.paused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running')
+          // on a phone the workflow has a row of its own, not half of one beside a limit
+          // (a name is longer than a limit's, so where the row is shared its cell takes a half share more)
+          const own = isNarrow ? { width: '100%', paddingRight: 'md' } : { ...cellProps, flexGrow: k.columns < 120 ? 1.5 : 1 }
+          // where the cells are narrow it is stacked as the limits are: its name and count on a line, the meter under them
+          if (isStackedCell) return k.Box({ ...own, flexDirection: 'column', rowGap: 'xs', children: [k.Box({ flexDirection: 'row', alignItems: 'center', columnGap: 'sm', children: [dot, k.Box({ flexGrow: 1, flexShrink: 1, minWidth: 0, children: [k.text(shortName(r.name || 'Workflow', 22), { size: 'footnote', dimColor: true, wrap: 'truncate-end' })] }), k.Box({ flexShrink: 0, children: [count] })] }), bar] })
           return k.Box({
-            // on a phone the workflow has a row of its own, not half of one beside a limit
-            ...(isNarrow ? { width: '100%', paddingRight: 'md' } : cellProps),
+            ...own,
             flexDirection: 'row',
             columnGap: 'sm',
             alignItems: 'center',
             children: [
-              r.paused ? k.text('‖', { color: 'warning' }) : k.live(HEX.bar, 'suggestion', 'Running'),
+              dot,
               // the name keeps its room (a long one is cut short), and the meter takes what is left
               k.Box({ flexShrink: 0, children: [k.text(shortName(r.name || 'Workflow', 22), { size: 'footnote', dimColor: true })] }),
-              k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Svg({ source: svgMeter([{ value: pct, hex: r.paused ? HEX.warning : HEX.bar }], 100, [], true), alt: (r.name || 'Workflow') + ' ' + p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done', height: 6 })] }),
-              k.Box({ flexShrink: 0, children: [k.text(p.done + ' of ' + p.total, { tabular: true, weight: 'semibold' })] }),
+              k.Box({ flexGrow: 1, flexShrink: 1, children: [bar] }),
+              k.Box({ flexShrink: 0, children: [count] }),
             ],
           })
+        }
         const meter = k.hasSvg ? k.Box({ width: 8, flexShrink: 0, children: [k.Svg({ source: svgMeter([{ value: pct, hex: r.paused ? HEX.warning : HEX.success }], 100, [], true), alt: (r.name || 'Workflow') + ' ' + p.done + ' of ' + plural(p.total, 'agent', 'agents') + ' done', height: 6 })] }) : k.text(textMeter(pct, 5), { color: r.paused ? 'warning' : 'suggestion' })
         return k.Box({ flexDirection: 'row', columnGap: 1, alignItems: 'center', flexShrink: 0, children: [meter, k.text((r.name || 'Workflow') + ' ', { dimColor: true }), k.text(p.done + ' of ' + p.total, { tabular: true })] })
       })()
@@ -4248,15 +4416,18 @@ export function drawBand(k, d, act) {
   const used = title.length + (detail && !isTiny ? detail.length + 2 : 0) + 5
   // (a share of the limit is only a figure with its unit, so it is whole or left off; dollars say what they are)
   const tail = isTiny ? '' : [own + (SHARE ? ' of the weekly limit' : '') + (k.hasSvg && money ? ' · ' + money : ''), ...(SHARE ? [] : [own]), ''].find((t) => !t || k.isTerminal || used + t.length <= room)
+  // a phone gives the headline the whole line, and its button the next, at the right
+  const isStacked = !k.isTerminal && isTiny && !d.isPreview
   const head = k.Box({
-    flexDirection: 'row',
+    flexDirection: isStacked ? 'column' : 'row',
     columnGap: 1,
-    alignItems: 'center',
+    rowGap: isStacked ? 'xs' : undefined,
+    alignItems: isStacked ? 'stretch' : 'center',
     width: '100%',
     children: [
       ...(glyph[2] ? [k.live(HEX.bar, 'suggestion', 'Running')] : []),
       k.Box({ flexGrow: 1, flexShrink: 1, children: [k.Text({ wrap: 'truncate-end', children: [...(glyph[2] ? [] : [k.text(glyph[0], glyph[1])]), k.text(whole(title), { weight: 'semibold' }), ...(detail && !isTiny ? [k.text(whole('  ' + detail), { dimColor: true })] : []), ...(tail ? [k.text(whole('  ·  ' + tail), { dimColor: true, tabular: true })] : [])] })] }),
-      ...(d.isPreview ? [] : [button]),
+      ...(d.isPreview ? [] : isStacked ? [k.Box({ flexDirection: 'row', justifyContent: 'flex-end', children: [button] })] : [button]),
     ],
   })
   // one row when the band has room for one
@@ -4325,7 +4496,8 @@ function settingsLead(k, d, act) {
         children: [
           // the headline is about what couldn't be read, so say what the list below is
           ...(bad.length ? [k.text('On autopilot: ' + on + ' of ' + items.length, { weight: 'semibold' })] : []),
-          ...items.map(([isOn, words]) => k.hang(k.text(isOn ? '✓' : '○', isOn ? { color: 'success' } : { dimColor: true }), k.text(words, { wrap: 'wrap', dimColor: isOn ? undefined : true }))),
+          // on the desktop the list is calm: a check is ink, not a green mark five times over; the headline's glyph carries the status
+          ...items.map(([isOn, words]) => k.hang(k.text(isOn ? '✓' : '○', isOn && k.isTerminal ? { color: 'success' } : { dimColor: true }), k.text(words, { wrap: 'wrap', dimColor: isOn ? undefined : true }))),
         ],
       }),
     ],
@@ -4352,9 +4524,9 @@ function modelCard(k, d, act) {
       rowGap: 'xs',
       children: MODEL_ROLES.map((r, i) =>
         // a narrow pane puts the model under the job instead of cutting the job short
-        k.columns < 60 ? k.hoverBox('role-' + i, { flexDirection: 'column', width: '100%' }, [k.Text({ wrap: 'wrap', children: [k.text('● ', { color: k.isTerminal ? 'suggestion' : midHex(modelHex(r.model)) }), k.text(r.stage)] }), k.footnote(titleCase(r.model) + (m.family === r.model ? ' · in use' : ''), m.family === r.model ? { weight: 'semibold', dimColor: undefined } : {})], { title: titleCase(r.model) + ' for ' + r.stage.toLowerCase(), lines: [titleCase(r.why) + '.'] }) :
+        k.columns < 60 ? k.hoverBox('role-' + i, { flexDirection: 'column', width: '100%' }, [k.isTerminal ? k.Text({ wrap: 'wrap', children: [k.text('● ', { color: 'suggestion' }), k.text(r.stage)] }) : k.tagged(k.swatch(r.model, titleCase(r.model) + ' key'), k.text(r.stage, { wrap: 'wrap' })), k.footnote(titleCase(r.model) + (m.family === r.model ? ' · in use' : ''), m.family === r.model ? { weight: 'semibold', dimColor: undefined } : {})], { title: titleCase(r.model) + ' for ' + r.stage.toLowerCase(), lines: [titleCase(r.why) + '.'] }) :
         k.row(
-          [{ parts: [k.text('● ', { color: k.isTerminal ? 'suggestion' : midHex(modelHex(r.model)) }), r.stage] }, { text: titleCase(r.model) + (m.family === r.model ? ' · in use' : ''), width: 18, props: m.family === r.model ? { weight: 'semibold' } : { dimColor: true } }],
+          [k.isTerminal ? { parts: [k.text('● ', { color: 'suggestion' }), r.stage] } : { el: k.tagged(k.swatch(r.model, titleCase(r.model) + ' key'), k.text(r.stage, { wrap: 'truncate-end' })) }, { text: titleCase(r.model) + (m.family === r.model ? ' · in use' : ''), width: 18, props: m.family === r.model ? { weight: 'semibold' } : { dimColor: true } }],
           {},
           { key: 'role-' + i, tip: { title: titleCase(r.model) + ' for ' + r.stage.toLowerCase(), lines: [titleCase(r.why) + '.', r.model === 'opus' ? 'Uses the limits fastest.' : r.model === 'haiku' ? 'Uses the limits most slowly.' : 'Uses the limits far more slowly than Opus.'] } },
         ),
@@ -4381,7 +4553,7 @@ function longRunCard(k, d, act) {
       'Stop cleanly if a limit would run out early or passes ' + o.limitAlertAt + '%, and say when to resume.',
     ]
     body.push(
-      k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('The plan', { size: 'footnote', weight: 'semibold', dimColor: true }), ...steps.map((s, i) => k.hang(k.text(String(i + 1), { weight: 'semibold', color: k.isTerminal ? 'suggestion' : TINT.purple }), k.text(s, { wrap: 'wrap' })))] }),
+      k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('The plan', { size: 'footnote', weight: 'semibold', dimColor: true }), ...steps.map((s, i) => k.hang(k.text(String(i + 1), { weight: 'semibold', color: k.workColor }), k.text(s, { wrap: 'wrap' })))] }),
       k.Box({ flexDirection: 'column', rowGap: 'xs', children: [k.text('Room in your limits', { size: 'footnote', weight: 'semibold', dimColor: true }), ...(fit.lines.length ? fit.lines.map((l) => k.footnote(l)) : [k.footnote('No usage limits reported; Usage keeps the cost in view.')]), k.text('Best start: ' + fit.start + '.', { weight: 'medium', wrap: 'wrap' })] }),
       k.buttons([k.button('run-start', 'Save /long-run and start here', () => act.startLongRun(goal), { variant: 'primary' }), k.button('run-save', 'Save the playbook as /long-run', act.saveLongRun, { dimColor: true })]),
       k.footnote('Starting saves the playbook as a skill in ~/.claude/skills/long-run (if it isn’t there yet), so any chat can follow it, then puts the run in the prompt box for you to send.'),

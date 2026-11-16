@@ -9,7 +9,6 @@ import {
   cleanText,
   dayKey,
   escapeXml,
-  figureHues,
   fmtClock,
   fmtShare,
   roughSpan,
@@ -28,9 +27,9 @@ import {
   WEEKDAYS,
   projectHues,
   safeUrl,
-  toneFor,
   waitingCount,
 } from './lib.js'
+import { figureGlyphs } from './glyphs.js'
 
 // ---- alerts: a sound, and the words ----------------------------------------------------------
 
@@ -470,8 +469,29 @@ export function reportAlt(r) {
   return 'Weekly report card for ' + r.range + ': ' + r.figure.text + ' ' + r.figure.label + '; ' + lead + plural(r.projectCount, 'project', 'projects') + '; used on ' + r.activeDays + ' of 7 days' + (r.streak >= 2 ? ', a ' + r.streak + '-day streak' : '') + (r.projects[0] ? '; most in ' + r.projects[0].name : '') + '.'
 }
 
-export const CARD = { bg: '#0C0C14', panel: '#171722', line: '#2B2B3A', text: '#F5F5F7', sub: '#B8B8C6', mute: '#9C9CAD' }
-const SANS = ' font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"'
+// The card is a file people open anywhere, so it is drawn on its own ground in literal colours (no currentColor, no
+// theme properties) and names a system font stack. Ground, panel and rules are the app's own dark surfaces.
+export const CARD = { bg: '#0b0b0b', panel: '#151515', line: '#2a2a29', ink: '#f0efec', text: '#f0efec', sub: '#c3c2b7', mute: '#898781', warn: '#F2A93B', crit: '#F0706A' }
+const FONT = 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Helvetica, Arial, sans-serif'
+
+// The icon as marks on a 1024 square (the same geometry as assets/icon.svg): one runway, solid to 58%, the meridian
+// cut with overshoot, a hollow ghost to 76%, then amber stripes to the end post.
+function iconMark(x, y, size) {
+  const stripes = []
+  for (let sx = 724; sx < 852; sx += 28) stripes.push('<rect x="' + sx + '" y="404" width="14" height="216" fill="' + CARD.warn + '"/>')
+  return (
+    '<g transform="translate(' + x + ' ' + y + ') scale(' + (size / 1024).toFixed(5) + ')">' +
+    '<rect x="-24" y="-24" width="1072" height="1072" rx="252" fill="' + CARD.panel + '"/><rect width="1024" height="1024" rx="228" fill="' + CARD.bg + '"/>' +
+    '<rect x="152" y="404" width="416" height="216" rx="16" fill="' + CARD.ink + '"/>' +
+    '<rect x="568" y="404" width="140" height="216" fill="' + CARD.ink + '" fill-opacity="0.16"/>' +
+    '<rect x="568" y="408" width="140" height="208" fill="none" stroke="' + CARD.ink + '" stroke-opacity="0.7" stroke-width="8"/>' +
+    stripes.join('') +
+    '<rect x="860" y="380" width="16" height="264" fill="' + CARD.warn + '"/>' +
+    '<rect x="552" y="356" width="32" height="312" fill="' + CARD.bg + '"/>' +
+    '<rect x="560" y="364" width="16" height="296" fill="' + CARD.ink + '"/>' +
+    '</g>'
+  )
+}
 
 // A sentence broken into lines of at most `max` characters, at spaces: the card wraps what it says and never cuts a
 // word or a figure short. A span ("32 h 38 min") or a time is one word, so a line breaks before it and not inside it.
@@ -490,6 +510,36 @@ function wrapWords(str, max) {
   return lines.map((l) => l.replace(/\u0001/g, ' '))
 }
 
+// The numerals at a digit height of h: asked for at that size, then once more at the size that makes the height exact.
+function glyphRun(str, h, colour) {
+  try {
+    let g = figureGlyphs(str, { size: h, stroke: colour }) // a literal colour: the file is opened outside the app
+    if (!g || !g.markup || !(g.width > 0) || !(g.height > 0)) return null
+    if (Math.abs(g.height - h) > 0.5) {
+      const again = figureGlyphs(str, { size: (h * h) / g.height, stroke: colour })
+      if (again && again.markup && again.width > 0) g = again
+    }
+    return { markup: g.markup, width: g.width, height: g.height }
+  } catch {
+    return null
+  }
+}
+
+// How wide a line of text runs, near enough to lay a row out (a system font is never measured exactly).
+const tw = (s, size, weight) => [...String(s)].length * size * (weight >= 600 ? 0.6 : 0.56)
+
+// A rectangle rounded at its top corners only (a day's last segment), or a plain one where it is too low to round.
+function topRect(x, y, w, h, r, extra) {
+  const k = Math.min(r, h / 2, w / 2)
+  return '<path d="M' + x.toFixed(1) + ' ' + (y + h).toFixed(1) + 'V' + (y + k).toFixed(1) + 'Q' + x.toFixed(1) + ' ' + y.toFixed(1) + ' ' + (x + k).toFixed(1) + ' ' + y.toFixed(1) + 'H' + (x + w - k).toFixed(1) + 'Q' + (x + w).toFixed(1) + ' ' + y.toFixed(1) + ' ' + (x + w).toFixed(1) + ' ' + (y + k).toFixed(1) + 'V' + (y + h).toFixed(1) + 'Z"' + extra + '/>'
+}
+
+// A colour as the card draws it: a project's hex, or a model's ink step ('ink:0.8') as the ink at that strength.
+function paint(hex) {
+  const m = /^ink:([\d.]+)$/.exec(String(hex))
+  return m ? ' fill="' + CARD.ink + '" fill-opacity="' + m[1] + '"' : ' fill="' + hex + '"'
+}
+
 // The weekly report card: one self-contained image, 240 to 720 px wide (taller as it narrows). The
 // figure leads, then the week by day and project, the days used, the top projects and models, and
 // what workflows and routing did. It is drawn on its own dark ground, so it reads the same wherever
@@ -497,158 +547,284 @@ function wrapWords(str, max) {
 // `isAnimated` adds the pane's entrance (settled by settleMotion); the saved file is still.
 export function svgReportCard(r, { width = 720, isAnimated = false } = {}) {
   const W = Math.max(240, Math.min(720, Math.round(width)))
-  const pad = W >= 560 ? 36 : 22
-  const inner = W - pad * 2
   const wide = W >= 560
+  const mid = W >= 380
+  const pad = wide ? 48 : mid ? 32 : 20
+  const inner = W - pad * 2
   const parts = []
   const t = (x, y, size, str, o = {}) =>
-    '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" font-size="' + size + '" fill="' + (o.fill || CARD.text) + '"' + (o.weight ? ' font-weight="' + o.weight + '"' : '') + (o.anchor ? ' text-anchor="' + o.anchor + '"' : '') + (o.num ? ' style="font-variant-numeric:tabular-nums"' : '') + SANS + '>' + escapeXml(str) + '</text>'
+    '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" font-size="' + size + '" fill="' + (o.fill || CARD.text) + '"' + (o.weight ? ' font-weight="' + o.weight + '"' : '') + (o.anchor ? ' text-anchor="' + o.anchor + '"' : '') + (o.num ? ' style="font-variant-numeric:tabular-nums"' : '') + (o.cls ? ' class="' + o.cls + '"' : '') + '>' + escapeXml(str) + '</text>'
+  const rule = (y, x1 = pad, x2 = W - pad) => '<line x1="' + x1 + '" x2="' + x2 + '" y1="' + y + '" y2="' + y + '" stroke="' + CARD.line + '" stroke-width="1"/>'
+  // a figure set as numerals with its words beside it: a run of digits is drawn, the rest is text at half the height
+  const mixed = (x, base, str, h, fill) => {
+    let cx = x
+    let out = ''
+    if (!/[0-9]/.test(str)) {
+      const size = Math.round(h / 0.72)
+      return { markup: t(x, base, size, String(str), { weight: 600, fill }), width: tw(str, size, 600) }
+    }
+    for (const [i, piece] of String(str).split(/([<+−~$]*[0-9][0-9.,]*%?)/).entries()) {
+      if (!piece) continue
+      const g = i % 2 ? glyphRun(piece, h, fill) : null
+      if (g) {
+        out += '<g transform="translate(' + cx.toFixed(1) + ' ' + (base - g.height).toFixed(1) + ')">' + g.markup + '</g>'
+        cx += g.width
+      } else {
+        const size = i % 2 ? Math.round(h / 0.72) : Math.max(12, Math.round(h * 0.46))
+        const weight = i % 2 ? 700 : 600
+        const word = i % 2 ? piece : piece.trim()
+        if (!word) {
+          cx += h * 0.2
+          continue
+        }
+        if (i % 2 === 0 && /^\s/.test(piece) && cx > x) cx += h * 0.16
+        out += t(cx, base, size, word, { weight, fill, num: true })
+        cx += tw(word, size, weight) + (i % 2 === 0 && /\s$/.test(piece) ? h * 0.16 : 0)
+      }
+    }
+    return { markup: out, width: cx - x }
+  }
+  const bigW = (str, h) => mixed(0, 0, str, h, CARD.ink).width
+
   let y = pad
-  parts.push('<circle cx="' + (pad + 7) + '" cy="' + (y + 9) + '" r="7" fill="url(#rcg)"/>')
-  parts.push(t(pad + 22, y + 14, 14, 'ToBeBestMe', { weight: 600, fill: CARD.sub }))
-  parts.push(t(W - pad, y + 14, 13, r.range, { anchor: 'end', fill: CARD.mute, num: true }))
-  y += 44
-  parts.push(t(pad, y + 8, wide ? 26 : 22, 'My Claude Code week', { weight: 700 }))
-  y += wide ? 24 : 18
-  const size = wide ? 112 : 84
-  const fig = r.figure.text
-  const figW = [...fig].reduce((n, c) => n + (/[0-9]/.test(c) ? 0.6 : c === '%' ? 0.92 : c === '$' ? 0.6 : 0.34) * size, 0)
-  parts.push('<g' + (isAnimated ? ' class="mrise"' : '') + '>')
-  parts.push('<text x="' + pad + '" y="' + (y + size * 0.86).toFixed(1) + '" font-size="' + size + '" font-weight="800" fill="url(#rcf)" style="font-variant-numeric:tabular-nums;letter-spacing:-0.03em"' + SANS + '>' + escapeXml(fig) + '</text>')
-  parts.push('</g>')
-  const sideX = pad + figW + 18
+  // the wordmark, with the icon's own mark, and the dates
+  parts.push(iconMark(pad, y, 28))
+  parts.push(t(pad + 38, y + 19.5, 15, 'ToBeBestMe', { weight: 600 }))
+  if (mid) parts.push(t(W - pad, y + 19.5, 14, r.range, { anchor: 'end', fill: CARD.mute, num: true }))
+  y += 28 + (wide ? 52 : 34)
+  const titleSize = wide ? 30 : mid ? 24 : 20
+  parts.push(t(pad, y + titleSize * 0.78, titleSize, 'My Claude Code week', { weight: 600 }))
+  y += titleSize + 4
+  if (!mid) {
+    parts.push(t(pad, y + 16, 13, r.range, { fill: CARD.mute, num: true }))
+    y += 20
+  }
+  y += wide ? 34 : 24
+
+  // the figure: ink, or amber or red where the limit is past its alert, runs out early or is nearly out
+  const tone = r.figure.level === 'error' ? CARD.crit : r.figure.level === 'warning' ? CARD.warn : CARD.ink
+  const heroH = wide ? 124 : mid ? 96 : 66
+  const hero = mixed(pad, y + heroH, r.figure.text, heroH, tone)
+  parts.push('<g' + (isAnimated ? ' class="mrise"' : '') + '>' + hero.markup + '</g>')
+  const sideX = pad + hero.width + (wide ? 36 : 24)
   const sentence = r.figure.isLimit && r.outlook ? r.outlook : r.money(r.weekTotal)
   const counts = plural(r.projectCount, 'project', 'projects') + ' · ' + plural(r.sessions, 'chat', 'chats')
-  if (W - pad - sideX >= 150) {
-    // beside the figure: its words wrap in the room that is left, and the counts follow the last line
-    const lines = wrapWords(sentence, Math.floor((W - pad - sideX) / 6.6))
-    parts.push(t(sideX, y + size * 0.52, 16, r.figure.label, { fill: CARD.text, weight: 600 }))
-    lines.forEach((line, i) => parts.push(t(sideX, y + size * 0.52 + 22 + i * 18, 13, line, { fill: CARD.sub, num: true })))
-    parts.push(t(sideX, y + size * 0.52 + 22 + lines.length * 18 + 2, 13, counts, { fill: CARD.sub }))
-    y += Math.max(size + 14, size * 0.52 + 22 + lines.length * 18 + 26)
+  const lead = wide ? 20 : 17
+  const small = wide ? 15 : 14
+  const room = W - pad - sideX
+  if (room >= small * 11) {
+    // beside the figure: the label and its words, centred on the digits, wrapping in the room that is left
+    const lines = wrapWords(sentence, Math.floor(room / (small * 0.56)))
+    const block = lead + 10 + lines.length * (small + 7) + small + 10
+    let ty = y + heroH / 2 - block / 2 + lead * 0.8
+    parts.push(t(sideX, ty, lead, r.figure.label, { weight: 600 }))
+    ty += 10 + small + 6
+    lines.forEach((line, i) => parts.push(t(sideX, ty + i * (small + 7), small, line, { fill: CARD.sub, num: true })))
+    parts.push(t(sideX, ty + lines.length * (small + 7) + 4, small, counts, { fill: CARD.mute, num: true }))
+    y += Math.max(heroH, block) + 6
   } else {
-    y += size + 8
-    parts.push(t(pad, y + 12, 16, r.figure.label, { fill: CARD.text, weight: 600 }))
-    y += 34
-    // under the figure: the words wrap at the card's width, so a figure in them is never cut short
-    const lines = wrapWords(sentence + ' · ' + counts, Math.floor(inner / 6.6))
-    lines.forEach((line, i) => parts.push(t(pad, y + i * 18, 13, line, { fill: CARD.sub, num: true })))
-    y += lines.length * 18
+    y += heroH + (wide ? 22 : 16)
+    parts.push(t(pad, y + lead * 0.8, lead, r.figure.label, { weight: 600 }))
+    y += lead + 12
+    const lines = wrapWords(sentence, Math.floor(inner / (small * 0.56)))
+    lines.forEach((line, i) => parts.push(t(pad, y + small + i * (small + 7), small, line, { fill: CARD.sub, num: true })))
+    y += lines.length * (small + 7) + 2
+    parts.push(t(pad, y + small, small, counts, { fill: CARD.mute, num: true }))
+    y += small + 4
   }
-  y += 14
-  const chartH = wide ? 150 : 120
-  const labelH = 22
-  const slot = inner / 7
-  const barW = Math.min(52, slot * 0.62)
+  // the limit as a runway, when the figure is one: solid to now, the meridian cut, the track beyond it
+  const pct = r.figure.isLimit ? parseFloat(String(r.figure.text).replace(/[^0-9.]/g, '')) : NaN
+  if (Number.isFinite(pct)) {
+    y += wide ? 30 : 22
+    const fx = pad + Math.max(0, Math.min(100, pct)) * inner / 100
+    parts.push('<rect x="' + pad + '" y="' + y + '" width="' + inner + '" height="8" rx="1.5" fill="' + CARD.line + '"/>')
+    parts.push('<rect' + (isAnimated ? ' class="msw"' : '') + ' x="' + pad + '" y="' + y + '" width="' + (fx - pad).toFixed(1) + '" height="8" rx="1.5" fill="' + tone + '"/>')
+    parts.push('<rect x="' + (fx - 3.5).toFixed(1) + '" y="' + (y - 7) + '" width="7" height="22" fill="' + CARD.bg + '"/><rect x="' + (fx - 1).toFixed(1) + '" y="' + (y - 6) + '" width="2" height="20" fill="' + CARD.ink + '"/>')
+    parts.push('<rect x="' + (W - pad - 1) + '" y="' + (y - 3) + '" width="1" height="14" fill="' + CARD.mute + '"/>')
+    y += 8
+  }
+  y += wide ? 40 : 28
+
+  // the week, a bar a day: stacked by project, 2px between the parts, the day's name under it
+  const chartH = wide ? 152 : mid ? 128 : 104
+  const labelH = 28
+  const panelPad = wide ? 22 : 14
+  const slot = (inner - panelPad * 2) / 7
+  const barW = Math.min(wide ? 40 : 34, slot * 0.56)
   const maxDay = Math.max(1e-9, ...r.days.map((x) => x.total))
-  parts.push('<rect x="' + pad + '" y="' + y + '" width="' + inner + '" height="' + (chartH + labelH + 16) + '" rx="16" fill="' + CARD.panel + '"/>')
-  const baseline = y + 12 + chartH
+  parts.push('<rect x="' + (pad + 0.5) + '" y="' + (y + 0.5) + '" width="' + (inner - 1) + '" height="' + (panelPad + chartH + labelH + 12 - 1) + '" rx="16" fill="' + CARD.panel + '" stroke="' + CARD.line + '"/>')
+  const baseline = y + panelPad + chartH
+  parts.push(rule(baseline + 0.5, pad + panelPad, W - pad - panelPad))
   r.days.forEach((day, i) => {
-    const cx = pad + slot * i + slot / 2
+    const cx = pad + panelPad + slot * i + slot / 2
     const x = cx - barW / 2
-    let top = baseline
-    const fullH = Math.max(day.total > 0 ? 4 : 0, (day.total / maxDay) * (chartH - 20))
+    const fullH = Math.max(day.total > 0 ? 4 : 0, (day.total / maxDay) * (chartH - 16))
     const scale = day.total > 0 ? fullH / day.total : 0
+    let top = baseline - 1
     day.parts.forEach((p, j) => {
-      const h = Math.max(1.5, p.value * scale)
-      top -= h
-      parts.push('<rect' + (isAnimated ? ' class="mbar" style="animation-delay:' + i * 70 + 'ms"' : '') + ' x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="' + (j === day.parts.length - 1 ? 5 : 1) + '" fill="' + p.hex + '"/>')
+      const seg = Math.max(2, p.value * scale)
+      const last = j === day.parts.length - 1
+      // the part under another leaves 2px of ground between them; one too low to cut stays whole
+      const h = last || seg <= 4 ? seg : seg - 2
+      const cls = isAnimated ? ' class="mbar" style="animation-delay:' + i * 70 + 'ms"' : ''
+      const fill = ' fill="' + p.hex + '"'
+      parts.push(last ? topRect(x, top - seg, barW, seg, 3, fill + cls) : '<rect' + cls + ' x="' + x.toFixed(1) + '" y="' + (top - seg + (seg - h)).toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + h.toFixed(1) + '"' + fill + '/>')
+      top -= seg
     })
-    if (day.total <= 0) parts.push('<rect x="' + x.toFixed(1) + '" y="' + (baseline - 3) + '" width="' + barW.toFixed(1) + '" height="3" rx="1.5" fill="' + CARD.line + '"/>')
-    parts.push(t(cx, baseline + 17, 12, day.isToday && slot >= 56 ? 'Today' : day.short, { anchor: 'middle', fill: day.isToday ? CARD.text : CARD.mute, weight: day.isToday ? 600 : 400 }))
+    if (day.total <= 0) parts.push('<rect x="' + x.toFixed(1) + '" y="' + (baseline - 3) + '" width="' + barW.toFixed(1) + '" height="2" rx="1" fill="' + CARD.mute + '" fill-opacity="0.5"/>')
+    parts.push(t(cx, baseline + 20, slot < 34 ? 11 : 12, day.isToday && slot >= 56 ? 'Today' : day.short, { anchor: 'middle', fill: day.isToday ? CARD.text : CARD.mute, weight: day.isToday ? 600 : 500 }))
+    if (day.isToday) parts.push('<rect x="' + (cx - 8).toFixed(1) + '" y="' + (baseline + 26) + '" width="16" height="2" fill="' + CARD.ink + '"/>')
   })
-  y += chartH + labelH + 16 + 14
+  y += panelPad + chartH + labelH + 12 + (wide ? 28 : 20)
+
+  // the tiles: a few figures, each in numerals with its words under it
   const tiles = [
     { big: r.activeDays + ' of 7', small: 'days used' },
     { big: r.streak >= 1 ? r.streak + (r.streak === 1 ? ' day' : ' days') : '–', small: 'streak' },
     ...(r.best ? [{ big: r.best.short, small: 'busiest day' }] : []),
     ...r.extras.slice(0, 1).map((x) => x.tile || { big: x.value, small: x.label }),
   ]
-  const cols = wide ? Math.min(4, tiles.length) : 2
-  const gap = 10
+  const gap = wide ? 12 : 10
+  const roomy = wide && tiles.every((tile) => String(tile.big).length <= 10)
+  const cols = roomy ? Math.min(4, tiles.length) : 2
   const tileW = (inner - gap * (cols - 1)) / cols
-  // a tile's label wraps (to two lines at most) and its figure is set smaller to fit, so neither is cut short
-  const smalls = tiles.map((tile) => wrapWords(tile.small, Math.floor((tileW - 24) / 6.4)).slice(0, 2))
-  const tileH = 58 + (Math.max(...smalls.map((l) => l.length)) - 1) * 15
-  tiles.forEach((tile, i) => {
-    const cx = pad + (i % cols) * (tileW + gap)
-    const cy = y + Math.floor(i / cols) * (tileH + gap)
-    const base = wide ? 22 : 20
-    const bigSize = Math.max(14, Math.min(base, Math.floor((tileW - 24) / (String(tile.big).length * 0.62))))
-    parts.push('<rect x="' + cx.toFixed(1) + '" y="' + cy + '" width="' + tileW.toFixed(1) + '" height="' + tileH + '" rx="14" fill="' + CARD.panel + '"/>')
-    parts.push(t(cx + 14, cy + 28, bigSize, tile.big, { weight: 700, num: true }))
-    smalls[i].forEach((line, j) => parts.push(t(cx + 14, cy + 47 + j * 15, 12, line, { fill: CARD.sub })))
+  const tpad = wide ? 18 : 14
+  const bigH = wide ? 26 : 22
+  // a tile whose words will not fit its column spans the row, so nothing is cut short
+  tiles.forEach((tile) => {
+    tile.span = !wide && !mid && (String(tile.big).length > 7 || tile.small.length * 13 * 0.56 > tileW - tpad * 2) ? cols : 1
+    const w = tile.span * tileW + (tile.span - 1) * gap
+    tile.w = w
+    tile.lines = wrapWords(tile.small, Math.floor((w - tpad * 2) / (13 * 0.56)))
+    tile.h = tpad + bigH + 8 + tile.lines.length * 17 + tpad - 2
   })
-  y += Math.ceil(tiles.length / cols) * (tileH + gap) + 6
-  if (r.projects.length) {
-    parts.push(t(pad, y + 14, 14, 'Where the week went', { weight: 600, fill: CARD.sub }))
-    y += 26
-    const nameW = wide ? 170 : 110
-    const barX = pad + nameW
-    const barRoom = inner - nameW - 44 - 10
-    r.projects.forEach((p, i) => {
-      const ry = y + i * 30
-      parts.push('<circle cx="' + (pad + 5) + '" cy="' + (ry + 9) + '" r="5" fill="' + p.hex + '"/>')
-      parts.push(t(pad + 16, ry + 14, 14, clip(p.name, Math.floor((nameW - 22) / 7.4)), { fill: CARD.text }))
-      parts.push('<rect x="' + barX + '" y="' + (ry + 4) + '" width="' + barRoom.toFixed(1) + '" height="10" rx="5" fill="' + CARD.line + '"/>')
-      parts.push('<rect' + (isAnimated ? ' class="msw"' : '') + ' x="' + barX + '" y="' + (ry + 4) + '" width="' + Math.max(8, barRoom * p.share).toFixed(1) + '" height="10" rx="5" fill="' + p.hex + '"/>')
-      parts.push(t(W - pad, ry + 14, 13, r.pctOf(p.share), { anchor: 'end', fill: CARD.sub, num: true }))
-    })
-    y += r.projects.length * 30 + 10
+  // tiles flow left to right in rows of the columns, a row as tall as its tallest
+  let col = 0
+  let rowTop = y
+  let rowH = 0
+  const placed = []
+  for (const tile of tiles) {
+    if (col + tile.span > cols) {
+      rowTop += rowH + gap
+      col = 0
+      rowH = 0
+    }
+    placed.push({ tile, x: pad + col * (tileW + gap), y: rowTop })
+    col += tile.span
+    rowH = Math.max(rowH, tile.h)
   }
+  const rowTops = [...new Set(placed.map((p) => p.y))]
+  for (const p of placed) p.tile.h = Math.max(...placed.filter((q) => q.y === p.y).map((q) => q.tile.h))
+  for (const { tile, x: cx, y: cy } of placed) {
+    let h = bigH
+    while (h > 15 && bigW(tile.big, h) > tile.w - tpad * 2) h -= 1
+    parts.push('<rect x="' + (cx + 0.5).toFixed(1) + '" y="' + (cy + 0.5) + '" width="' + (tile.w - 1).toFixed(1) + '" height="' + (tile.h - 1) + '" rx="14" fill="' + CARD.panel + '" stroke="' + CARD.line + '"/>')
+    parts.push(mixed(cx + tpad, cy + tpad + bigH, tile.big, h, CARD.ink).markup)
+    tile.lines.forEach((line, j) => parts.push(t(cx + tpad, cy + tpad + bigH + 20 + j * 17, 13, line, { fill: CARD.sub })))
+  }
+  y = rowTop + rowH + (wide ? 36 : 28)
+  void rowTops
+
+  // where the week went: a hue, a name, a share
+  if (r.projects.length) {
+    parts.push(rule(y))
+    y += wide ? 30 : 24
+    parts.push(t(pad, y + 4, 14, 'Where the week went', { weight: 600, fill: CARD.sub }))
+    y += wide ? 24 : 18
+    const nameW = wide ? 190 : mid ? 160 : 0
+    const barX = pad + nameW
+    const barRoom = inner - nameW - (nameW ? 48 : 0)
+    const rowH = wide ? 36 : mid ? 32 : 46
+    r.projects.forEach((p, i) => {
+      const ry = y + i * rowH
+      const cy = nameW ? ry + rowH / 2 : ry + 12
+      const by = nameW ? cy : ry + 33
+      parts.push('<circle cx="' + (pad + 5) + '" cy="' + cy + '" r="5" fill="' + p.hex + '"/>')
+      parts.push(t(pad + 18, cy + 5, 15, clip(p.name, Math.floor(((nameW || inner - 60) - 24) / (15 * 0.56))), { fill: CARD.text }))
+      parts.push('<rect x="' + barX + '" y="' + (by - 4) + '" width="' + barRoom.toFixed(1) + '" height="8" rx="1.5" fill="' + CARD.line + '"/>')
+      parts.push('<rect' + (isAnimated ? ' class="msw"' : '') + ' x="' + barX + '" y="' + (by - 4) + '" width="' + Math.max(4, barRoom * p.share).toFixed(1) + '" height="8" rx="1.5" fill="' + p.hex + '"/>')
+      parts.push(t(W - pad, cy + 5, 14, r.pctOf(p.share), { anchor: 'end', fill: CARD.sub, num: true }))
+    })
+    y += r.projects.length * rowH + (wide ? 22 : 16)
+  }
+
+  // models: the ink ramp, fainter for the cheaper ones, each named
   if (r.models.length) {
-    parts.push(t(pad, y + 14, 14, 'Models', { weight: 600, fill: CARD.sub }))
-    y += 24
-    // one continuous rounded bar: every part keeps a visible minimum, the rest share what is left
+    parts.push(rule(y))
+    y += wide ? 30 : 24
+    parts.push(t(pad, y + 4, 14, 'Models', { weight: 600, fill: CARD.sub }))
+    y += wide ? 24 : 18
     const minW = 8
-    const gap = 2
-    const room = inner - gap * (r.models.length - 1)
-    const small = r.models.filter((m) => m.share * room < minW).length
-    const bigShare = r.models.reduce((n, m) => n + (m.share * room < minW ? 0 : m.share), 0) || 1
-    const widths = r.models.map((m) => (m.share * room < minW ? minW : ((room - small * minW) * m.share) / bigShare))
-    parts.push('<clipPath id="rcm"><rect x="' + pad + '" y="' + y + '" width="' + inner.toFixed(1) + '" height="14" rx="7"/></clipPath><g clip-path="url(#rcm)">')
+    const g2 = 2
+    const avail = inner - g2 * (r.models.length - 1)
+    const tiny = r.models.filter((m) => m.share * avail < minW).length
+    const bigShare = r.models.reduce((n, m) => n + (m.share * avail < minW ? 0 : m.share), 0) || 1
+    const widths = r.models.map((m) => (m.share * avail < minW ? minW : ((avail - tiny * minW) * m.share) / bigShare))
     let x = pad
     r.models.forEach((m, i) => {
-      parts.push('<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + widths[i].toFixed(1) + '" height="14" fill="' + m.hex + '"/>')
-      x += widths[i] + gap
+      parts.push('<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + widths[i].toFixed(1) + '" height="14" rx="1.5"' + paint(m.hex) + '/>')
+      x += widths[i] + g2
     })
-    parts.push('</g>')
-    y += 34
+    y += 14 + (wide ? 26 : 22)
     let lx = pad
     let ly = y
     for (const m of r.models) {
       const label = m.family + ' ' + r.pctOf(m.share)
-      const w = 22 + label.length * 7.2
+      const w = 18 + tw(label, 14, 400)
       if (lx + w > W - pad && lx > pad) {
         lx = pad
-        ly += 20
+        ly += 24
       }
-      parts.push('<circle cx="' + (lx + 5) + '" cy="' + (ly - 4) + '" r="5" fill="' + m.hex + '"/>')
-      parts.push(t(lx + 16, ly, 13, label, { fill: CARD.sub, num: true }))
-      lx += w + 8
+      parts.push('<rect x="' + lx.toFixed(1) + '" y="' + (ly - 9) + '" width="10" height="10" rx="2"' + paint(m.hex) + '/>')
+      parts.push(t(lx + 18, ly + 1, 14, label, { fill: CARD.sub, num: true }))
+      lx += w + (wide ? 28 : 18)
     }
-    y = ly + 22
+    y = ly + (wide ? 30 : 22)
   }
-  for (const x of r.extras.slice(1)) {
-    const lines = wrapWords(x.label + ': ' + x.value + (x.sub ? ' (' + x.sub + ')' : ''), Math.floor(inner / 6.6))
-    lines.forEach((line, i) => parts.push(t(pad, y + 12 + i * 18, 13, line, { fill: CARD.sub })))
-    y += lines.length * 18 + 2
+
+  // the rest: a label and what it came to, side by side where there is room and one above the other where not
+  const rest = r.extras.slice(1)
+  if (rest.length) {
+    parts.push(rule(y))
+    y += wide ? 8 : 4
+    for (const x of rest) {
+      const fits = tw(x.label, 14, 400) + tw(x.value + (x.sub ? ' ' + x.sub : ''), 14, 600) + 24 <= inner
+      // where it does not fit beside its label, the figure goes under it, wrapped to the card's own width; what it
+      // counts (its sub) follows on the last line if there is room, else has a line of its own
+      const lines = fits ? [] : wrapWords(x.value, Math.max(8, Math.floor(inner / (14 * 0.6))))
+      const last = lines.length ? lines[lines.length - 1] : ''
+      const subOwn = !fits && !!x.sub && tw(last + ' ' + x.sub, 14, 600) > inner
+      const rh = fits ? (wide ? 44 : 40) : 40 + lines.length * 22 + (subOwn ? 22 : 0)
+      const base = y + (fits ? rh / 2 + 5 : 24)
+      const tail = x.sub ? '<tspan fill="' + CARD.mute + '" font-weight="400"> ' + escapeXml(x.sub) + '</tspan>' : ''
+      if (fits) {
+        parts.push(t(pad, base, 14, x.label, { fill: CARD.sub }))
+        parts.push('<text x="' + (W - pad) + '" y="' + base + '" font-size="14" text-anchor="end" font-weight="600" fill="' + CARD.text + '" style="font-variant-numeric:tabular-nums">' + escapeXml(x.value) + tail + '</text>')
+      } else {
+        parts.push(t(pad, base, 14, x.label, { fill: CARD.sub }))
+        lines.forEach((l, i) => {
+          const isLast = i === lines.length - 1
+          parts.push('<text x="' + pad + '" y="' + (base + 22 * (i + 1)) + '" font-size="14" font-weight="600" fill="' + CARD.text + '" style="font-variant-numeric:tabular-nums">' + escapeXml(l) + (isLast && !subOwn ? tail : '') + '</text>')
+        })
+        if (subOwn) parts.push('<text x="' + pad + '" y="' + (base + 22 * (lines.length + 1)) + '" font-size="14" fill="' + CARD.mute + '">' + escapeXml(x.sub) + '</text>')
+      }
+      y += rh
+    }
+    y += wide ? 8 : 4
   }
-  parts.push('<line x1="' + pad + '" x2="' + (W - pad) + '" y1="' + (y + 8) + '" y2="' + (y + 8) + '" stroke="' + CARD.line + '"/>')
-  parts.push(t(pad, y + 30, 12, wide ? 'Made with ToBeBestMe, a dashboard for Claude Code' : 'Made with ToBeBestMe', { fill: CARD.mute }))
-  const H = Math.round(y + 30 + pad)
-  // the figure's two ends are its status's (figureHues), lightened until they read on the card's dark ground
-  const ends = figureHues(r.figure.level).map((h) => toneFor(h, true))
-  const defs =
-    '<defs><linearGradient id="rcf" x1="0" x2="1"><stop offset="0" stop-color="' + ends[0] + '"/><stop offset="1" stop-color="' + ends[1] + '"/></linearGradient>' +
-    '<linearGradient id="rcg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#6CB8FF"/><stop offset="1" stop-color="#C58BFF"/></linearGradient>' +
-    '<radialGradient id="rcb" cx="0.25" cy="0.12" r="0.7"><stop offset="0" stop-color="#6CB8FF" stop-opacity="0.16"/><stop offset="1" stop-color="#6CB8FF" stop-opacity="0"/></radialGradient></defs>'
+
+  // the foot: the icon's mark and where it came from
+  parts.push(rule(y))
+  y += wide ? 28 : 22
+  parts.push(iconMark(pad, y, 22))
+  parts.push(t(pad + 32, y + 15, 13, wide ? 'Made with ToBeBestMe, a dashboard for Claude Code' : 'Made with ToBeBestMe', { fill: CARD.sub }))
+  y += 22
+  const H = Math.round(y + pad)
   return (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + escapeXml(reportAlt(r)) + '" data-poster="' + CARD.bg + '">' +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" font-family="' + FONT + '" aria-label="' + escapeXml(reportAlt(r)) + '" data-poster="' + CARD.bg + '">' +
     '<title>' + escapeXml(reportAlt(r)) + '</title>' +
     (isAnimated ? MOTION_CSS : '') +
-    defs +
-    '<rect width="' + W + '" height="' + H + '" rx="26" fill="' + CARD.bg + '"/><rect width="' + W + '" height="' + H + '" rx="26" fill="url(#rcb)"/>' +
+    '<rect x="0.5" y="0.5" width="' + (W - 1) + '" height="' + (H - 1) + '" rx="26" fill="' + CARD.bg + '" stroke="' + CARD.line + '"/>' +
     parts.join('') +
     '</svg>'
   )

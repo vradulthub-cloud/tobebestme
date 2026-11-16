@@ -28,18 +28,18 @@ Type `/tobebestme` to open the pane. It has six tabs (Home, Workflows, This sess
 
 ### Home: the week, and what needs you
 
-![The week on Home: 82% of the weekly limit, each day's work stacked by project, the line of use, the dashed projection to the run-out, and the hours without Claude before the reset.](assets/home-week.png)
+![The week on Home: 82% of the weekly limit drawn in large strokes, each day's work stacked by project, the solid line of use up to now, the dashed projection to the run-out, and the lined stretch of hours without Claude before the reset.](assets/home-week.png)
 
 Home reads Claude Code's own records for every project on the computer, including chats that never ran ToBeBestMe.
 
-- **One drawing of the week.** The weekly figure and a forecast sentence, each day's work by project, the line of use so far, the dashed line to where the limit runs out, and the hours you would be without Claude before it resets. Press a day or a project to pick it out; the rest step back and a line says what it held.
+- **One drawing of the week.** The weekly figure and a forecast sentence, each day's work by project, the solid line of use so far, the dashed line to where the limit runs out, and the lined stretch of hours you would be without Claude before it resets. Press a day or a project to pick it out; the rest step back and a line says what it held.
 - **Needs you.** Every chat that stopped for you in the last week, most pressing first: a permission prompt, a question, a plan to approve, a usage limit, a pull request waiting. The most urgent is a card of its own. In the desktop app a suggested reply shows the whole message and asks before it sends; **Reply…** takes your own words. Elsewhere, **Copy resume command** carries the chat on in a terminal.
 - **Pick up where you left off.** The latest chat in each project, with its last message, branch, pull request and loose ends such as *3 files changed, not committed*.
 - **What stands out.** Up to three plain observations. A saving is drawn before you act on it: the week as run, against the week with the idea applied.
 - **Pull requests, from GitHub.** When the GitHub CLI (`gh`) is installed and signed in, your open pull requests that need you join Needs you: review requested, changes requested, checks failing, merge conflicts, and ready to merge, each with a button to open it and one to copy its link. They are read in the background at most every five minutes. With no `gh`, or not signed in, nothing is shown and Settings › What ToBeBestMe reads says why.
 - **Projects, open chats and running workflows.**
 
-![Needs you on Home: a permission prompt as a card, then waiting chats with their reply buttons.](assets/home-needs-you.png)
+![Needs you on Home: a permission prompt as a panel, then waiting chats as plain rows with their reply buttons.](assets/home-needs-you.png)
 
 ![What stands out on Home: the week as run against the week with half the work on Sonnet.](assets/home-saves.png)
 
@@ -67,9 +67,9 @@ A workflow is a script Claude writes to split a big job across many agents. One 
 
 ### This session
 
-Whether this conversation will make it: its cost, and the context window as a runway with a post where Claude Code compacts, a ghost for the next turns at the recent pace, and a bar per turn. Under it, ways to save, the right model for the job, a planner for long runs, what fills the context, and what is always loaded (MCP servers, memory files, skills).
+Whether this conversation will make it: its cost, and the context window as a runway with a mark where Claude Code compacts, the next turns at the recent pace drawn hollow, and a bar per turn. Under it, ways to save, the right model for the job, a planner for long runs, what fills the context, and what is always loaded (MCP servers, memory files, skills).
 
-![This session: context at 85% of the window, compaction about one turn away, and the weekly limits.](assets/session.png)
+![This session: a large 15% figure, context at 85% of the window with compaction about one turn away and the coming turns drawn hollow, a bar per turn, and the weekly limits.](assets/session.png)
 
 ### Usage
 
@@ -91,7 +91,7 @@ What ToBeBestMe does on its own, then the options as rows of preset choices with
 
 ### Accessibility
 
-The pane is built to be used without a mouse and without color. `/tobebestme` moves the keyboard into the pane, **Tab** and **Shift+Tab** move between controls, **Enter** presses one, and **Esc** closes the pane; the line above the prompt has an **Open ToBeBestMe** button. **Show details** puts the words of every hover card in the page for keyboards, screen readers and touch, and is remembered between chats. A status is always a word and a shape as well as a color, text is held to 4.5:1 contrast on a dark and a light pane and is never under 11px, and every drawing has a text alternative. With reduced motion set, nothing animates: the entrances, the sheen and the pulse on a running workflow or waiting chat are all switched off.
+The pane is built to be used without a mouse and without color. `/tobebestme` moves the keyboard into the pane, **Tab** and **Shift+Tab** move between controls, **Enter** presses one, and **Esc** closes the pane; the line above the prompt has an **Open ToBeBestMe** button. **Show details** puts the words of every hover card in the page for keyboards, screen readers and touch, and is remembered between chats. A status is always a word and a shape as well as a color, text is held to 4.5:1 contrast on a dark and a light pane and is never under 11px, and every drawing has a text alternative. With reduced motion set, nothing animates: the entrances, the stroke-by-stroke drawing of figures and the ring on a running workflow or waiting chat are all switched off.
 
 ## Install
 

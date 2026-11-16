@@ -1,5 +1,7 @@
 import { expect, test } from 'claude-code/testing'
-import { CATEGORY_HEX, FAMILY_HEX, HEX, LEVEL_HUES, PROJECT_HEX, RING_HEX, fmtShare, pctText, safeUrl, shareWords, toneFor } from '../hooks/lib.js'
+import { CATEGORY_HEX, FAMILY_HEX, HEX, LEVEL_HUES, MERIDIAN, PROJECT_HEX, RING_HEX, SCHEME_CSS, fmtShare, modelInk, pctText, safeUrl, shareWords, toneFor } from '../hooks/lib.js'
+import { CARD } from '../hooks/extras.js'
+import { figureGlyphs } from '../hooks/glyphs.js'
 
 const NOW = Date.parse('2026-10-23T12:00:00Z')
 const SURFACES = ['terminal', 'desktop'] as const
@@ -138,9 +140,42 @@ async function shown(ui: any) {
   return (await ui.findAll({ type: 'Text' })).map((t: any) => t.text).join('\n').replace(/\u2060/g, '').replace(/\u00a0/g, ' ').replace(/(\w)'(\w)/g, '$1’$2') // apostrophes inside a word are curly everywhere in the pane
 }
 
-// The big figures of a tab are drawn in gradients (an Svg whose alt is the figure itself, marked data-fig).
+// The big figures of a tab are drawn in strokes of ink or of a status colour: an Svg marked data-fig whose alt is the
+// figure itself, or (on Home, where the figure is part of the week's drawing) one whose figure strokes draw on (class mdr).
+const hasFigure = (src: string) => src.includes('data-fig') || /class="mdr[ "]/.test(src)
 async function figures(ui: any) {
-  return (await ui.findAll({ type: 'Svg' })).filter((x: any) => String(x.props.source).includes('data-fig')).map((x: any) => String(x.props.alt))
+  return (await ui.findAll({ type: 'Svg' })).filter((x: any) => hasFigure(String(x.props.source))).map((x: any) => String(x.props.alt))
+}
+
+// The scheme stylesheet every drawing carries: custom properties on the root for the dark pane (--s the pane, --i2 the
+// secondary words, --w, --c, --k the amber, red and green marks), and the light pane's values under prefers-color-scheme.
+function schemeOf(src: string) {
+  const m = /<style>svg\{([^}]*)\}@media \(prefers-color-scheme:light\)\{svg\{([^}]*)\}\}<\/style>/.exec(src)
+  const props = (css?: string) => Object.fromEntries([...(css || '').matchAll(/--(\w+):(#[0-9A-Fa-f]{6})/g)].map((x) => [x[1]!, x[2]!])) as Record<string, string>
+  return m ? { dark: props(m[1]), light: props(m[2]) } : null
+}
+// The report card is a file with its own ground: its figures are strokes in the card's ink, #f0efec, as literal colours.
+const CARD_INK = '#f0efec'
+// The surfaces a pane is drawn on, dark and light (the host's own).
+const DARK_PANES = ['#0b0b0b', '#151515', '#1a1a19', '#20201f']
+const LIGHT_PANES = ['#f9f9f7', '#fcfcfb', '#ffffff']
+// A drawing's figure, in the numerals: whether `src` holds the strokes of `str` in `colour`, at some digit height
+// (the numerals are drawn at the height the layout asks for, so every height is tried, as the report card's own two-pass sizing does).
+function hasNumerals(src: string, str: string, colour: string) {
+  for (let h = 12; h <= 160; h += 0.5) {
+    let g = figureGlyphs(str, { size: h }) as any
+    if (!g) return false
+    if (Math.abs(g.height - h) > 0.5) g = figureGlyphs(str, { size: (h * h) / g.height }) || g
+    if (src.includes(String(g.markup).replace(/currentColor/g, colour))) return true
+  }
+  return false
+}
+// The colour a drawing's big figure is drawn in: the status property its group names, or the ink when it names none.
+function figureColour(src: string) {
+  const at = src.search(/class="mdr[ "]/)
+  if (at < 0) return /style="[^"]*fill:var\(--([wck])\)/.exec(src.slice(src.indexOf('<text class="mrise"')))?.[1] ?? 'ink'
+  const group = src.lastIndexOf('<g class="mrise"', at)
+  return /^<g class="mrise" style="color:var\(--([wck])\)"/.exec(src.slice(group))?.[1] ?? 'ink'
 }
 
 // Ends a main turn the way the engine reports one.
@@ -516,17 +551,23 @@ test('each limit is a runway, not a ring: the weekly one says in words and in ma
   await desktop.press({ key: 'tab-overview' })
   const svgs = await desktop.findAll({ type: 'Svg' })
   const sources = svgs.map((x: any) => String(x.props.source))
-  // no concentric arcs anywhere; each limit's runway has its playhead and reset post
-  expect(sources.some((src: string) => src.includes('stroke-dasharray'))).toBe(false)
+  // no rings or arcs for a limit: it is a runway, a straight track with its meridian (now) and reset post
+  const limitSources = svgs.filter((x: any) => /^Weekly/.test(String(x.props.alt))).map((x: any) => String(x.props.source))
+  expect(limitSources.length).toBeGreaterThan(1)
+  for (const src of limitSources) expect(src).not.toMatch(/<circle|<path[^>]* d="[^"]*A/)
   const weekly = svgs.find((x: any) => String(x.props.alt).startsWith('Weekly limit'))
   expect(weekly?.props.alt).toBe('Weekly limit 86%, runs out before it resets')
   expect(String(weekly?.props.source)).toMatch(/class="ro[ "]/) // the run-out stop
+  expect(String(weekly?.props.source)).toContain('stroke-dasharray="2 3"') // the time out of limit is striped, in the warning colour
+  expect(String(weekly?.props.source)).toContain('var(--w)')
   expect(String(weekly?.props.source)).toContain('class="now"') // the playhead
   expect(String(weekly?.props.source)).toContain('class="post"') // the reset
   const modelLimit = svgs.find((x: any) => String(x.props.alt).startsWith('Weekly Opus limit'))
   expect(String(modelLimit?.props.alt)).toMatch(/on pace for about \d+% by the reset/)
   expect(String(modelLimit?.props.source)).not.toMatch(/class="ro[ "]/) // on pace: no stop
   expect(String(modelLimit?.props.source)).toContain('class="ahead"') // where the pace lands, ahead of the fill
+  expect(String(modelLimit?.props.source)).not.toContain('stroke-dasharray="') // on pace there is no stripe: stripes mean out of limit
+  expect(String(modelLimit?.props.source)).toMatch(/class="ahead"[^>]*fill="currentColor" fill-opacity="0\.16"/) // a hollow ghost in the ink, not a filled bar
   await desktop.unmount()
 
   // the terminal draws the same thing in block characters: fill, now (┃) and the dry stretch (╌)
@@ -1098,7 +1139,7 @@ test('Home leads with one big figure and says where the pace lands, and each sav
     const ui = await $.ui.mount({ ...PANE, surface })
     await ui.press({ key: 'usage-refresh' })
     const text = await shown(ui)
-    // the figure is drawn as a gradient on the desktop and is text on the terminal
+    // the figure is drawn in strokes of numerals on the desktop and is text on the terminal
     if (surface === 'desktop') {
       // the figure and the forecast are drawn inside the week's one drawing, and its words say both
       expect((await figures(ui)).some((a: string) => /30% of your weekly limit\. On pace to end the week at about 4\d%/.test(a))).toBe(true)
@@ -1167,7 +1208,7 @@ test('every desktop drawing is one the app draws as made: named, given its size,
   await ui.unmount()
 })
 
-test('the desktop pane is cinematic and the terminal is not: sweeps, a hatched run-out and gradient figures, every one switched off by reduced motion', async ($, on) => {
+test('the desktop pane is cinematic and the terminal is not: sweeps, rising bars, a striped run-out and figures drawn stroke by stroke, with no glow, gradient or sheen, every motion switched off by reduced motion', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
@@ -1178,24 +1219,22 @@ test('the desktop pane is cinematic and the terminal is not: sweeps, a hatched r
   expect(joined).toContain('class="msw"') // fills sweep in
   expect(joined).toContain('class="mbar"') // the week's bars spring up
   expect(joined).not.toContain('class="mpt"') // nothing falls into them: motion is for what is working now
-  expect(joined).toContain('class="msh msl"') // the projected ghost has a moving sheen
-  expect(joined).toMatch(/fill="url\(#mh\d+\)"/) // the stretch after the run-out is hatched
+  expect(joined).toMatch(/fill="url\(#mh\)"/) // the stretch after the run-out is hatched
   expect(joined).toMatch(/class="ro mpu"/) // the run-out marker pulses
-  expect(sources.some((x: string) => x.includes('data-fig='))).toBe(true) // a gradient figure leads the tab
-  // every drawing that moves says how to stop it; a figure past its alert is settled, so it has the gradient and no glow
+  expect(sources.some((x: string) => hasFigure(x))).toBe(true) // a figure leads the tab
+  expect(joined).toMatch(/class="mdr[ "]/) // and it is drawn on, stroke by stroke
+  // nothing glows, shines or blends: no gradient, filter, bloom, sheen or halo anywhere in a desktop drawing
+  expect(joined).not.toMatch(/linearGradient|radialGradient|<filter|feGaussianBlur|class="bloom"|\bmsh\b|\bmsl\b|\bmhalo\b/)
+  // every drawing that moves says how to stop it
   for (const src of sources.filter((x: string) => x.includes('animation:'))) expect(src).toContain('@media (prefers-reduced-motion:reduce){')
-  expect(sources.some((x: string) => (x.includes('data-fig=') || x.includes('svg class="mwk"')) && x.includes('class="bloom"'))).toBe(false)
-  // the figure's gradient keeps the contrast the words need, on a dark pane and on a light one
-  const lum = (hex: string) => {
-    const n = parseInt(hex.slice(1), 16)
-    return [16, 8, 0].map((sh, i) => { const v = ((n >> sh) & 255) / 255; return (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4) * [0.2126, 0.7152, 0.0722][i] }).reduce((a, b) => a + b, 0)
-  }
-  const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
-  for (const src of sources.filter((x: string) => x.includes('data-fig='))) {
-    const m = /--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}[^@]*@media[^{]*\{svg\[data-fig="[^"]+"\]\{--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}/.exec(src)
-    expect(m).not.toBeNull()
-    for (const hex of [m![1], m![2]]) expect(ratio(hex, '#1E1E1E')).toBeGreaterThanOrEqual(4.5)
-    for (const hex of [m![3], m![4]]) expect(ratio(hex, '#FFFFFF')).toBeGreaterThanOrEqual(4.5)
+  // a figure is a stroke of ink or of a status property, so it holds the contrast the words need on a dark pane and on a light one
+  for (const src of sources.filter((x: string) => hasFigure(x))) {
+    const scheme = schemeOf(src)
+    expect(scheme, 'a figure carries the scheme stylesheet').not.toBeNull()
+    for (const key of ['w', 'c', 'k', 'i2']) {
+      for (const bg of DARK_PANES) expect(contrastOf(scheme!.dark[key]!, bg), '--' + key + ' on ' + bg).toBeGreaterThanOrEqual(4.5)
+      for (const bg of LIGHT_PANES) expect(contrastOf(scheme!.light[key]!, bg), '--' + key + ' on ' + bg).toBeGreaterThanOrEqual(4.5)
+    }
   }
   await desktop.unmount()
   // the terminal draws none of it
@@ -1334,12 +1373,34 @@ test('a drawing’s words and marks have light-theme colours, so every view read
   await ui.press({ key: 'tab-overview' })
   const source = String((await ui.findAll({ type: 'Svg' })).find((x: any) => String(x.props.alt).startsWith('Context window'))?.props.source)
   expect(source).toContain('prefers-color-scheme:light')
-  // the white "Now" and the grey labels are not left white-on-white
-  expect(source).toContain('svg>text[fill="#F2F2F7"]{fill:#1C1C1E}')
-  expect(source).toContain('svg>text[fill="#8E8E93"]{fill:#636366}')
-  // the amber and red marks and words have darker variants
-  expect(source).toContain('[fill="#FF9F0A"]{fill:#D47000}')
-  expect(source).toContain('svg>text[fill="#FF9F0A"]{fill:#B34C00}')
+  // every drawing carries the one scheme stylesheet, whole: its properties are the dark pane's and, under the media rule, the light pane's
+  expect(source).toContain(SCHEME_CSS)
+  const scheme = schemeOf(source)
+  expect(scheme, 'a scheme stylesheet').not.toBeNull()
+  for (const key of ['s', 'i2', 'w', 'c', 'k']) {
+    expect(scheme!.dark[key], '--' + key + ' on a dark pane').toBeTruthy()
+    expect(scheme!.light[key], '--' + key + ' on a light pane').toBeTruthy()
+    expect(scheme!.light[key], '--' + key + ' has a light value of its own').not.toBe(scheme!.dark[key])
+  }
+  // the words and the marks that are colours hold the contrast on the host's own surfaces: words 4.5:1, marks (the same colours) more than 3:1
+  for (const key of ['i2', 'w', 'c', 'k']) {
+    for (const bg of DARK_PANES) expect(contrastOf(scheme!.dark[key]!, bg), '--' + key + ' on ' + bg).toBeGreaterThanOrEqual(4.5)
+    for (const bg of LIGHT_PANES) expect(contrastOf(scheme!.light[key]!, bg), '--' + key + ' on ' + bg).toBeGreaterThanOrEqual(4.5)
+  }
+  // the cut between neighbours is the pane's own colour on each pane
+  expect(scheme!.dark.s!.toLowerCase()).toBe(MERIDIAN.surface.dark)
+  expect(scheme!.light.s!.toLowerCase()).toBe(MERIDIAN.surface.light)
+  // nothing is left white-on-white: neutrals are the pane's own ink (currentColor), words are ink or a scheme property, never a raw colour,
+  // and no rule swaps a colour by attribute any more
+  const body = source.replace(/<style>.*?<\/style>/gs, '')
+  expect(body).toContain('currentColor')
+  expect(body).not.toMatch(/<text\b[^>]*\bfill="/)
+  expect(source).not.toMatch(/\[fill="#/)
+  // the amber and red marks and words take their colour from the properties, in both schemes
+  await ui.press({ key: 'tab-all' })
+  const flagged = ((await ui.findAll({ type: 'Svg' })) as any[]).map((x) => String(x.props.source)).join('\n')
+  expect(flagged).toMatch(/var\(--[wck]\)/)
+  expect(flagged.replace(/<style>.*?<\/style>/gs, '')).not.toMatch(/#(?:FF9F0A|FFB340|FF6B64|FF8A84|FF453A|30D158|5EE6A8)/i)
   await ui.unmount()
 })
 
@@ -2371,7 +2432,7 @@ test('the savings are drawn as two bars with a green bracket, each idea has its 
   await ui.unmount()
 })
 
-test('Home’s most urgent chat is one large tinted card, the rest are a short list below it, and every answer button still works', async ($, on) => {
+test('Home’s most urgent chat is one large neutral panel, the rest are a short list below it, and every answer button still works', async ($, on) => {
   stubs(on)
   waitingDesk(on, [], [])
   transcripts(on, WAITING, true, [{ pid: 9, sessionId: 'perm', cwd: '/Users/me/Projects/api', kind: 'interactive', name: 'Release', status: 'waiting', waitingFor: 'permission to run npm publish' }])
@@ -2382,7 +2443,8 @@ test('Home’s most urgent chat is one large tinted card, the rest are a short l
   expect(text).toContain('Also waiting')
   expect(text).not.toMatch(/\d more waiting/)
   const tree = JSON.stringify(await ui.drawn())
-  expect(tree).toMatch(/"backgroundColor":"#FF6B640F"/) // about 6% of its status colour, flat, so its red and grey words hold 4.5:1
+  expect(tree).toMatch(/"backgroundColor":"#8987811A"[^{}]*"borderStyle":"round"/) // a warm neutral panel, so its words hold 4.5:1 on either theme; the status line inside it carries the colour
+  expect(tree).not.toMatch(/"backgroundColor":"#[0-9A-F]{6}0F"/i) // no tint of a status colour behind it
   const labels = (await ui.findAll({ type: 'Button' })).map((b: any) => b.props.label)
   // a repeated button is named for its chat, so the drawn words lead its name
   for (const w of ['Ship it', 'Hold off', 'Show options']) expect(labels.some((l: string) => String(l).startsWith(w)), w).toBe(true)
@@ -2410,8 +2472,10 @@ test('the week on Home is one drawing: the figure, the forecast, the days, the l
     if (cols >= 88) expect(src).toContain('without Claude')
     else expect(src).not.toContain('without Claude')
     expect(String(week.props.alt)).toContain('time without Claude')
-    expect(src).toMatch(/fill="url\(#mh\d+\)"/) // and hatched
-    expect(src).toContain('stroke-dasharray="6 5"') // the projection is dashed
+    expect(src).toMatch(/fill="url\(#mh\)"/) // and hatched
+    expect(src).toContain('stroke-dasharray="5 4"') // the projection is dashed, and ends in a hollow ring
+    expect(src).toMatch(/<circle class="mrise mpu po" [^>]*r="4\.5" style="fill:var\(--s\);stroke:var\(--w\)" stroke-width="2"\/>/)
+    expect(src).not.toMatch(/linearGradient|<filter|class="bloom"/)
     expect(src).toContain('@media (prefers-reduced-motion:reduce){')
     expect(src).toContain('prefers-color-scheme:light')
     expect(/<svg\b[^>]*data-fig=/.test(src)).toBe(false) // the app's scrub drops data attributes: nothing depends on one
@@ -3217,7 +3281,8 @@ test('the phone gets a lobby: what waits with the answers that exist, the tighte
   expect(text).toContain('5 things are waiting for you') // the count Home and the line above the prompt show
   expect(text).toContain('4 chats and 1 pull request')
   expect(text).toContain('Weekly limit')
-  expect(text).toContain('62%')
+  // the tightest limit is the lobby's big figure, drawn in strokes: its alt is the figure itself
+  expect(await figures(ui)).toContain('62%')
   expect(text).toContain('Needs your permission')
   const buttons = (await ui.findAll({ type: 'Button' })).filter((b: any) => String(b.props.key).startsWith('lobby-'))
   const answer = buttons.find((b: any) => String(b.props.label).startsWith('Ship it'))
@@ -4112,7 +4177,7 @@ test('the savings card is one story in one unit: the callout is the difference o
   await ui.unmount()
 })
 
-test('the weekly limit chart names its reference lines, and the days under it say they are a rolling week, with the dashed line named', async ($, on) => {
+test('the weekly limit chart names its reference lines, and the days under it say they are a rolling week, with the average line named', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
@@ -4123,7 +4188,7 @@ test('the weekly limit chart names its reference lines, and the days under it sa
   expect(forecast, 'no forecast drawing').toBeTruthy()
   expect(String(forecast.props.source)).toMatch(/>your alert<\/text>/) // the 80% on the axis is the alert, said so
   const text = await shown(ui)
-  expect(text).toMatch(/Each of the past 7 days, by project: a rolling week ending today, not the limit’s window above\. The dashed line is the average, \$[\d.]+ a day\./)
+  expect(text).toMatch(/Each of the past 7 days, by project: a rolling week ending today, not the limit’s window above\. The line is the average, \$[\d.]+ a day\./)
   await ui.unmount()
 })
 
@@ -4363,7 +4428,7 @@ test('a model named like one of Object’s own members is counted as unknown and
   const text = await shown(ui)
   expect(text).not.toContain('native code')
   expect(text).not.toContain('NaN')
-  expect(text).toMatch(/● unknown \d+%/) // their work is counted, under a name of its own, not lost
+  expect(text).toMatch(/(^|\n)unknown \d+%/) // their work is counted, under a name of its own, not lost (its key is a swatch, not a word)
   expect((Object.prototype.toString as any)[0]).toBeUndefined()
   expect((Object.prototype.hasOwnProperty as any)[0]).toBeUndefined()
   await ui.unmount()
@@ -4398,11 +4463,13 @@ test('a project’s skill that is a link to somewhere else is not read or rewrit
   // the project’s .claude/skills/planted is a link (a repository can commit one), and so is .claude/tobebestme
   on('fs.list', (_$: unknown, e: any) => {
     const path = String(e.path ?? '') // the session’s working folder, when none is named
+    // a relative path is read from the folder the tests run in, which may itself sit under a .claude folder (a worktree does)
+    const inner = path.replace(/^.*\/\.claude\/worktrees\/[^/]+/, '')
     if (path === project) return { value: [entry('.claude', 'dir')] }
     if (path === project + '/.claude') return { value: [entry('skills', 'dir')] }
     if (path === project + '/.claude/skills') return { value: [entry('planted', 'other', true)] }
     if (path.endsWith('/.claude')) return { value: [entry('tobebestme', 'other', true)] }
-    if (!path.includes('/.claude/')) return { value: [entry('.claude', 'dir')] }
+    if (!inner.includes('/.claude/')) return { value: [entry('.claude', 'dir')] }
     throw new Error('ENOENT')
   })
   const reads: string[] = []
@@ -5082,36 +5149,23 @@ test('a run whose task this pane does not know says so and offers the request th
   await ui.unmount()
 })
 
-// The hue of a #RRGGBB colour in degrees, to tell amber from red, green and blue by family.
-const hueOf = (hex: string) => {
-  const n = parseInt(hex.slice(1), 16)
-  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255)
-  const max = Math.max(r, g, b)
-  const d = max - Math.min(r, g, b)
-  if (d === 0) return 0
-  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
-  return Math.round(((h * 60) + 360) % 360)
-}
-// The dark pane's two gradient colours of each big figure (data-fig) a view draws, by the figure's own words.
-async function figureHues(ui: any) {
-  const out: Record<string, number[]> = {}
+// The colour each big figure (data-fig, or the figure in Home's week drawing) a view draws is in, by the figure's own words:
+// 'w' (amber), 'c' (red), 'k' (green) are the scheme properties, 'ink' is the pane's own text colour.
+async function figureColours(ui: any) {
+  const out: Record<string, string> = {}
   for (const x of await ui.findAll({ type: 'Svg' })) {
     const src = String(x.props.source)
-    const m = /--a:(#[0-9A-F]{6});--b:(#[0-9A-F]{6})\}/.exec(src)
     // Home's figure is part of the week's drawing, whose words begin "The week: "
-    if (m && src.includes('data-fig')) out[String(x.props.alt).replace(/^The week: /, '').split('.')[0]] = [hueOf(m[1]), hueOf(m[2])]
+    if (hasFigure(src)) out[String(x.props.alt).replace(/^The week: /, '').split('.')[0]] = figureColour(src)
   }
   return out
 }
 
-const FAMILY = {
-  amber: (h: number) => h >= 20 && h <= 50,
-  red: (h: number) => h >= 350 || h <= 12,
-  green: (h: number) => h >= 120 && h <= 165,
-  accent: (h: number) => h >= 195 && h <= 220,
-}
-for (const [pct, family] of [[82, 'amber'], [96, 'red'], [40, 'green']] as const) {
-  test('a big figure is a gradient in the colours of its status: the weekly limit at ' + pct + '% is ' + family + ', on Usage and on Home', async ($, on) => {
+// A big figure takes the colour of its status, and nothing else: amber past an alert, red when nearly out, the ink otherwise.
+// Green is for a result that is good, and a limit on pace is not a result.
+const FIGURE_COLOUR = { amber: 'w', red: 'c', ink: 'ink' } as const
+for (const [pct, family] of [[82, 'amber'], [96, 'red'], [40, 'ink']] as const) {
+  test('a big figure is drawn in the colour of its status, in strokes with no gradient: the weekly limit at ' + pct + '% is ' + family + ', on Usage and on Home', async ($, on) => {
     stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: pct, resetsAt: '2026-10-25T21:00:00Z' }] })
     transcripts(on, WEEK)
     await $.command.run({ command: 'tobebestme', args: 'home' })
@@ -5119,15 +5173,20 @@ for (const [pct, family] of [[82, 'amber'], [96, 'red'], [40, 'green']] as const
     await ui.press({ key: 'usage-refresh' })
     for (const tab of ['tab-usage', 'tab-all']) {
       await ui.press({ key: tab })
-      const found = Object.entries(await figureHues(ui)).find(([alt]) => alt.startsWith(pct + '%'))
+      const found = Object.entries(await figureColours(ui)).find(([alt]) => alt.startsWith(pct + '%'))
       expect(found, tab + ' has no ' + pct + '% figure').toBeDefined()
-      expect(found![1].every(FAMILY[family]), tab + ': ' + pct + '% is not ' + family + ': hues ' + found![1]).toBe(true)
+      expect(found![1], tab + ': ' + pct + '% is not ' + family).toBe(FIGURE_COLOUR[family])
     }
-    // a figure that is information and no status takes the neutral accent: a session's cost with no budget set
+    // a figure that is information and no status is ink: a session's cost with no budget set
     await ui.press({ key: 'tab-overview' })
-    const cost = Object.entries(await figureHues(ui)).find(([alt]) => alt.startsWith('$'))
+    const cost = Object.entries(await figureColours(ui)).find(([alt]) => alt.startsWith('$'))
     expect(cost, 'This session has no cost figure').toBeDefined()
-    expect(cost![1].every(FAMILY.accent), 'a cost with no budget is not the accent: ' + cost![1]).toBe(true)
+    expect(cost![1], 'a cost with no budget is ink').toBe('ink')
+    // and none of them has a gradient, a filter or a glow
+    for (const tab of ['tab-usage', 'tab-all', 'tab-overview']) {
+      await ui.press({ key: tab })
+      for (const x of await ui.findAll({ type: 'Svg' })) if (hasFigure(String(x.props.source))) expect(String(x.props.source), tab).not.toMatch(/Gradient|<filter|bloom/)
+    }
     await ui.unmount()
     // the terminal stays plain: no drawing at all
     const term = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -5384,44 +5443,83 @@ function contrastOf(a: string, b: string) {
 }
 const mixed = (a: string, b: string, t: number) => '#' + [16, 8, 0].map((s) => Math.round(((parseInt(a.slice(1), 16) >> s) & 255) * (1 - t) + ((parseInt(b.slice(1), 16) >> s) & 255) * t).toString(16).padStart(2, '0')).join('')
 
-test('no identity colour is a status colour: projects, context categories and limits draw in blues, purples and cyan, and a model family is one colour in its bars and its legend', async ($, on) => {
+test('no identity colour is a status colour: projects draw in six hues, context categories in one cool ramp, limits in ink, and a model family is one step of the ink ramp in its bars and its legend', async ($, on) => {
   const many = { ...BREAKDOWN, categories: ['System prompt', 'MCP tools', 'Messages', 'Memory files', 'Custom agents', 'Skills', 'System tools', 'Plugins'].map((name, i) => ({ name, tokens: 4_000 + i, color: 'inactive', isDeferred: false, kind: 'used' })), totalTokens: 40_000 }
   stubs(on, { ...LOW(), context: { ...LOW().context, breakdown: many }, rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'seven_day_opus', percentUsed: 38, resetsAt: '2026-10-25T21:00:00Z' }] })
   on('turn.complete', (_$: unknown, e: any) => ({ text: e.answer, usage: e.usage }))
   transcripts(on, WEEK)
-  for (const model of ['claude-fable-5-1', 'claude-opus-5-5', 'claude-haiku-5-0', 'claude-sonnet-5-5']) await completeTurn($, { ...USAGE, input_tokens: 4_000, output_tokens: 6_000, model })
+  const models = ['claude-fable-5-1', 'claude-opus-5-5', 'claude-haiku-5-0', 'claude-sonnet-5-5']
+  for (const model of models) await completeTurn($, { ...USAGE, input_tokens: 4_000, output_tokens: 6_000, model })
   await $.command.run({ command: 'tobebestme', args: 'home' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'usage-refresh' })
   const seen: Record<string, string> = {}
+  const swatches: Record<string, string> = {} // alt -> source, every Svg a tab draws
+  const bars: Record<string, string> = {}
   for (const tab of ['all', 'overview', 'usage']) {
     await ui.press({ key: 'tab-' + tab })
-    seen[tab] = ((await ui.findAll({ type: 'Svg' })) as any[]).map((x) => String(x.props.source)).join('\n') + JSON.stringify(await ui.drawn())
+    const svgs = (await ui.findAll({ type: 'Svg' })) as any[]
+    seen[tab] = svgs.map((x) => String(x.props.source)).join('\n') + JSON.stringify(await ui.drawn())
+    for (const x of svgs) {
+      swatches[String(x.props.alt)] = String(x.props.source)
+      bars[String(x.props.alt)] = String(x.props.source)
+    }
   }
-  const everything = Object.values(seen).join('\n').toUpperCase()
-  // pink-red, brown and mint were identity colours that read as red, amber and green
-  for (const gone of ['#FF375F', '#FF2D55', '#AC8E68', '#8F7455', '#00C7BE', '#0C9C94']) expect(everything, gone).not.toContain(gone)
-  // the context categories never reach amber or green: those two mean status alone, and a context this empty has neither
-  expect(seen.overview!.replace(/<style>.*?<\/style>/gis, '').toUpperCase()).not.toMatch(/#FF9F0A|#30D158|#D47000|#28A745/)
-  // a model family keeps one colour: Fable is indigo, Opus blue, Haiku cyan and Sonnet purple, in the turn bars and in the legend dots
-  for (const hex of ['#7D7AFF', '#0A84FF', '#1F9FD6', '#BF5AF2']) {
-    expect(seen.overview!.toUpperCase(), hex + ' in a turn bar').toContain('FILL=\\"' + hex + '\\"')
-    expect(seen.overview!.toUpperCase(), hex + ' on a legend dot').toContain('"COLOR":"' + hex + '"')
+  const everything = Object.values(seen).join('\n')
+  // the identity colours that read as red, amber and green, and every colour the old palette used for a model, a limit or a category, are gone
+  for (const gone of ['#FF375F', '#FF2D55', '#AC8E68', '#8F7455', '#00C7BE', '#0C9C94', '#7D7AFF', '#0A84FF', '#1F9FD6', '#BF5AF2', '#3A8EF0', '#FF9F0A', '#FF6B64', '#30D158']) expect(everything.toUpperCase(), gone).not.toContain(gone)
+  // the context categories never reach amber, red or green: those mean status alone (and a context this empty has none),
+  // and each is a step of the cool ramp, none a project's hue
+  const overview = seen.overview!.replace(/<style>.*?<\/style>/gis, '')
+  expect(overview).not.toMatch(/var\(--[wck]\)/)
+  expect(overview.toUpperCase()).not.toMatch(/#F2A93B|#A66000|#F0706A|#C7332E|#3FBF6A|#1B7F3B/)
+  const ramp = new Set(MERIDIAN.context.map((h: string) => h.toUpperCase()))
+  const categoryFills = [...overview.matchAll(/<rect class="p"[^>]* fill="(#[0-9A-Fa-f]{6})"/g)].map((m) => m[1]!.toUpperCase())
+  expect(categoryFills.length, 'the context categories are drawn').toBeGreaterThanOrEqual(8)
+  for (const hex of categoryFills) expect(ramp.has(hex), hex + ' is a step of the context ramp').toBe(true)
+  for (const hex of categoryFills) expect(PROJECT_HEX.map((h: string) => h.toUpperCase()), hex + ' is a project hue').not.toContain(hex)
+  // a limit is ink, whatever it is a limit on: its fill is the pane's own text colour, not an identity colour
+  for (const alt of Object.keys(bars).filter((a) => /^Weekly(?: \w+)? limit \d+%/.test(a))) {
+    const src = bars[alt]!.replace(/<style>.*?<\/style>/gs, '')
+    expect(src, alt).toMatch(/<g class="msw"><rect [^>]*fill="currentColor"(?: fill-opacity="0\.85")?\/>/) // ink, a touch lighter than the text it sits beside
+    expect(src, alt).not.toMatch(/fill="#[0-9A-Fa-f]{6}"/)
   }
+  // a model family is one step of the ink ramp (the fainter, the cheaper): its turn bar and its legend swatch are the same ink at the same strength
+  const steps = models.map((m) => modelInk(m))
+  expect(new Set(steps).size, 'four families, four steps').toBe(4)
+  expect(modelInk('claude-haiku-5-0')).toBeLessThan(modelInk('claude-sonnet-5-5'))
+  expect(modelInk('claude-sonnet-5-5')).toBeLessThan(modelInk('claude-opus-5-5'))
+  expect(modelInk('claude-opus-5-5')).toBeLessThan(modelInk('claude-fable-5-1'))
+  const inkFill = (n: number) => (n >= 1 ? 'fill="currentColor"' : 'fill="currentColor" fill-opacity="' + n + '"')
+  models.forEach((m, i) => {
+    const bar = bars['Turn ' + (i + 1) + ': $0.00']
+    expect(bar, 'turn ' + (i + 1) + ' bar').toContain(inkFill(modelInk(m)) + '>')
+    const key = Object.entries(swatches).find(([alt]) => alt.endsWith(' key') && alt.toLowerCase().startsWith(m.split('-')[1]!))
+    expect(key, m + ' has a key drawn beside its bars').toBeTruthy()
+    expect(key![1]).toContain(inkFill(modelInk(m)) + '/>')
+  })
+  // the legend dots of models are drawings, not coloured words
+  expect(seen.usage!).not.toMatch(/"color":"#[0-9A-Fa-f]{6}"[^}]*"children":\["● "\][^}]*(?:Fable|Opus|Haiku|Sonnet)/)
   await ui.unmount()
 })
 
-test('red status text holds 4.5:1 on a dark pane and a white one, tinted card included', async ($, on) => {
+test('status text holds 4.5:1 on a dark pane, a light one and a neutral panel: red words take the scheme’s red, never a raw colour', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 96, resetsAt: '2026-10-25T21:00:00Z' }] })
+  transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  const sources = ((await ui.findAll({ type: 'Svg' })) as any[]).map((x) => String(x.props.source)).join('\n')
-  const pairs = [...sources.matchAll(/svg>text\[fill="(#[0-9A-F]{6})"\]\{fill:(#[0-9A-F]{6})\}/g)].map((m) => [m[1]!, m[2]!])
-  const red = pairs.find(([dark]) => dark === '#FF6B64')
-  expect(red, 'red words have a light-pane colour').toBeTruthy()
-  // on the pane itself and on a card tinted a tenth of the same colour
-  for (const bg of ['#1E1E1E', mixed('#1E1E1E', red![0]!, 0.1)]) expect(contrastOf(red![0]!, bg), 'dark ' + bg).toBeGreaterThanOrEqual(4.5)
-  for (const bg of ['#FFFFFF', mixed('#FFFFFF', red![1]!, 0.1)]) expect(contrastOf(red![1]!, bg), 'light ' + bg).toBeGreaterThanOrEqual(4.5)
+  await ui.press({ key: 'usage-refresh' })
+  const sources = ((await ui.findAll({ type: 'Svg' })) as any[]).map((x) => String(x.props.source))
+  const withRed = sources.find((x) => /<text\b[^>]*fill:var\(--c\)/.test(x))
+  expect(withRed, 'red words').toBeTruthy()
+  const scheme = schemeOf(withRed!)!
+  expect(scheme.dark.c).toBeTruthy()
+  expect(scheme.light.c).toBeTruthy()
+  // on the pane itself, on every surface the host draws, and on a panel (the neutral fill, #898781 at 10%, over the pane)
+  for (const bg of [...DARK_PANES, mixed('#1a1a19', '#898781', 0.1)]) expect(contrastOf(scheme.dark.c!, bg), 'dark ' + bg).toBeGreaterThanOrEqual(4.5)
+  for (const bg of [...LIGHT_PANES, mixed('#ffffff', '#898781', 0.1)]) expect(contrastOf(scheme.light.c!, bg), 'light ' + bg).toBeGreaterThanOrEqual(4.5)
+  // the red is a property of the scheme, so a light pane gets its own: no raw red hex in a word
+  expect(sources.join('\n').replace(/<style>.*?<\/style>/gs, '')).not.toMatch(/<text\b[^>]*fill="#/)
   await ui.unmount()
 })
 
@@ -5592,15 +5690,24 @@ test('Home words a week of work by its own measure, not as the plan’s reported
   await ui.unmount()
 })
 
-test('a model’s own weekly limit is drawn in that model’s blue, never the slate a project uses', async ($, on) => {
+test('a model’s own weekly limit is drawn in ink like every other limit, never in a project’s hue', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'seven_day_opus', percentUsed: 60, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'usage-refresh' })
   await ui.press({ key: 'tab-usage' })
-  const sources = ((await ui.findAll({ type: 'Svg' })) as any[]).map((x) => String(x.props.source)).join('\n').toUpperCase()
-  expect(sources).toContain('#3A8EF0')
+  const svgs = (await ui.findAll({ type: 'Svg' })) as any[]
+  const opus = svgs.find((x) => /^Weekly Opus limit: 60% used/.test(String(x.props.alt)))
+  expect(opus, 'the Opus limit’s chart').toBeTruthy()
+  const src = String(opus.props.source).replace(/<style>.*?<\/style>/gs, '')
+  // its line and rules are the pane's text colour (ink), the amber is the status of running out and nothing else
+  expect(src).toContain('currentColor')
+  expect(src.toUpperCase()).not.toMatch(new RegExp(PROJECT_HEX.map((h: string) => h.toUpperCase()).join('|')))
+  await ui.press({ key: 'tab-overview' })
+  const runway = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x) => /^Weekly Opus limit 60%/.test(String(x.props.alt)))
+  expect(runway, 'the Opus limit’s runway').toBeTruthy()
+  expect(String(runway.props.source)).toMatch(/<g class="msw"><rect [^>]*fill="currentColor"(?: fill-opacity="0\.85")?\/>/) // ink, a touch lighter than the text it sits beside
   await ui.unmount()
 })
 
@@ -6362,7 +6469,7 @@ test('accessibility-voice: a forecast is said as roughly as it is known, and not
     expect(text).toMatch(/about \d+ hours/)
     for (const x of await ui.findAll({ type: 'Svg' })) {
       const source = String(x.props.source)
-      expect(source).not.toMatch(/\.(mpu|mhalo|msl)\{[^}]*infinite|msl\{[^}]*infinite/)
+      expect(source).not.toMatch(/\.(mpu|mhalo|msl)\{[^}]*infinite|msl\{[^}]*infinite/) // the stop pulses three times and rests; nothing loops for ever
     }
     await ui.unmount()
   }
@@ -6552,17 +6659,18 @@ test('a chat budget alert is said once however many hooks ask for it at the same
 })
 
 // repair-code-final: loops keep their phase when a drawing's data changes
-test('the loops of a drawing (pulse, halo, sheen) carry on from where they had got to when its figures change, and a loop that has run its course is drawn finished', async ($, on) => {
+test('the loops of a drawing (the run-out stop’s pulse) carry on from where they had got to when its figures change, and a loop that has run its course is drawn finished', async ($, on) => {
   const { clock, usage } = stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }, { kind: 'seven_day_opus', percentUsed: 40, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 148 } })
   const sourcesOf = async () => (await ui.findAll({ type: 'Svg' })).map((x: any) => String(x.props.source))
-  const loops = (all: string[]) => all.filter((x) => /class="[^"]*\b(?:mpu|mhalo)\b/.test(x))
+  const loops = (all: string[]) => all.filter((x) => /class="[^"]*\bmpu\b/.test(x))
   await ui.redraw()
   const fresh = await sourcesOf()
   expect(loops(fresh).length, 'a drawing with a run-out marker').toBeGreaterThan(0)
-  expect(loops(fresh).join('')).not.toContain('.mpu,.mhalo{animation-delay')
+  expect(loops(fresh).join('')).not.toContain('.mpu{animation-delay')
+  expect(fresh.join('')).not.toMatch(/mhalo|\bmsh\b|\bmsl\b/) // there is no halo or sheen to carry on
   // quiet redraws do not touch the markup
   clock.now += 1500
   await ui.redraw()
@@ -6571,14 +6679,15 @@ test('the loops of a drawing (pulse, halo, sheen) carry on from where they had g
   usage.rateLimits[0].percentUsed = 83
   await ui.redraw()
   const changed = loops(await sourcesOf()).join('')
-  expect(changed).toContain('.mpu,.mhalo{animation-delay:-1.50s}')
+  expect(changed).toContain('.mpu{animation-delay:-1.50s}')
   // well after the pulses are over, a change draws them finished instead of pulsing again
   clock.now += 30_000
   usage.rateLimits[0].percentUsed = 84
   await ui.redraw()
   const late = loops(await sourcesOf()).join('')
-  expect(late).toContain('.mpu{animation:none}.mhalo{display:none}')
-  expect(late).not.toContain('.mpu,.mhalo{animation-delay')
+  expect(late).toContain('.mpu{animation:none}')
+  expect(late).not.toContain('.mpu{animation-delay')
+  expect(late).not.toContain('display:none')
   await ui.unmount()
 })
 
@@ -6606,7 +6715,7 @@ test('when this session’s spend is not in the records yet, the week and the da
   await wide.unmount()
 })
 
-test('the interactive drawings (the week window with day bars, the context runway) carry no vector-effect, which the interactive scrub strips', async ($, on) => {
+test('the interactive drawings (the week window with day bars, the context runway) carry no scaling-stroke vector-effect, which the interactive scrub strips', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
@@ -6617,12 +6726,13 @@ test('the interactive drawings (the week window with day bars, the context runwa
     await ui.press({ key: 'tab-' + tab })
     const svgs = (await ui.findAll({ type: 'Svg' })).filter((x: any) => x.props.isInteractive)
     expect(svgs.length, tab + ': an interactive drawing').toBeGreaterThan(0)
-    for (const x of svgs) expect(String((x as any).props.source), tab + ': ' + (x as any).props.alt).not.toContain('vector-effect')
+    // (a stroke that asks for no vector-effect, "none", is what the numerals say and is the same as saying nothing)
+    for (const x of svgs) expect(String((x as any).props.source), tab + ': ' + (x as any).props.alt).not.toMatch(/vector-effect(?!="none")/)
   }
   await ui.unmount()
 })
 
-// repair-visual-r1: today says what it counted, the settings list is titled, no skills is not "none ran", and a settled hero figure does not glow
+// repair-visual-r1: today says what it counted, the settings list is titled, no skills is not "none ran", and a hero figure never glows
 
 test('with every project’s records unreadable, Usage does not say "every chat", the settings list is titled, and a person with no skills is told that, not that none ran', async ($, on) => {
   stubs(on)
@@ -6644,28 +6754,31 @@ test('with every project’s records unreadable, Usage does not say "every chat"
   await ui.unmount()
 })
 
-test('a hero figure that is settled has the gradient and no glow; the glow is for what is live', async ($, on) => {
+test('a hero figure is the same settled or live: strokes in one colour, with no gradient and no glow', async ($, on) => {
   stubs(on)
   await $.command.run({ command: 'tobebestme', args: 'home' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'tab-overview' })
-  const figs = ((await ui.findAll({ type: 'Svg' })) as any[]).map((x) => String(x.props.source)).filter((s) => s.includes('data-fig'))
+  const figs = ((await ui.findAll({ type: 'Svg' })) as any[]).map((x) => String(x.props.source)).filter((s) => hasFigure(s))
   expect(figs.length, 'a hero figure').toBeGreaterThan(0)
   for (const s of figs) {
-    expect(s).toContain('linearGradient')
-    expect(s).not.toContain('class="bloom"')
+    expect(s).not.toMatch(/Gradient|<filter|feGaussianBlur|class="bloom"|\bmhalo\b/)
+    // a figure with no status is drawn in the ink: the strokes name currentColor, or the text falls back to it
+    expect(figureColour(s)).toBe('ink')
+    expect(s.replace(/<style>.*?<\/style>/gs, '')).not.toMatch(/(?:stroke|fill)="#[0-9A-Fa-f]{6}"/)
   }
   await ui.unmount()
 })
 
-test('a limit at its critical level is live: its hero figure glows from inside its own drawing, under the digits', async ($, on) => {
+test('a limit at its critical level is red, plainly: its hero figure takes the scheme’s red and nothing glows', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 97, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'usage-refresh' })
   const sources = (await ui.findAll({ type: 'Svg' })).map((x: any) => String(x.props.source))
-  expect(sources.some((x: string) => x.includes('class="bloom"') && x.includes('feGaussianBlur'))).toBe(true)
+  expect(sources.some((x: string) => hasFigure(x) && figureColour(x) === 'c')).toBe(true)
+  expect(sources.some((x: string) => /class="bloom"|feGaussianBlur|<filter|\bmhalo\b/.test(x))).toBe(false)
   await ui.unmount()
 })
 
@@ -6854,26 +6967,33 @@ async function savingsCard($: any, on: any, tokens: number) {
   const card = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x) => String(x.props.source).includes('data-poster'))
   await ui.press({ key: 'card-copy' })
   await ui.unmount()
-  return { words: [...String(card.props.source).matchAll(/>([^<>]*)<\/text>/g)].map((m) => m[1]), summary: copied[0] }
+  return { words: [...String(card.props.source).matchAll(/>([^<>]*)<\/text>/g)].map((m) => m[1]), summary: copied[0], source: String(card.props.source) }
 }
 
 test('the report card says what workflows could save as a share of the limit, whole weeks of it when it is more than the limit, and never in dollars on a plan', async ($, on) => {
-  const { words, summary } = await savingsCard($, on, 1_100_000)
+  const { words, summary, source } = await savingsCard($, on, 1_100_000)
   expect(words.join(' ')).toContain('of the weekly limit in workflow savings') // the tile's label wraps to two lines
-  expect(words.some((w) => /^up to \d+(\.\d)? weeks?$/.test(w)), words.join(' | ')).toBe(true)
+  // the figure is set as numerals with its words beside it: "up to", the number in strokes of ink, then the unit
+  const weeks = /Workflow savings found: up to (\d+(?:\.\d)?) weeks?’ worth of the limit/.exec(String(summary))
   expect(summary).toMatch(/Workflow savings found: up to \d+(\.\d)? weeks?’ worth of the limit/)
+  expect(words, words.join(' | ')).toContain('up to')
+  expect(words.some((w) => /^weeks?$/.test(String(w))), words.join(' | ')).toBe(true)
+  expect(hasNumerals(source, weeks![1]!, CARD_INK), 'the number ' + weeks![1] + ' drawn in the numerals').toBe(true)
   expect(summary + words.join(' ')).not.toMatch(/up to \$/)
 })
 
 test('the report card says a saving under a whole limit as a percentage of it', async ($, on) => {
-  const { words, summary } = await savingsCard($, on, 6_000_000)
+  const { words, summary, source } = await savingsCard($, on, 6_000_000)
   expect(words.join(' ')).toContain('of the weekly limit in workflow savings')
-  expect(words.some((w) => /^up to \d+%$/.test(w)), words.join(' | ')).toBe(true)
+  const share = /Workflow savings found: up to (\d+%) of the limit/.exec(String(summary))
   expect(summary).toMatch(/Workflow savings found: up to \d+% of the limit/)
+  expect(words, words.join(' | ')).toContain('up to')
+  expect(words.some((w) => /^weeks?$/.test(String(w))), 'a share of the limit is not weeks: ' + words.join(' | ')).toBe(false)
+  expect(hasNumerals(source, share![1]!, CARD_INK), 'the share ' + share![1] + ' drawn in the numerals').toBe(true)
   expect(summary + words.join(' ')).not.toMatch(/up to \$/)
 })
 
-// repair-visual-r2 (second review): ideas name what their shares are of; a one-card page takes the full width; a hero's gradient keeps its hue in a light pane; no project wears the Opus limit's colour; Open chats titles wrap; the run budget has a plain label; Show details keeps its words inside their cards
+// repair-visual-r2 (second review): ideas name what their shares are of; a one-card page takes the full width; a status colour keeps its hue in a light pane; no project can be taken for ink or a status; Open chats titles wrap; the run budget has a plain label; Show details keeps its words inside their cards
 
 const contrastOnWhite = (hex: string) => {
   const n = parseInt(hex.slice(1), 16)
@@ -6961,27 +7081,125 @@ test('a re-read note after a model switch is in the plan’s unit on a plan: a s
   expect(said[0]).not.toContain('$')
 })
 
-test('a hero figure’s gradient in a light pane keeps the hue of its status, saturated and at 4.5:1 on white', () => {
-  for (const [level, ends] of Object.entries(LEVEL_HUES)) {
-    const light = ends.map((h) => toneFor(h, false))
-    light.forEach((hex, i) => {
-      expect(contrastOnWhite(hex), level + ' ' + hex).toBeGreaterThanOrEqual(4.5)
-      expect(hsv(hex).s, level + ' ' + hex + ' is a muddy tone').toBeGreaterThanOrEqual(0.8)
-      expect(hueGap(ends[i]!, hex), level + ' ' + hex + ' has lost its hue').toBeLessThanOrEqual(18)
-    })
+test('the status marks keep their hue and hold 4.5:1 as words on every surface of a dark pane and of a light one, and a figure in ink holds it too', () => {
+  const { warn, crit, ok } = MERIDIAN.status
+  for (const [name, pair] of Object.entries({ warn, crit, ok })) {
+    for (const bg of DARK_PANES) expect(contrastOf(pair.dark, bg), name + ' dark on ' + bg).toBeGreaterThanOrEqual(4.5)
+    for (const bg of LIGHT_PANES) expect(contrastOf(pair.light, bg), name + ' light on ' + bg).toBeGreaterThanOrEqual(4.5)
+    // the light pair is the dark one deepened, not another colour: the same hue, and not a muddy tone
+    expect(hueGap(pair.dark, pair.light), name + ' has lost its hue').toBeLessThanOrEqual(18)
+    expect(hsv(pair.light).s, name + ' ' + pair.light + ' is a muddy tone').toBeGreaterThanOrEqual(0.7)
   }
-  // the amber is the orange the words beside it use (#B34C00), not a brown
-  for (const hex of LEVEL_HUES.warning.map((h) => toneFor(h, false))) expect(hueGap(hex, '#B34C00')).toBeLessThanOrEqual(8)
+  // amber, red and green are three families
+  expect(hueGap(warn.dark, crit.dark)).toBeGreaterThan(20)
+  expect(hueGap(warn.dark, ok.dark)).toBeGreaterThan(60)
+  // what the older names still hand a caller: a figure's pair for a level is one colour twice, the status's own or the ink
+  expect(LEVEL_HUES.warning.map((h: string) => toneFor(h, true))).toEqual([warn.dark, warn.dark])
+  expect(LEVEL_HUES.warning.map((h: string) => toneFor(h, false))).toEqual([warn.light, warn.light])
+  expect(LEVEL_HUES.error.map((h: string) => toneFor(h, false))).toEqual([crit.light, crit.light])
+  for (const level of ['success', 'info'] as const) {
+    expect(LEVEL_HUES[level][0], level + ' is ink, not green or blue').toBe(LEVEL_HUES[level][1])
+    expect(contrastOf(toneFor(LEVEL_HUES[level][0], true), '#1a1a19')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastOf(toneFor(LEVEL_HUES[level][0], false), '#ffffff')).toBeGreaterThanOrEqual(4.5)
+  }
+  expect(HEX.warning).toBe(warn.dark)
+  expect(HEX.error).toBe(crit.dark)
+  expect(HEX.success).toBe(ok.dark)
 })
 
-test('no project can take the colour of a model, a limit, a context category or a status', () => {
-  const taken = [...Object.values(FAMILY_HEX), ...Object.values(RING_HEX), ...CATEGORY_HEX, HEX.success, HEX.warning, HEX.error, '#FF453A']
-  for (const hex of PROJECT_HEX) for (const other of taken) expect(labDistance(other, hex), hex + ' against ' + other).toBeGreaterThanOrEqual(20)
+// OKLCH of a #RRGGBB: lightness, chroma and hue in degrees.
+const oklch = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16)
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  const l = Math.cbrt(0.4122214708 * r! + 0.5363325363 * g! + 0.0514459929 * b!)
+  const m = Math.cbrt(0.2119034982 * r! + 0.6806995451 * g! + 0.1073969566 * b!)
+  const sc = Math.cbrt(0.0883024619 * r! + 0.2817188376 * g! + 0.6299787005 * b!)
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * sc
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * sc
+  return { L: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * sc, C: Math.hypot(A, B), H: ((Math.atan2(B, A) * 180) / Math.PI + 360) % 360 }
+}
+
+test('the six project hues each hold 3:1 on a dark pane and on a light one, sit outside the status hues, and cannot be taken for ink, a status mark or each other', () => {
+  expect(PROJECT_HEX).toHaveLength(6)
+  const status = Object.values(MERIDIAN.status).flatMap((pair: any) => [pair.dark, pair.light])
+  const inks = ['#f0efec', '#0b0b0b', '#898781', '#1a1a19', '#ffffff']
+  for (const hex of PROJECT_HEX) {
+    // one hex serves both themes (a legend dot is host text and cannot follow the pane), so it holds on both
+    expect(contrastOf(hex, '#1a1a19'), hex + ' on the dark pane').toBeGreaterThanOrEqual(3)
+    expect(contrastOf(hex, '#ffffff'), hex + ' on the light pane').toBeGreaterThanOrEqual(3)
+    const { C, H } = oklch(hex)
+    expect(C, hex + ' is a colour, not a grey').toBeGreaterThanOrEqual(0.1 - 1e-3)
+    // amber (60-100), red (15-40) and green (130-165) are for status alone
+    for (const [from, to] of [[15, 40], [60, 100], [130, 165]]) expect(H < from || H > to, hex + ' is in the status hue arc ' + from + '-' + to + ' (hue ' + Math.round(H) + ')').toBe(true)
+    for (const other of [...status, ...inks]) expect(labDistance(other, hex), hex + ' against ' + other).toBeGreaterThanOrEqual(20)
+  }
   // and the six told apart from each other
   PROJECT_HEX.forEach((hex, i) => PROJECT_HEX.slice(i + 1).forEach((other) => expect(labDistance(hex, other), hex + ' against ' + other).toBeGreaterThanOrEqual(20)))
+  expect(PROJECT_HEX.map((h: string) => h.toUpperCase())).not.toContain(MERIDIAN.other.toUpperCase())
 })
 
-test('the week’s bars are drawn in their project’s own colour, whole, with a halo under the line that crosses them', async ($, on) => {
+test('hover cards use the theme’s own text colours only, on the theme’s own surface, so they read on a light pane as on a dark one', async ($, on) => {
+  stubs(on, { ...HIGH(), context: { ...HIGH().context, breakdown: BREAKDOWN }, rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
+  transcripts(on, WEEK)
+  await $.command.run({ command: 'tobebestme', args: 'home' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 148 } })
+  await ui.press({ key: 'usage-refresh' })
+  const THEME_KEYS = new Set(['text', 'inactive', 'subtle', 'success', 'warning', 'error', 'suggestion', 'claude', 'promptBorder', 'userMessageBackground', 'userMessageBackgroundHover', 'bashMessageBackgroundColor', 'background', 'selectionBg'])
+  let cards = 0
+  const rawColours = (node: any, out: string[] = []): string[] => {
+    if (!node || typeof node !== 'object') return out
+    const props = node.props || {}
+    for (const key of ['color', 'backgroundColor', 'borderColor']) if (typeof props[key] === 'string' && !THEME_KEYS.has(props[key])) out.push(key + ' ' + props[key])
+    for (const c of node.children || []) rawColours(c, out)
+    return out
+  }
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return
+    // a hover card: hidden until its row is hovered
+    if (node.props?.display === 'none' && node.hover?.display === 'flex') {
+      cards++
+      expect(rawColours(node), 'a hover card holds a raw colour').toEqual([])
+      expect(node.props.backgroundColor).toBe('userMessageBackgroundHover')
+      expect(node.props.borderStyle).toBe('round')
+      expect(node.props.borderColor).toBe('promptBorder')
+    }
+    for (const c of node.children || []) walk(c)
+  }
+  for (const tab of ['all', 'workflows', 'overview', 'usage', 'skills', 'settings']) {
+    await ui.press({ key: 'tab-' + tab })
+    walk(await ui.drawn())
+  }
+  expect(cards, 'hover cards are drawn').toBeGreaterThan(5)
+  await ui.unmount()
+})
+
+test('models are an ink ramp (the fainter, the cheaper), limits are ink, and the context categories are a ramp of one cool hue whose steps hold 3:1 on both panes', () => {
+  // models: ink at a strength per family, never a hex, so a legend swatch and a bar agree on any pane
+  expect(Object.values(FAMILY_HEX).every((v) => /^ink:[\d.]+$/.test(String(v)))).toBe(true)
+  expect(modelInk('claude-haiku-5-0')).toBeLessThan(modelInk('claude-sonnet-5-5'))
+  expect(modelInk('claude-sonnet-5-5')).toBeLessThan(modelInk('claude-opus-5-5'))
+  expect(modelInk('claude-opus-5-5')).toBeLessThan(modelInk('claude-fable-5-1'))
+  expect(modelInk('claude-fable-5-1')).toBe(1)
+  expect(modelInk('claude-mythos-5-1')).toBe(1)
+  // limits and the gauges: ink, whichever limit it is
+  for (const [name, v] of Object.entries(RING_HEX)) expect(v, name).toBe('currentColor')
+  // the context categories: eight steps of one cool hue, in order from deep to light
+  expect(CATEGORY_HEX).toHaveLength(8)
+  const lights = CATEGORY_HEX.map((h: string) => oklch(h).L)
+  lights.slice(1).forEach((l: number, i: number) => expect(l, 'step ' + (i + 2) + ' is lighter than step ' + (i + 1)).toBeGreaterThan(lights[i]!))
+  for (const hex of CATEGORY_HEX) {
+    const { H, C } = oklch(hex)
+    expect(H, hex + ' is in the cool hue').toBeGreaterThanOrEqual(225)
+    expect(H, hex + ' is in the cool hue').toBeLessThanOrEqual(270)
+    expect(C, hex + ' keeps its chroma').toBeGreaterThanOrEqual(0.1)
+    expect(contrastOf(hex, '#1a1a19'), hex + ' on the dark pane').toBeGreaterThanOrEqual(3)
+    expect(contrastOf(hex, '#ffffff'), hex + ' on the light pane').toBeGreaterThanOrEqual(3)
+    // no category is a status mark
+    for (const pair of Object.values(MERIDIAN.status) as any[]) for (const st of [pair.dark, pair.light]) expect(labDistance(st, hex), hex + ' against ' + st).toBeGreaterThanOrEqual(20)
+  }
+})
+
+test('the week’s bars are drawn in their project’s own colour, whole, with a 2px cut of the pane between a day’s segments and a ring of the pane under the line that crosses them', async ($, on) => {
   stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: '2026-10-25T21:00:00Z' }] })
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
@@ -6989,12 +7207,22 @@ test('the week’s bars are drawn in their project’s own colour, whole, with a
   await ui.press({ key: 'usage-refresh' })
   await ui.press({ key: 'tab-all' })
   // Home draws the week as one drawing: the figure, the day bars and the line
-  const week = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x) => String(x.props.source).includes('class="hl"'))
+  const week = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x) => String(x.props.source).includes('class="mwk"'))
   expect(week, 'no week drawing').toBeTruthy()
   const source = String(week.props.source)
+  const body = source.replace(/<style>.*?<\/style>/gs, '')
   // a day's segment is its project's colour exactly, as in the legend dot and the share bars (a picked day dims the others to 0.2)
   expect(source).not.toContain('fill-opacity="0.6"')
-  expect(source).toMatch(/<rect x="[\d.]+" y="[\d.]+" width="[\d.]+" height="[\d.]+" fill="#[0-9A-F]{6}"\/>/i)
+  const hexes = [...body.matchAll(/<(?:rect|path)\b[^>]*\bfill="(#[0-9A-Fa-f]{6})"/g)].map((m) => m[1]!.toUpperCase())
+  expect(hexes.length, 'day segments in project colours').toBeGreaterThan(0)
+  const projectHues = [...PROJECT_HEX, MERIDIAN.other].map((h: string) => h.toUpperCase())
+  for (const hex of hexes) expect(projectHues, hex + ' is not a project’s colour').toContain(hex)
+  // between a day's segments: a 2px cut of the pane's own colour; the top of the stack is rounded 2px, its foot square
+  expect(body).toMatch(/<rect [^>]*height="2" style="fill:var\(--s\)"\/>/)
+  expect(body).toMatch(/<path d="M[\d.]+ [\d.]+V[\d.]+Q[\d.]+ [\d.]+ [\d.]+ [\d.]+H[\d.]+Q/)
+  // the line of what has been used crosses them with a ring of the pane under it, so it reads over any bar
+  expect(body).toMatch(/<path d="[^"]*" fill="none" style="stroke:var\(--s\)" stroke-width="6"/)
+  expect(body).not.toMatch(/Gradient|<filter|bloom/)
   await ui.unmount()
 })
 
@@ -7034,7 +7262,10 @@ test('a workflow waiting for a go-ahead is not a lone card beside a blank half a
   await $.command.run({ command: 'tobebestme', args: 'workflows' })
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 148 } })
   expect(await shown(ui)).toContain('Claude wants to run “review-changes”')
-  expect(((await ui.findAll({ type: 'Box' })) as any[]).filter((b) => b.props.width === '58%' || b.props.width === '50%')).toHaveLength(0)
+  // the go-ahead keeps a readable measure in the left column, and the right column is never blank: it holds how workflows work
+  const halves = ((await ui.findAll({ type: 'Box' })) as any[]).filter((b) => b.props.width === '58%' || b.props.width === '50%')
+  expect(halves).toHaveLength(1)
+  expect(await shown(ui)).toContain('How workflows work')
   await ui.unmount()
   answerNow()
   await waiting
@@ -7120,8 +7351,8 @@ test('with Show details on, a permission’s folder is inside its card and hint 
   const isFolder = (n: any) => (n.text || n.props?.children?.[0] || '') === '~/Projects/api' || (Array.isArray(n.children) && n.children.length === 1 && n.children[0] === '~/Projects/api')
   const trail = path(tree, isFolder)
   expect(trail, 'the folder line is not drawn').toBeTruthy()
-  // it sits inside the tinted card (a Box whose fill is the status colour at 6%), not after it
-  expect(trail!.some((n) => /^#[0-9A-F]{6}0F$/i.test(String(n.props?.backgroundColor || '')))).toBe(true)
+  // it sits inside the panel (a Box with the neutral panel fill), not after it
+  expect(trail!.some((n) => n.props?.backgroundColor === '#8987811A')).toBe(true)
   // and no hint block is indented past its heading
   expect(JSON.stringify(tree)).not.toMatch(/"paddingLeft":"md","[^}]*"children":\[[^\]]*"From this chat’s latest reading/)
   await ui.press({ key: 'details' })
@@ -7438,9 +7669,19 @@ test('the cheaper model missing from an account is explained without a budget it
   await ui.unmount()
 })
 
-// the report card's figure is drawn in the colours of its status, as the pane's hero figures are
-for (const [pct, level, family] of [[40, 'success', 'green'], [82, 'warning', 'amber'], [96, 'error', 'red']] as const) {
-  test('the report card’s big figure at ' + pct + '% of the weekly limit is ' + family + ', in the pane’s own pair for that status', async ($, on) => {
+// the report card's figure is drawn in strokes of the colour of its status, as the pane's hero figures are: ink, or the card's own amber or red
+// (the card is a file with a ground of its own, so its colours are literal)
+test('the report card carries its own literal colours for ink, amber and red', () => {
+  expect(CARD.bg).toBe('#0b0b0b')
+  expect(CARD.ink).toBe(CARD_INK)
+  expect(CARD.warn).toBe(MERIDIAN.status.warn.dark)
+  expect(CARD.crit).toBe(MERIDIAN.status.crit.dark)
+  for (const hex of [CARD.ink, CARD.text, CARD.sub, CARD.warn, CARD.crit]) expect(contrastOf(hex, CARD.bg), hex + ' on the card').toBeGreaterThanOrEqual(4.5)
+  expect(contrastOf(CARD.mute, CARD.bg), 'the muted words on the card').toBeGreaterThanOrEqual(4.5)
+})
+
+for (const [pct, level, family] of [[40, 'success', 'ink'], [82, 'warning', 'amber'], [96, 'error', 'red']] as const) {
+  test('the report card’s big figure at ' + pct + '% of the weekly limit is ' + family + ', drawn in strokes with no gradient', async ($, on) => {
     stubs(on, { ...HIGH(), rateLimits: [{ kind: 'seven_day', percentUsed: pct, resetsAt: '2026-10-25T21:00:00Z' }] })
     transcripts(on, WEEK)
     await $.command.run({ command: 'tobebestme', args: 'home' })
@@ -7449,16 +7690,19 @@ for (const [pct, level, family] of [[40, 'success', 'green'], [82, 'warning', 'a
     await ui.press({ key: 'tab-usage' })
     await ui.press({ key: 'card-preview' })
     const card = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x) => String(x.props.source).includes('data-poster'))
-    const stops = /<linearGradient id="rcf"[^>]*><stop offset="0" stop-color="(#[0-9A-F]{6})"\/><stop offset="1" stop-color="(#[0-9A-F]{6})"\/>/.exec(String(card.props.source))
-    expect(stops, 'the figure’s gradient').toBeTruthy()
-    expect([stops![1], stops![2]]).toEqual(LEVEL_HUES[level].map((h: string) => toneFor(h, true)))
-    expect([stops![1], stops![2]].map(hueOf).every(FAMILY[family]), 'hues ' + [stops![1], stops![2]].map(hueOf)).toBe(true)
-    expect(String(card.props.source)).not.toContain('#FF7A6B') // an amber figure no longer runs into red
+    const src = String(card.props.source)
+    const tone = level === 'error' ? CARD.crit : level === 'warning' ? CARD.warn : CARD.ink
+    expect(hasNumerals(src, pct + '%', tone), 'the figure ' + pct + '% in ' + tone).toBe(true)
+    // success is ink, not green: a limit on pace is not a result
+    expect(src.toLowerCase()).not.toContain('#3fbf6a')
+    // no gradient and no glow: the old figure ran from one colour to another
+    expect(src).not.toMatch(/Gradient|<filter|feGaussianBlur|bloom|rcf/)
+    expect(src).not.toContain('#FF7A6B')
     await ui.unmount()
   })
 }
 
-test('a report card figure that is no limit is information, drawn in the neutral accent', async ($, on) => {
+test('a report card figure that is no limit is information, drawn in the card’s ink and never in a status colour', async ($, on) => {
   stubs(on, LOW())
   transcripts(on, WEEK)
   await $.command.run({ command: 'tobebestme', args: 'home' })
@@ -7467,7 +7711,13 @@ test('a report card figure that is no limit is information, drawn in the neutral
   await ui.press({ key: 'tab-usage' })
   await ui.press({ key: 'card-preview' })
   const card = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x) => String(x.props.source).includes('data-poster'))
-  const stops = /<linearGradient id="rcf"[^>]*><stop offset="0" stop-color="(#[0-9A-F]{6})"\/><stop offset="1" stop-color="(#[0-9A-F]{6})"\/>/.exec(String(card.props.source))
-  expect([stops![1], stops![2]].map(hueOf).every(FAMILY.accent), 'hues ' + [stops![1], stops![2]].map(hueOf)).toBe(true)
+  const src = String(card.props.source)
+  // the figure leads the card's words ("$9.30 of work at list prices"): in strokes of the ink, whichever it is, because nothing is at stake
+  const hero = /: (\$[\d.,]+|[\d.]+%) of /.exec(String(card.props.alt))
+  expect(hero, String(card.props.alt)).toBeTruthy()
+  expect(src).toContain('stroke="' + CARD.ink + '"')
+  if (figureGlyphs(hero![1]!, { size: 40 })) expect(hasNumerals(src, hero![1]!, CARD.ink), 'the figure ' + hero![1] + ' in ink').toBe(true)
+  for (const hex of [CARD.warn, CARD.crit]) expect(hasNumerals(src, hero![1]!, hex), 'the figure in a status colour with no status to say').toBe(false)
+  expect(src).not.toMatch(/Gradient|<filter|feGaussianBlur|bloom/)
   await ui.unmount()
 })
