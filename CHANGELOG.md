@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.0 (unreleased)
+
+A new look for the desktop pane, called Meridian. The terminal is unchanged, and nothing was added or removed: every figure, word and button is where it was.
+
+- **One line is now.** In every drawing, what has happened is solid, what is forecast is hollow, and time you would spend out of your limit is lined. A limit, a budget and the context window are drawn in the same ink as the words beside them; color is left for status (amber past your alert, red when nearly out, green for a good result), for your six busiest projects, and, for models, a step of ink that is fainter the cheaper the model is.
+- **Big figures are drawn in strokes.** The 82% on Home and each tab's lead figure are no longer a color gradient with a glow; they are one even weight of line, the same on every computer, in ink, or amber or red when they carry a status. They draw in stroke by stroke when a tab opens, and not at all with reduced motion set.
+- **Runways and charts are plainer.** A runway is a flat track with a line for now, a hollow stretch where the pace lands and a lined stretch after the run-out. The strand under the track, the shimmer on the forecast and the soft light under figures are gone. Chart rules are solid, and a dash always means a forecast.
+- **Sections are flat, and only things you act on are panels.** A heading and its content now sit on the page with space between them; a waiting chat, a run and the change card keep a panel.
+- **Hover cards read on a light theme.** They use your theme's own text colors and the app's own popover, where before they were drawn in light text that could not be read on a white pane.
+- **Drawings take the app's own ink and font.** Their text is set in the app's interface font and their neutral marks are the pane's text color, so they match the words around them in a dark or a light pane.
+- **A new icon,** one runway with the meridian on it.
+
 ## 1.6.0 (unreleased)
 
 A pre-launch review of the whole mod. Everything here is a fix or a clearer word; nothing new to learn.

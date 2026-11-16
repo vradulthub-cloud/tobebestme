@@ -24,7 +24,7 @@ They also need Python 3 (the terminal tests drive Claude Code through a pseudo-t
 
 How ToBeBestMe is written:
 
-- **Design.** It has its own visual language, described in DESIGN.md: sentence case, buttons that say what they do, one primary action per view, nothing under 11px, color only for meaning. The terminal stays plain; the desktop pane is bold, with gradient figures in their status colors, and glows and motion only for what is live. DESIGN.md has the details.
+- **Design.** It has its own visual language, described in DESIGN.md: sentence case, buttons that say what they do, one primary action per view, nothing under 11px, color only for meaning. The terminal stays plain; the desktop pane is drawn in ink, with solid for what has happened, hollow for what is forecast and lined for time out of limit, amber and red only for status, and motion only for what is live. DESIGN.md has the details.
 - **Style.** `.editorconfig` and `.prettierrc` describe it: two spaces, no semicolons, single quotes, trailing commas. There is no fixed line width: long string-building lines are normal in `hooks/`, so don't run Prettier over those files (it would rewrap thousands of lines and change every shipped hash). Match the file you are in, and don't reformat lines you aren't changing.
 - **Honest numbers.** Estimates are shown as ranges and say what they come from. Don't make a guess look precise.
 - **No secrets, ever.** Not in code, tests, fixtures or screenshots. The e2e screenshots can show your own projects; they stay under `e2e/.out/`, which git ignores. Anything private (launch plans, drafts) stays out of git too.

@@ -1,6 +1,6 @@
 {
   "name": "tobebestme",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "A mod that runs inside Claude Code itself, not a separate app: what waits for you, your week's limits and what workflows cost. Independent; not made by Anthropic.",
   "homepage": "https://tobebestme.vercel.app",
   "repository": "https://github.com/vradulthub-cloud/tobebestme",
